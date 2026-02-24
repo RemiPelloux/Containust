@@ -1,25 +1,58 @@
-# Containust
+<p align="center">
+  <h1 align="center">Containust</h1>
+  <p align="center">
+    <strong>Daemon-less, sovereign container runtime written in Rust</strong>
+  </p>
+  <p align="center">
+    A next-generation Linux container engine — zero daemon, native composition, air-gap ready.
+  </p>
+</p>
 
-**Daemon-less, sovereign container runtime written in Rust.**
-
-Containust combines Linux isolation primitives with Infrastructure-as-Code composition in a single secure binary. No root daemon. No background processes. Full sovereignty over your infrastructure.
+<p align="center">
+  <a href="https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml"><img src="https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/RemiPelloux/Containust/actions/workflows/security.yml"><img src="https://github.com/RemiPelloux/Containust/actions/workflows/security.yml/badge.svg" alt="Security"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg" alt="License"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-Edition%202024-orange.svg?logo=rust" alt="Rust"></a>
+  <img src="https://img.shields.io/badge/platform-Linux-lightgrey.svg" alt="Platform">
+  <img src="https://img.shields.io/badge/daemon-zero-brightgreen.svg" alt="Zero Daemon">
+</p>
 
 ---
 
-## Vision
+## What is Containust?
 
-Containust is not a Docker clone. It is an evolution that prioritizes:
+Containust is **not a Docker clone** — it is an evolution of container technology. It combines the power of Linux isolation (namespaces, cgroups v2, OverlayFS) with Infrastructure-as-Code composition (Terraform-style) in a **single secure binary with no daemon**.
 
-- **Zero Daemon** — No permanent root process. Containers are managed through a state file and direct system calls.
-- **Native Composition** — Dependency graphs between containers are first-class citizens via the `.ctst` language.
-- **Sovereignty** — Local-first design with native `file://` and `tar://` source protocols. Air-gapped environments are fully supported.
-- **Security by Default** — Read-only rootfs, capability dropping, and strict offline mode out of the box.
+Built entirely in Rust for **memory safety, performance, and reliability**, Containust targets sovereign infrastructures, air-gapped environments, and security-critical deployments where a permanent root daemon is unacceptable.
+
+### Why Containust?
+
+| Problem | Containust's Answer |
+|---|---|
+| Docker requires a root daemon | **Zero daemon** — direct syscalls, state file |
+| Compose files are imperative | **Declarative `.ctst` language** with dependency graphs |
+| Online-only image pulling | **Local-first** — `file://`, `tar://` protocols, air-gap native |
+| Opaque container behavior | **eBPF tracing** — real-time syscall/file/network monitoring |
+| Monolithic tooling | **9 modular crates** — use as CLI or embed as Rust SDK |
+
+---
+
+## Key Features
+
+- **Zero Daemon Architecture** — No persistent root process. Containers managed via state file and direct Linux syscalls.
+- **Native Composition Language** — `.ctst` declarative format with `IMPORT`, `COMPONENT`, `CONNECT`, and automatic environment wiring.
+- **Sovereign & Air-Gap Ready** — Priority to local sources (`file://`, `tar://`). `--offline` flag blocks all network egress.
+- **Security by Default** — Read-only rootfs, Linux capability dropping, SHA-256 content verification.
+- **eBPF Observability** — Real-time syscall tracing, file access monitoring, network socket tracking inside containers.
+- **Interactive TUI Dashboard** — Terminal-based monitoring with live CPU, memory, I/O metrics via ratatui.
+- **Rust SDK** — Embed container management in your Rust applications with `ContainerBuilder`, `GraphResolver`, `EventListener`.
+- **Distroless Auto-Build** — Automatic binary dependency analysis (internal ldd) for minimal container images.
 
 ---
 
 ## Architecture
 
-The project is organized as a Cargo workspace with 9 specialized crates arranged in a strict dependency DAG:
+The project is organized as a **Cargo workspace with 9 specialized crates** arranged in a strict layered dependency DAG:
 
 ```
 CLI Layer        containust-cli (ctst binary), containust-tui
@@ -35,7 +68,7 @@ Core Layer       containust-core (namespaces, cgroups, filesystem)
 Common Layer     containust-common (types, errors, constants)
 ```
 
-| Crate | Purpose |
+| Crate | Responsibility |
 |---|---|
 | `containust-common` | Shared types, error definitions, configuration, constants |
 | `containust-core` | Linux namespace, cgroup v2, OverlayFS, and capability primitives |
@@ -43,11 +76,11 @@ Common Layer     containust-common (types, errors, constants)
 | `containust-runtime` | Container lifecycle, process spawning, state machine, metrics |
 | `containust-compose` | `.ctst` parser (nom), dependency graph (petgraph), auto-wiring |
 | `containust-ebpf` | eBPF-based syscall/file/network monitoring (aya) |
-| `containust-sdk` | Public SDK: ContainerBuilder, GraphResolver, EventListener |
+| `containust-sdk` | Public SDK: `ContainerBuilder`, `GraphResolver`, `EventListener` |
 | `containust-tui` | Interactive terminal dashboard (ratatui) |
 | `containust-cli` | `ctst` binary with all subcommands (clap) |
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full crate dependency graph and design decisions.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full dependency graph and design decisions.
 
 ---
 
@@ -56,20 +89,19 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full crate dependency graph and d
 ### Prerequisites
 
 - **Rust 1.85+** (Edition 2024)
-- **Linux kernel 5.10+** (for cgroups v2, user namespaces, OverlayFS)
-- **Optional**: eBPF support for observability features
+- **Linux kernel 5.10+** (cgroups v2, user namespaces, OverlayFS)
+- **Optional**: eBPF support (kernel 5.15+) for observability features
 
-### Build
+### Build from Source
 
 ```bash
-# Clone the repository
-git clone https://github.com/containust/containust.git
-cd containust
+git clone https://github.com/RemiPelloux/Containust.git
+cd Containust
 
 # Build the entire workspace
 cargo build --workspace
 
-# Build release binary
+# Build optimized release binary
 cargo build --release -p containust-cli
 
 # The binary is at target/release/ctst
@@ -92,6 +124,8 @@ ctst --help
 
 ## CLI Reference
 
+The `ctst` command is the single entry point for all container operations:
+
 | Command | Description |
 |---|---|
 | `ctst build` | Parse a `.ctst` file and generate images/layers |
@@ -109,15 +143,15 @@ ctst --help
 | `--offline` | Block all outbound network access (build and run) |
 | `--state-file <path>` | Custom path to the state index file |
 
-See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for detailed usage examples.
+See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for detailed usage and examples.
 
 ---
 
-## The .ctst Composition Language
+## The `.ctst` Composition Language
 
-Containust uses a declarative, LLM-friendly composition language:
+Containust uses a **declarative, LLM-friendly composition language** designed for Infrastructure-as-Code:
 
-```ctst
+```
 IMPORT "base/postgres.ctst" AS db_template
 
 COMPONENT api {
@@ -138,7 +172,7 @@ COMPONENT db FROM db_template {
 CONNECT api -> db
 ```
 
-Key features:
+**Language features:**
 - **IMPORT** — Compose from other `.ctst` files or remote sources.
 - **COMPONENT** — Define reusable, parameterized building blocks.
 - **CONNECT** — Declare dependencies with automatic environment variable injection.
@@ -148,9 +182,9 @@ See [docs/CTST_LANG.md](docs/CTST_LANG.md) for the full language specification.
 
 ---
 
-## SDK Usage
+## Rust SDK
 
-Use Containust as a Rust library:
+Use Containust as an embeddable Rust library:
 
 ```rust
 use containust_sdk::builder::ContainerBuilder;
@@ -175,14 +209,16 @@ See [docs/SDK_GUIDE.md](docs/SDK_GUIDE.md) for the full SDK documentation.
 
 ## Security Model
 
-| Feature | Default |
-|---|---|
-| Root filesystem | Read-only |
-| Linux capabilities | All dropped, allowlist only |
-| Network (offline mode) | All egress blocked |
-| Image sources | Local-first (`file://`, `tar://`) |
-| Content verification | SHA-256 mandatory |
-| State file | No credentials stored |
+Security is not an afterthought — it is the foundation:
+
+| Feature | Default | Description |
+|---|---|---|
+| Root filesystem | **Read-only** | Only declared volumes are writable |
+| Linux capabilities | **All dropped** | Allowlist-only model |
+| Network (offline) | **All egress blocked** | `--offline` flag for air-gapped builds and runs |
+| Image sources | **Local-first** | `file://`, `tar://` protocols with SHA-256 verification |
+| State file | **No secrets** | Credentials never stored in state index |
+| Unsafe code | **Audited** | Every `unsafe` block requires `// SAFETY:` justification |
 
 ---
 
@@ -194,7 +230,7 @@ See [docs/SDK_GUIDE.md](docs/SDK_GUIDE.md) for the full SDK documentation.
 ctst ps --tui
 ```
 
-Interactive terminal dashboard powered by ratatui showing:
+Interactive terminal dashboard powered by **ratatui** showing:
 - Container status and uptime
 - Real-time CPU, memory, and I/O metrics
 - eBPF trace logs (syscalls, file access, network events)
@@ -208,22 +244,39 @@ When built with the `ebpf` feature and running on a supported kernel:
 
 ---
 
+## Tech Stack
+
+| Component | Technology |
+|---|---|
+| Language | Rust (Edition 2024) |
+| CLI | clap 4.5 |
+| TUI | ratatui 0.30 |
+| Parsing | nom 8 |
+| Dependency Graph | petgraph 0.7 |
+| Linux Syscalls | nix 0.29, libc |
+| eBPF | aya 0.13 |
+| Serialization | serde, serde_json |
+| Hashing | sha2 (SHA-256) |
+| Logging | tracing |
+
+---
+
 ## Development
 
 ```bash
 # Run all tests
 cargo test --workspace
 
-# Check lints
+# Check lints (zero warnings policy)
 cargo clippy --workspace -- -D warnings
 
 # Format code
-cargo fmt --workspace
+cargo fmt --all
 
 # Audit dependencies
 cargo deny check
 
-# Check the full workspace compiles
+# Verify workspace compiles
 cargo check --workspace
 ```
 
@@ -232,22 +285,33 @@ cargo check --workspace
 ## Project Structure
 
 ```
-containust/
+Containust/
 ├── Cargo.toml              # Workspace manifest
 ├── crates/                 # All library and binary crates
 │   ├── containust-common/  # Shared types, errors, constants
-│   ├── containust-core/    # Linux primitives
+│   ├── containust-core/    # Linux isolation primitives
 │   ├── containust-image/   # Image/layer management
 │   ├── containust-runtime/ # Container lifecycle
-│   ├── containust-compose/ # .ctst parser + graph
+│   ├── containust-compose/ # .ctst parser + dependency graph
 │   ├── containust-ebpf/    # eBPF observability
-│   ├── containust-sdk/     # Public SDK
+│   ├── containust-sdk/     # Public Rust SDK
 │   ├── containust-tui/     # Terminal dashboard
 │   └── containust-cli/     # ctst binary
-├── docs/                   # Documentation
+├── docs/                   # Specification, language ref, SDK guide
 ├── tests/integration/      # Integration tests
 └── examples/               # Example .ctst files and SDK usage
 ```
+
+---
+
+## Contributing
+
+Contributions are welcome. Please read the [ARCHITECTURE.md](ARCHITECTURE.md) and the [Cursor rules](.cursor/rules/) before submitting code.
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feat/my-feature`)
+3. Ensure `cargo test --workspace`, `cargo clippy --workspace -- -D warnings`, and `cargo fmt --all --check` pass
+4. Submit a pull request
 
 ---
 
@@ -255,7 +319,13 @@ containust/
 
 Licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-- MIT License ([LICENSE-MIT](LICENSE-MIT))
+- [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0)
+- [MIT License](http://opensource.org/licenses/MIT)
 
 at your option.
+
+---
+
+<p align="center">
+  Built with Rust. Designed for sovereignty.
+</p>
