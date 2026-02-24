@@ -619,8 +619,8 @@ Invalid transitions (these never occur):
 
 | Field            | Type              | Default                               | Description                              |
 |------------------|-------------------|---------------------------------------|------------------------------------------|
-| `data_dir`       | `PathBuf`         | `/var/lib/containust`                 | Base directory for state and data        |
-| `state_file`     | `PathBuf`         | `/var/lib/containust/state.json`      | Path to the state index file             |
+| `data_dir`       | `PathBuf`         | `.containust/` (project-local)        | Base directory for state and data        |
+| `state_file`     | `PathBuf`         | `.containust/state.json`              | Path to the state index file             |
 | `offline`        | `bool`            | `false`                               | Block all outbound network access        |
 | `default_limits` | `ResourceLimits`  | All `None`                            | Default resource limits for containers   |
 
@@ -630,7 +630,8 @@ Invalid transitions (these never occur):
 use containust_common::config::ContainustConfig;
 
 let config = ContainustConfig::default();
-assert_eq!(config.data_dir.to_str().unwrap(), "/var/lib/containust");
+// Project-local storage: .containust/ next to the .ctst file
+// Global cache: ~/.containust/cache/ for immutable VM assets
 assert!(!config.offline);
 ```
 

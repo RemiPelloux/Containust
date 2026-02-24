@@ -16,9 +16,10 @@
 *.pem
 *.key
 
-# Containust state
+# Containust state (project-local)
+.containust/
+# Legacy global state
 /var/lib/containust/
-state.json
 
 # OS
 .DS_Store

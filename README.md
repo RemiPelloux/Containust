@@ -55,9 +55,20 @@ Built entirely in Rust for **memory safety, performance, and reliability**, Cont
 Containust uses a **native-first, VM-fallback** architecture:
 
 - **On Linux**: Direct kernel integration using namespaces (`clone(2)`, `unshare(2)`), cgroups v2, `OverlayFS`, and `pivot_root`. Zero overhead, zero daemon.
-- **On macOS/Windows**: A lightweight Alpine Linux VM (~50MB) boots via QEMU with hardware acceleration (HVF on macOS, Hyper-V/WHPX on Windows). Container operations are forwarded to the Linux native backend inside the VM via JSON-RPC over TCP. Sub-2s boot time.
+- **On macOS/Windows**: A lightweight Alpine Linux VM (~15MB kernel+initramfs) boots via QEMU with hardware acceleration (HVF on macOS, Hyper-V/WHPX on Windows). A custom initramfs includes a BusyBox-based agent that accepts JSON-RPC commands over TCP for container lifecycle management. Sub-2s boot time.
 
 This is the same architecture used by Docker Desktop, Podman Desktop, and Colima — but Containust is a **single binary with no daemon**.
+
+### Project-Local Storage
+
+Containust uses a **two-tier storage model** for full project isolation:
+
+| Tier | Location | Contents |
+|------|----------|----------|
+| **Global cache** | `~/.containust/cache/` | Immutable VM assets (kernel, initramfs) — downloaded once, shared across all projects |
+| **Project state** | `.containust/` (next to your `.ctst` file) | Per-project container state, logs, and image data |
+
+Each project is self-contained. Moving or deleting a project removes all its container state. No global state pollution.
 
 ---
 
@@ -166,6 +177,19 @@ ctst --version
 ctst --help
 ```
 
+### Run the Demo
+
+```bash
+# Run the Hello World example (auto-downloads VM assets on first run)
+ctst run examples/node-hello.ctst
+
+# In another terminal:
+curl localhost:6500
+# => Hello World from Containust!
+```
+
+The first run downloads ~15MB of Alpine Linux VM assets to `~/.containust/cache/`. Subsequent runs boot in under 2 seconds.
+
 ---
 
 ## CLI Reference
@@ -217,6 +241,7 @@ The `examples/` directory contains ready-to-use `.ctst` composition files and Ru
 
 | Example | What it demonstrates |
 |---|---|
+| [`node-hello.ctst`](examples/node-hello.ctst) | **Working demo** — Hello World HTTP server on port 6500 |
 | [`hello_world.ctst`](examples/hello_world.ctst) | Minimal single container |
 | [`nginx_static.ctst`](examples/nginx_static.ctst) | Web server with volume mount and port exposure |
 | [`full_stack.ctst`](examples/full_stack.ctst) | API + PostgreSQL + Redis + worker with `CONNECT` auto-wiring |
@@ -234,6 +259,20 @@ The `examples/` directory contains ready-to-use `.ctst` composition files and Ru
 ## The `.ctst` Composition Language
 
 Containust uses a **declarative, LLM-friendly composition language** designed for Infrastructure-as-Code:
+
+**Simple container (working demo):**
+
+```
+// node-hello.ctst — try it: ctst run examples/node-hello.ctst
+COMPONENT hello {
+    image = "alpine:3.21"
+    port = 6500
+    command = ["sh", "-c", "while true; do echo 'Hello World from Containust!' | nc -l -p 6500; done"]
+    memory = "128MiB"
+}
+```
+
+**Multi-service composition with auto-wiring:**
 
 ```
 IMPORT "base/postgres.ctst" AS db_template
@@ -378,9 +417,11 @@ Containust/
 │   ├── containust-runtime/     # Container lifecycle
 │   │   └── src/
 │   │       ├── backend/        # Platform-agnostic backends
-│   │       │   ├── mod.rs      # ContainerBackend trait
+│   │       │   ├── mod.rs      # ContainerBackend trait + platform detection
 │   │       │   ├── linux.rs    # LinuxNativeBackend (direct syscalls)
-│   │       │   └── vm.rs       # VMBackend (QEMU + JSON-RPC)
+│   │       │   └── vm/         # VMBackend (QEMU + JSON-RPC)
+│   │       │       ├── mod.rs      # VM lifecycle + RPC client
+│   │       │       └── initramfs.rs # Custom initramfs builder + agent
 │   │       ├── engine.rs       # Runtime engine (orchestrates deployments)
 │   │       └── logs.rs         # Container log management
 │   ├── containust-compose/     # .ctst parser + dependency graph
@@ -402,6 +443,7 @@ Containust/
 │   └── SPEC.md                 # Technical specification
 ├── examples/                   # Example files
 │   ├── templates/              # Reusable .ctst templates
+│   ├── node-hello.ctst         # Working Hello World HTTP server demo
 │   ├── *.ctst                  # Composition examples
 │   └── *.rs                    # Rust SDK examples
 ├── tests/integration/          # Integration tests

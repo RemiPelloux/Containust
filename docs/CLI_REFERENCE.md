@@ -38,7 +38,7 @@ These flags apply to every subcommand.
 | Flag | Description | Default | Env Override |
 |---|---|---|---|
 | `--offline` | Block all outbound network access during build and run | `false` | `CONTAINUST_OFFLINE=1` |
-| `--state-file <PATH>` | Path to the state index file | `/var/lib/containust/state.json` | `CONTAINUST_STATE_FILE` |
+| `--state-file <PATH>` | Path to the state index file | `.containust/state.json` (project-local) | `CONTAINUST_STATE_FILE` |
 | `--help` | Print help information and exit | — | — |
 | `--version` | Print version information and exit | — | — |
 
@@ -102,7 +102,7 @@ $ ctst build webapp.ctst
 
 ### Layer Caching
 
-Layers are stored under `/var/lib/containust/images/` keyed by their SHA-256 content hash. A layer is rebuilt only when its source content changes. Use `--offline` to restrict builds to locally cached layers only.
+Layers are stored under `.containust/images/` (project-local) keyed by their SHA-256 content hash. A layer is rebuilt only when its source content changes. Use `--offline` to restrict builds to locally cached layers only.
 
 ### Exit Codes
 
@@ -261,7 +261,7 @@ Containust Deploy — production.ctst
   ✓ api          started  pid=48230  port=8080  mem_limit=256MB
 
 All 3 containers running (detached).
-State saved to /var/lib/containust/state.json
+State saved to .containust/state.json
 ```
 
 ### Exit Codes
@@ -604,7 +604,7 @@ Inherits all [global options](#global-options).
 
 ### Description
 
-`ctst images` provides operations on the local image store located at `/var/lib/containust/images/`. Images are composed of content-addressable OverlayFS layers identified by their SHA-256 hash.
+`ctst images` provides operations on the local image store located at `.containust/images/` (project-local). Images are composed of content-addressable OverlayFS layers identified by their SHA-256 hash.
 
 ### Output Format (--list)
 
@@ -623,7 +623,7 @@ Image IDs follow the `sha256:<hex>` convention. The full ID is 64 hex characters
 
 ### Storage Location
 
-Images and their layers are stored under `/var/lib/containust/images/`. Each image directory contains its layer tarballs and a manifest file linking layers to their content hashes.
+Images and their layers are stored under `.containust/images/` (project-local). Each image directory contains its layer tarballs and a manifest file linking layers to their content hashes.
 
 ### Exit Codes
 
@@ -657,7 +657,7 @@ Containust manages container lifecycle through a local JSON state file instead o
 
 ### Location
 
-Default: `/var/lib/containust/state.json`
+Default: `.containust/state.json` (project-local, next to the `.ctst` file)
 Override: `--state-file <PATH>` or `CONTAINUST_STATE_FILE` environment variable.
 
 ### Format
@@ -753,12 +753,12 @@ Summary of all exit codes used across `ctst` commands.
 
 | Variable | Description | Default |
 |---|---|---|
-| `CONTAINUST_STATE_FILE` | Path to the state index file | `/var/lib/containust/state.json` |
+| `CONTAINUST_STATE_FILE` | Path to the state index file | `.containust/state.json` (project-local) |
 | `CONTAINUST_LOG` | Tracing filter directive (e.g., `info`, `debug`, `containust_runtime=trace`) | `warn` |
 | `CONTAINUST_OFFLINE` | Set to `1` to enable offline mode (equivalent to `--offline`) | unset |
-| `CONTAINUST_DATA_DIR` | Base directory for all Containust data | `/var/lib/containust` |
-| `CONTAINUST_IMAGE_STORE` | Directory for cached images and layers | `/var/lib/containust/images` |
-| `CONTAINUST_ROOTFS_DIR` | Directory for container rootfs mounts | `/var/lib/containust/rootfs` |
+| `CONTAINUST_CACHE_DIR` | Global cache directory for immutable VM assets | `~/.containust/cache` |
+| `CONTAINUST_IMAGE_STORE` | Directory for cached images and layers | `.containust/images` (project-local) |
+| `CONTAINUST_ROOTFS_DIR` | Directory for container rootfs mounts | `.containust/rootfs` (project-local) |
 
 CLI flags take precedence over environment variables.
 
@@ -803,7 +803,7 @@ mount | grep cgroup2
 ps aux | grep ctst
 
 # If no processes are running, remove the stale lock
-rm /var/lib/containust/state.json.lock
+rm .containust/state.json.lock
 ```
 
 ### "image not found"

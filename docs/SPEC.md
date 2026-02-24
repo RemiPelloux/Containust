@@ -47,7 +47,14 @@ Automatic "distroless" builds by analyzing binary dependencies (internal ldd) to
 
 ## 4. State Management & CLI (The Toolbox)
 
-Containust maintains a local state index (e.g., `/var/lib/containust/state.json`) to manage lifecycles without a daemon.
+Containust maintains a project-local state directory (`.containust/` next to the `.ctst` file) to manage lifecycles without a daemon. Global immutable assets (VM kernel, initramfs) are cached in `~/.containust/cache/`.
+
+### 4.0 Storage Model
+
+| Tier | Location | Contents |
+|------|----------|----------|
+| **Global cache** | `~/.containust/cache/` | Immutable VM assets (kernel, initramfs) |
+| **Project state** | `.containust/` (sibling of `.ctst` file) | Container state, logs, images |
 
 ### 4.1 CLI Commands
 
@@ -99,12 +106,13 @@ Containust uses a `ContainerBackend` trait to abstract platform-specific contain
 
 ### 7.2 VM Backend Specification
 
-- **Guest OS**: Alpine Linux (minimal, ~50MB image)
-- **VM Agent**: A lightweight JSON-RPC server running inside the VM that delegates to the `LinuxNativeBackend`
+- **Guest OS**: Alpine Linux (minimal, ~15MB kernel+initramfs)
+- **VM Agent**: A BusyBox shell-based JSON-RPC server running inside the VM using `nc` and `chroot`
 - **Communication**: JSON-RPC 2.0 over TCP socket
 - **Lifecycle**: Auto-start on first container operation, explicit `ctst vm start/stop` for manual control
 - **Resource Isolation**: VM runs with constrained resources; individual containers inside the VM have their own cgroup limits
-- **State Persistence**: Container state files are stored on a shared directory between host and VM
+- **State Persistence**: Container state is ephemeral within the VM; project-level state is stored in `.containust/` next to the `.ctst` file on the host
+- **Asset Caching**: VM kernel and initramfs cached in `~/.containust/cache/vm/`, downloaded once and reused across projects
 
 ### 7.3 `ContainerBackend` Trait
 

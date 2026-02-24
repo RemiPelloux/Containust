@@ -83,9 +83,18 @@ Two implementations exist:
 | Implementation | Module | Platform | Mechanism |
 |---|---|---|---|
 | `LinuxNativeBackend` | `backend/linux.rs` | Linux | Direct syscalls: `clone(2)`, `unshare(2)`, cgroups v2, OverlayFS |
-| `VMBackend` | `backend/vm.rs` | macOS, Windows | QEMU VM with JSON-RPC over TCP to a Linux guest agent |
+| `VMBackend` | `backend/vm/mod.rs` | macOS, Windows | QEMU VM with JSON-RPC over TCP to a BusyBox-based guest agent |
 
 Backend selection is automatic via `detect_backend()`, which uses compile-time `#[cfg(target_os)]` on Linux and runtime QEMU detection on other platforms.
+
+##### VM Module Structure
+
+The VM backend is split across two files for maintainability:
+
+- `backend/vm/mod.rs` — QEMU process management, JSON-RPC client with retry logic, port forwarding, VM lifecycle.
+- `backend/vm/initramfs.rs` — Custom initramfs builder that injects an init script and a BusyBox-based TCP agent into the Alpine Linux initramfs using CPIO newc format manipulation.
+
+The agent inside the VM is a pure shell script (no cross-compiled Rust binary needed) using BusyBox `nc`, `chroot`, and standard POSIX utilities to manage container lifecycles.
 
 #### `containust-compose`
 `.ctst` language processing:
@@ -142,6 +151,22 @@ Dependencies flow strictly downward through the layers. The complete allowed-dep
 
 **Violations of this table are build-breaking errors.**
 
+## Storage Architecture
+
+Containust uses a **two-tier storage model** that separates shared immutable assets from per-project mutable state:
+
+| Tier | Location | Contents | Lifecycle |
+|------|----------|----------|-----------|
+| **Global cache** | `~/.containust/cache/` | Alpine kernel, base initramfs, custom initramfs | Downloaded once, shared across all projects |
+| **Project state** | `.containust/` (sibling of `.ctst` file) | Container state, logs, image layers | Created per-project, removed with the project |
+
+This design ensures:
+- **Project isolation**: Each project's container state is self-contained. No cross-project interference.
+- **Portability**: Moving a project directory preserves or cleanly detaches its state.
+- **Clean global state**: Only immutable, content-addressed assets live in `~/.containust/`.
+
+The `global_cache_dir()` and `project_dir()` functions in `containust-common/src/constants.rs` centralize path resolution.
+
 ## Design Decisions
 
 ### Why no daemon?
@@ -184,10 +209,12 @@ graph TB
 
 The VM backend follows this lifecycle on macOS and Windows:
 
-1. **Boot** — `ctst vm start` (or auto-start on first container operation) launches QEMU with hardware acceleration. The Alpine Linux VM image (~50MB) boots in under 2 seconds.
-2. **Connection** — The CLI establishes a JSON-RPC connection over TCP to the VM agent running inside the guest.
-3. **Container Operations** — All `ContainerBackend` trait calls (`create`, `start`, `stop`, `exec`, `logs`, `list`) are serialized as JSON-RPC requests and forwarded to the VM agent, which delegates to the `LinuxNativeBackend` inside the VM.
-4. **Shutdown** — `ctst vm stop` gracefully shuts down the VM. The VM is also stopped automatically when no containers are running and the CLI exits.
+1. **Asset Provisioning** — On first run, the kernel (`vmlinuz-virt`) and initramfs (`initramfs-virt`) are downloaded from Alpine Linux CDN to `~/.containust/cache/vm/`. A custom initramfs (`initramfs-containust.img`) is built by injecting the init script and agent into the base image using CPIO newc format.
+2. **Boot** — `ctst run` (or `ctst vm start`) launches QEMU with hardware acceleration (HVF on macOS, WHPX on Windows). The custom initramfs boots Alpine, creates essential directories, sets up networking, and starts the TCP agent on port 10809. Boot time is under 2 seconds.
+3. **Connection** — The host CLI connects to the agent via `localhost:10809` (forwarded by QEMU). Retries with exponential backoff handle timing variability.
+4. **Container Operations** — JSON-RPC requests (`create`, `start`, `stop`, `exec`, `logs`, `list`, `remove`) are sent over TCP. The agent uses `chroot` with BusyBox to isolate containers.
+5. **Port Forwarding** — Container ports declared in `.ctst` files are forwarded by QEMU (`hostfwd`) from host to guest.
+6. **Shutdown** — Ctrl+C or `ctst stop` sends `system_poweroff` via QEMU monitor, then kills the QEMU process. Container state is ephemeral within the VM.
 
 ## Module Dependency Graph (Mermaid)
 
