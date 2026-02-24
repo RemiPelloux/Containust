@@ -10,6 +10,7 @@
 )]
 
 mod commands;
+mod converter;
 mod output;
 
 use clap::Parser;

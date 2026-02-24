@@ -16,7 +16,7 @@ members = [
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/containust/containust"
-rust-version = "1.85.0"
+rust-version = "1.86.0"
 
 [workspace.dependencies]
 # Internal crates
@@ -33,18 +33,18 @@ containust-cli = { path = "crates/containust-cli" }
 # CLI & TUI
 clap = { version = "4.5", features = ["derive", "env", "unicode"] }
 ratatui = "0.30"
-crossterm = "0.28"
+crossterm = "0.29"
 
 # Parsing & Graph
 nom = "8"
-petgraph = "0.7"
+petgraph = "0.8"
 
 # Linux system
-nix = { version = "0.29", features = ["mount", "sched", "signal", "user", "process", "fs"] }
+nix = { version = "0.31", features = ["mount", "sched", "signal", "user", "process", "fs"] }
 libc = "0.2"
 
 # eBPF
-aya = "0.13"
+aya = "0.13.1"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -63,6 +63,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Crypto
 sha2 = "0.10"
+
+# YAML parsing (for docker-compose converter)
+serde_yaml = "0.9"
 
 # Utilities
 uuid = { version = "1", features = ["v4", "serde"] }

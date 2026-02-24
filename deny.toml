@@ -1,7 +1,9 @@
 [advisories]
 vulnerability = "deny"
-unmaintained = "warn"
+unmaintained = "workspace"
+unsound = "all"
 yanked = "deny"
+ignore = []
 
 [licenses]
 unlicensed = "deny"
@@ -14,6 +16,9 @@ allow = [
     "Unicode-3.0",
     "Unicode-DFS-2016",
     "Zlib",
+    "BSL-1.0",
+    "CC0-1.0",
+    "OpenSSL",
 ]
 copyleft = "deny"
 

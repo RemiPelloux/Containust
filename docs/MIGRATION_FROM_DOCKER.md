@@ -253,7 +253,17 @@ Containust is a **single-node runtime**. It does not provide orchestration acros
 
 ### Can I convert `docker-compose.yml` automatically?
 
-Not yet. Conversion is manual. A `ctst convert` command is on the roadmap, but the semantic differences (local-first images, secret interpolation, connection auto-wiring) mean a fully automatic 1:1 translation is not always possible. This guide covers every mapping you need.
+Yes. Run `ctst convert` to convert a Docker Compose file to `.ctst` format:
+
+```bash
+# Convert and print to stdout
+ctst convert docker-compose.yml
+
+# Convert and save to a file
+ctst convert docker-compose.yml -o infrastructure.ctst
+```
+
+The converter handles services, ports, volumes, environment variables, depends_on, restart policies, healthchecks, resource limits, and more. Docker Hub image references are converted to `tar://` placeholders with instructions to export them using `docker save`. Review the output and adjust image URIs, remove duplicate env vars (CONNECT auto-injects connection variables), and add any missing health checks. See [CLI_REFERENCE.md](CLI_REFERENCE.md#11-ctst-convert) for full details.
 
 ---
 

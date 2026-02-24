@@ -1,6 +1,7 @@
 //! CLI command definitions and dispatch.
 
 pub mod build;
+pub mod convert;
 pub mod exec;
 pub mod images;
 pub mod plan;
@@ -44,6 +45,8 @@ pub enum Command {
     Stop(stop::StopArgs),
     /// Manage the local image catalog.
     Images(images::ImagesArgs),
+    /// Convert a docker-compose.yml to .ctst format.
+    Convert(convert::ConvertArgs),
 }
 
 /// Dispatches the parsed CLI command to its handler.
@@ -60,5 +63,6 @@ pub fn execute(cli: Cli) -> anyhow::Result<()> {
         Command::Exec(args) => exec::execute(args),
         Command::Stop(args) => stop::execute(args),
         Command::Images(args) => images::execute(args),
+        Command::Convert(args) => convert::execute(args),
     }
 }

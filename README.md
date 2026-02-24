@@ -135,6 +135,7 @@ The `ctst` command is the single entry point for all container operations:
 | `ctst exec` | Execute a command inside a running container |
 | `ctst stop` | Stop containers and clean up resources |
 | `ctst images` | Manage the local image catalog |
+| `ctst convert` | Convert a `docker-compose.yml` to `.ctst` format |
 
 ### Global Flags
 

@@ -59,6 +59,7 @@ Containust maintains a local state index (e.g., `/var/lib/containust/state.json`
 | `ctst exec` | Enter a running container (namespace joining) |
 | `ctst stop` | Graceful stop and resource cleanup |
 | `ctst images` | Manage the local RootFS catalog |
+| `ctst convert` | Convert docker-compose.yml to .ctst format |
 
 ### 4.2 Observability
 
