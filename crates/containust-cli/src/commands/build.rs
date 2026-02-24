@@ -12,11 +12,35 @@ pub struct BuildArgs {
 
 /// Executes the `build` command.
 ///
+/// Parses the `.ctst` file, validates the AST, and resolves image
+/// sources for each declared component.
+///
 /// # Errors
 ///
-/// Returns an error if parsing or image building fails.
+/// Returns an error if parsing, validation, or image resolution fails.
 pub fn execute(args: BuildArgs) -> anyhow::Result<()> {
     tracing::info!(file = %args.file, "building from .ctst file");
-    println!("Building from: {}", args.file);
+
+    let content = std::fs::read_to_string(&args.file)?;
+    let composition =
+        containust_compose::parser::parse_ctst(&content).map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    println!(
+        "Parsed {} components, {} connections",
+        composition.components.len(),
+        composition.connections.len()
+    );
+
+    for comp in &composition.components {
+        if let Some(ref image) = comp.image {
+            println!("  {} -> {}", comp.name, image);
+            match containust_image::source::resolve_source(image) {
+                Ok(source) => println!("    Source: {source:?}"),
+                Err(e) => println!("    Warning: {e}"),
+            }
+        }
+    }
+
+    println!("Build complete.");
     Ok(())
 }

@@ -11,14 +11,20 @@ rust-version.workspace = true
 containust-common = { workspace = true }
 containust-core = { workspace = true }
 containust-ebpf = { workspace = true }
+containust-image = { workspace = true }
+containust-compose = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
+nix = { workspace = true }
+libc = { workspace = true }
+which = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+tar = { workspace = true }
 
 [lints]
 workspace = true

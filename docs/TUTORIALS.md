@@ -34,7 +34,46 @@
 
 - Containust installed (`ctst --version` prints a version string)
 - An Alpine root filesystem available at `/opt/images/alpine` (or any `file://` path)
-- Linux kernel 5.10+ with user namespaces enabled
+
+### Installation
+
+**Linux:**
+```bash
+# No additional dependencies required.
+# Requires Linux kernel 5.10+ with user namespaces enabled.
+curl -sSL https://github.com/containust/containust/releases/latest/download/ctst-x86_64-unknown-linux-gnu.tar.gz | tar xz
+sudo mv ctst /usr/local/bin/
+```
+
+**macOS:**
+```bash
+# Install QEMU for the VM backend (required on macOS).
+brew install qemu
+
+# Download and install the ctst binary.
+curl -sSL https://github.com/containust/containust/releases/latest/download/ctst-aarch64-apple-darwin.tar.gz | tar xz
+sudo mv ctst /usr/local/bin/
+
+# The VM backend boots automatically on the first container operation.
+# To pre-boot for faster startup:
+ctst vm start
+```
+
+**Windows:**
+```powershell
+# Install QEMU for the VM backend (required on Windows).
+winget install QEMU.QEMU
+
+# Download ctst from GitHub Releases and add to PATH.
+# The VM backend boots automatically on the first container operation.
+```
+
+**From source (all platforms):**
+```bash
+git clone https://github.com/RemiPelloux/Containust.git
+cd Containust
+cargo install --path crates/containust-cli
+```
 
 ### Steps
 
@@ -123,6 +162,8 @@ No running containers.
 ### Summary
 
 You ran your first container with Containust — a single `echo` command in a fully isolated Linux namespace, with no daemon process involved. The entire lifecycle was handled by a single `ctst run` invocation.
+
+> **Cross-platform note:** On macOS and Windows, the same workflow applies. Containust automatically boots a lightweight QEMU VM on the first operation and forwards all container commands to the Linux native backend inside the VM. The user experience is identical across all platforms.
 
 ---
 
@@ -1208,7 +1249,8 @@ The offline workflow is: pre-cache images as tar archives, transfer to the disco
 ### Prerequisites
 
 - Rust 1.85+ installed
-- Linux kernel 5.10+
+- **Linux**: kernel 5.10+ (native backend)
+- **macOS/Windows**: QEMU installed (VM backend)
 - Basic familiarity with Cargo and Rust projects
 
 ### Steps

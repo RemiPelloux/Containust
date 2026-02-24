@@ -85,7 +85,8 @@ impl ContainerBuilder {
                     message: "image source is required".to_string(),
                 })?;
 
-        let mut container = Container::new(ContainerId::new(self.name), self.command);
+        let name = self.name.clone();
+        let mut container = Container::new(ContainerId::new(self.name), name, self.command);
         container.env = self.env;
 
         if let Some(mem) = self.memory_limit {

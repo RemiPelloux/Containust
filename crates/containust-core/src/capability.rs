@@ -3,7 +3,7 @@
 //! Drops all capabilities by default and only retains those
 //! explicitly requested by the container configuration.
 
-use containust_common::error::Result;
+use containust_common::error::{ContainustError, Result};
 
 /// Linux capability identifiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -20,12 +20,65 @@ pub enum Capability {
     Setgid,
 }
 
+#[cfg(target_os = "linux")]
+impl Capability {
+    /// Returns the Linux capability number for this capability.
+    const fn linux_cap_number(self) -> u32 {
+        match self {
+            Self::Chown => 0,
+            Self::Kill => 5,
+            Self::Setgid => 6,
+            Self::Setuid => 7,
+            Self::NetBindService => 10,
+        }
+    }
+}
+
+/// Maximum capability number to iterate when dropping.
+#[cfg(target_os = "linux")]
+const CAP_LAST_CAP: u32 = 40;
+
 /// Drops all Linux capabilities except those in the allowlist.
+///
+/// Iterates over all capability numbers 0..40 and drops each one
+/// that is not in the `keep` set using `prctl(PR_CAPBSET_DROP)`.
 ///
 /// # Errors
 ///
-/// Returns an error if capability manipulation syscalls fail.
+/// Returns an error if capability manipulation fails on a non-Linux platform.
+#[cfg(target_os = "linux")]
 pub fn drop_capabilities(keep: &[Capability]) -> Result<()> {
-    tracing::info!(retained = keep.len(), "dropping capabilities");
+    let kept_caps: std::collections::HashSet<u32> =
+        keep.iter().map(|c| c.linux_cap_number()).collect();
+
+    for cap in 0..CAP_LAST_CAP {
+        if !kept_caps.contains(&cap) {
+            // SAFETY: prctl with PR_CAPBSET_DROP is a safe operation — it only
+            // removes capabilities from the bounding set. Returns EINVAL for
+            // invalid capability numbers, which we silently ignore.
+            let ret = unsafe { libc::prctl(libc::PR_CAPBSET_DROP, cap, 0, 0, 0) };
+            if ret == -1 {
+                let errno = std::io::Error::last_os_error();
+                if errno.raw_os_error() != Some(libc::EINVAL) {
+                    return Err(ContainustError::PermissionDenied {
+                        message: format!("failed to drop capability {cap}: {errno}"),
+                    });
+                }
+            }
+        }
+    }
+    tracing::info!(retained = keep.len(), "capabilities dropped");
     Ok(())
+}
+
+/// Stub for non-Linux platforms.
+///
+/// # Errors
+///
+/// Always returns an error — capability management requires Linux.
+#[cfg(not(target_os = "linux"))]
+pub fn drop_capabilities(_keep: &[Capability]) -> Result<()> {
+    Err(ContainustError::Config {
+        message: "Linux required for native container operations".into(),
+    })
 }

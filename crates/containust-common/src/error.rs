@@ -64,3 +64,49 @@ pub enum ContainustError {
 
 /// Convenience alias used throughout the workspace.
 pub type Result<T> = std::result::Result<T, ContainustError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_error_display_message() {
+        let err = ContainustError::Config {
+            message: "bad value".into(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("bad value"));
+    }
+
+    #[test]
+    fn not_found_error_display_kind_and_id() {
+        let err = ContainustError::NotFound {
+            kind: "container",
+            id: "abc".into(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("container"));
+        assert!(msg.contains("abc"));
+    }
+
+    #[test]
+    fn hash_mismatch_error_display() {
+        let err = ContainustError::HashMismatch {
+            resource: "image.tar".into(),
+            expected: "aaa".into(),
+            actual: "bbb".into(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("image.tar"));
+        assert!(msg.contains("aaa"));
+        assert!(msg.contains("bbb"));
+    }
+
+    #[test]
+    fn serialization_error_from_serde_json() {
+        let bad_json = "not json";
+        let serde_err = serde_json::from_str::<serde_json::Value>(bad_json).unwrap_err();
+        let err: ContainustError = serde_err.into();
+        assert!(matches!(err, ContainustError::Serialization { .. }));
+    }
+}

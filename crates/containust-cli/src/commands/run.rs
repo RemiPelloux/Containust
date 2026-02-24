@@ -1,6 +1,7 @@
 //! `ctst run` — Deploy the component graph.
 
 use clap::Args;
+use containust_runtime::engine::Engine;
 
 /// Arguments for the `run` command.
 #[derive(Args, Debug)]
@@ -16,11 +17,27 @@ pub struct RunArgs {
 
 /// Executes the `run` command.
 ///
+/// Creates an engine instance, checks backend availability,
+/// and deploys all components from the `.ctst` file.
+///
 /// # Errors
 ///
 /// Returns an error if deployment fails.
 pub fn execute(args: RunArgs) -> anyhow::Result<()> {
-    tracing::info!(file = %args.file, "deploying component graph");
-    println!("Running: {}", args.file);
+    let engine = Engine::new();
+
+    if !engine.is_available() {
+        println!("Warning: Native container backend not available on this platform.");
+        println!("A lightweight Linux VM will be used (requires QEMU).");
+    }
+
+    let path = std::path::Path::new(&args.file);
+    let ids = engine.deploy(path).map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    println!("Deployed {} container(s):", ids.len());
+    for id in &ids {
+        println!("  {id}");
+    }
+
     Ok(())
 }

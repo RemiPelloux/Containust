@@ -1,7 +1,6 @@
 //! # containust-compose
 //!
 //! Parser and resolver for the `.ctst` composition language.
-#![allow(clippy::todo)]
 //!
 //! Handles:
 //! - **Parser**: Lexing, AST construction, and validation of `.ctst` files.
@@ -10,6 +9,8 @@
 //! - **Component**: COMPONENT block definitions and parameterization.
 //! - **Import**: IMPORT resolution from files and network.
 //! - **Distroless**: Binary dependency analysis for minimal images.
+
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
 pub mod component;
 pub mod distroless;

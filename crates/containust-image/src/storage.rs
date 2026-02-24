@@ -44,3 +44,39 @@ impl StorageBackend {
         &self.root
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn storage_open_returns_correct_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let storage = StorageBackend::open(dir.path().to_path_buf()).expect("open");
+        assert_eq!(storage.root(), dir.path());
+    }
+
+    #[test]
+    fn storage_layer_path_includes_hash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let storage = StorageBackend::open(dir.path().to_path_buf()).expect("open");
+        let path = storage.layer_path("abc123");
+        assert!(path.ends_with("layers/abc123"));
+    }
+
+    #[test]
+    fn storage_has_layer_false_when_missing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let storage = StorageBackend::open(dir.path().to_path_buf()).expect("open");
+        assert!(!storage.has_layer("nonexistent"));
+    }
+
+    #[test]
+    fn storage_has_layer_true_when_present() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let storage = StorageBackend::open(dir.path().to_path_buf()).expect("open");
+        let layer_dir = storage.layer_path("exists");
+        std::fs::create_dir_all(&layer_dir).expect("mkdir");
+        assert!(storage.has_layer("exists"));
+    }
+}

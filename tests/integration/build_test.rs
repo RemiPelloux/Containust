@@ -1,16 +1,12 @@
-//! Integration tests for `ctst build`.
-
-#[test]
-fn build_simple_ctst_file_succeeds() {
-    // Will parse examples/simple_container.ctst and verify layer generation
-}
-
-#[test]
-fn build_with_missing_file_returns_error() {
-    // Verify proper error when .ctst file does not exist
-}
-
-#[test]
-fn build_with_invalid_syntax_returns_parse_error() {
-    // Verify parser reports actionable errors on malformed input
-}
+//! Integration tests for image build pipeline.
+//!
+//! These tests are implemented in:
+//! `crates/containust-runtime/tests/e2e_test.rs`
+//!
+//! Covered scenarios:
+//! - `pipeline_parse_hello_world_ctst`: Parses a simple .ctst and verifies all fields
+//! - `pipeline_validator_rejects_missing_image`: Proper error on missing image
+//! - `pipeline_validator_rejects_duplicate_names`: Proper error on duplicate names
+//! - `pipeline_validator_rejects_undefined_connection`: Error on malformed CONNECT
+//! - `pipeline_layer_extraction`: Extract tar layers and verify contents
+//! - `pipeline_sha256_hashing`: SHA-256 content verification

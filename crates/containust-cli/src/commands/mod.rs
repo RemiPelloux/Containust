@@ -4,6 +4,7 @@ pub mod build;
 pub mod convert;
 pub mod exec;
 pub mod images;
+pub mod logs;
 pub mod plan;
 pub mod ps;
 pub mod run;
@@ -47,6 +48,8 @@ pub enum Command {
     Images(images::ImagesArgs),
     /// Convert a docker-compose.yml to .ctst format.
     Convert(convert::ConvertArgs),
+    /// View container logs.
+    Logs(logs::LogsArgs),
 }
 
 /// Dispatches the parsed CLI command to its handler.
@@ -64,5 +67,6 @@ pub fn execute(cli: Cli) -> anyhow::Result<()> {
         Command::Stop(args) => stop::execute(args),
         Command::Images(args) => images::execute(args),
         Command::Convert(args) => convert::execute(args),
+        Command::Logs(args) => logs::execute(args),
     }
 }

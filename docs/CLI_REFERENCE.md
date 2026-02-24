@@ -2,13 +2,13 @@
 
 **Binary**: `ctst`
 **Version**: 0.1.0
-**Platform**: Linux (kernel 5.10+)
+**Platform**: Linux (native), macOS (VM backend), Windows (VM backend)
 
 ```
 ctst [OPTIONS] <COMMAND> [ARGS...]
 ```
 
-Containust is a daemon-less, sovereign container runtime written in Rust. The `ctst` binary is the single entry point for building, deploying, inspecting, and managing containers defined in `.ctst` composition files. It communicates with the kernel directly via syscalls — no background daemon required.
+Containust is a daemon-less, sovereign container runtime written in Rust. The `ctst` binary is the single entry point for building, deploying, inspecting, and managing containers defined in `.ctst` composition files. On Linux, it communicates with the kernel directly via syscalls. On macOS and Windows, it uses a lightweight QEMU VM with a JSON-RPC agent — no background daemon required on any platform.
 
 ---
 
@@ -450,6 +450,68 @@ ctst exec api -- env
 
 # Use a container ID prefix instead of name
 ctst exec a1b2c3 -- cat /etc/hostname
+```
+
+---
+
+## ctst logs
+
+View logs for a container.
+
+### Synopsis
+
+```
+ctst logs [OPTIONS] <CONTAINER>
+```
+
+### Arguments
+
+| Argument | Description | Required |
+|---|---|---|
+| `CONTAINER` | Container ID (or prefix) or component name | Yes |
+
+### Options
+
+| Flag | Description | Default |
+|---|---|---|
+| `-f, --follow` | Follow log output in real time (stream new lines as they are written) | `false` |
+
+Inherits all [global options](#global-options).
+
+### Description
+
+`ctst logs` retrieves and displays the stdout/stderr output captured from a container's main process. Logs are stored as append-only files on disk and persist across container restarts.
+
+When `--follow` is specified, `ctst logs` tails the log file and streams new output to your terminal until interrupted with `Ctrl+C`.
+
+### Output Format
+
+```
+$ ctst logs api
+2026-02-24T10:30:01Z [INFO] Server started on 0.0.0.0:8080
+2026-02-24T10:30:02Z [INFO] Connected to database at db:5432
+2026-02-24T10:31:15Z [INFO] Handled 42 requests
+```
+
+### Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Logs retrieved successfully |
+| `1` | Failed to read logs |
+| `4` | Container not found |
+
+### Examples
+
+```bash
+# View logs for a container by name
+ctst logs api
+
+# Follow logs in real time
+ctst logs --follow api
+
+# View logs by container ID prefix
+ctst logs a1b2c3d4
 ```
 
 ---
@@ -947,6 +1009,58 @@ CONNECT api -> db
 3. **Remove duplicate env vars** — `CONNECT` auto-injects `_HOST`, `_PORT`, `_CONNECTION_STRING`
 4. **Add health checks** if not present in the original compose file
 5. **Test with** `ctst plan app.ctst` before deploying
+
+---
+
+## ctst vm
+
+Manage the platform VM used on macOS and Windows for running Linux containers.
+
+### Synopsis
+
+```
+ctst vm <SUBCOMMAND>
+```
+
+### Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `start` | Boot the lightweight Alpine Linux VM via QEMU |
+| `stop` | Gracefully shut down the VM |
+
+### Description
+
+On **macOS** and **Windows**, Containust requires a lightweight Linux VM to provide kernel-level container primitives (namespaces, cgroups v2, OverlayFS). The VM uses QEMU with hardware acceleration (HVF on macOS, Hyper-V/WHPX on Windows) and boots an Alpine Linux image (~50MB) in under 2 seconds.
+
+The VM is **automatically started** on the first container operation if not already running. Use `ctst vm start` to pre-boot the VM for faster first-container startup.
+
+On **Linux**, this command is a no-op and prints a message indicating the native backend is in use.
+
+### Requirements
+
+| Platform | Requirement |
+|---|---|
+| macOS | QEMU installed via `brew install qemu` |
+| Windows | QEMU installed via `winget install QEMU.QEMU` or the QEMU installer |
+| Linux | No VM required — native backend used |
+
+### Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | VM started/stopped successfully (or native backend on Linux) |
+| `1` | VM failed to start or stop |
+
+### Examples
+
+```bash
+# Pre-boot the VM for faster container operations
+ctst vm start
+
+# Shut down the VM when done
+ctst vm stop
+```
 
 ---
 

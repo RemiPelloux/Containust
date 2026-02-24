@@ -14,9 +14,27 @@ This guide covers everything you need to go from zero to merged pull request. We
 |---|---|---|
 | **Rust** | 1.85+ (Edition 2024, stable channel) | Build and test |
 | **Git** | 2.x | Version control |
-| **Linux** | Kernel 5.10+ | Runtime (namespaces, cgroups v2, OverlayFS) |
-| **macOS** | 13+ *(optional)* | Compilation only (runtime requires Linux) |
+| **Linux** | Kernel 5.10+ | Native runtime (namespaces, cgroups v2, OverlayFS) |
+| **macOS** | 13+ | Development + runtime via VM backend |
+| **Windows** | 10+ | Development + runtime via VM backend |
+| **QEMU** | 7.0+ *(macOS/Windows)* | Required for VM backend on non-Linux platforms |
 | **cargo-deny** | latest | Dependency auditing |
+
+### Platform-Specific Setup
+
+**Linux** — no additional dependencies needed. The native backend uses direct syscalls.
+
+**macOS:**
+```bash
+brew install qemu
+```
+QEMU provides the VM backend for running Linux containers. Hardware acceleration via Apple HVF is used automatically.
+
+**Windows:**
+```powershell
+winget install QEMU.QEMU
+```
+QEMU provides the VM backend. Hyper-V/WHPX acceleration is used when available.
 
 ### Clone and Build
 
@@ -26,6 +44,8 @@ cd Containust
 
 cargo build --workspace
 ```
+
+The workspace compiles on all three platforms. Platform-specific code is gated with `#[cfg(target_os = "...")]`.
 
 ### Run Tests
 
@@ -214,6 +234,34 @@ Dependencies flow **strictly downward**. A crate may only depend on crates in it
    - Integration test in `tests/integration/` using the real backend (Linux only).
 
 6. **Gate behind a feature flag** if the backend introduces heavy dependencies (e.g., eBPF, FUSE).
+
+---
+
+## VM Agent Development
+
+The VM backend (`crates/containust-runtime/src/backend/vm.rs`) communicates with a lightweight JSON-RPC agent running inside a QEMU Alpine Linux VM. When working on the VM backend:
+
+1. **Build the VM agent** — The agent is a minimal Rust binary that exposes the `ContainerBackend` trait methods over JSON-RPC/TCP.
+
+2. **Test locally** — On macOS, ensure QEMU is installed (`brew install qemu`). Run `ctst vm start` to boot the VM, then run container tests against it.
+
+3. **Platform detection** — The `detect_backend()` function in `backend/mod.rs` selects `LinuxNativeBackend` on Linux and `VMBackend` on all other platforms. Use `#[cfg(target_os)]` guards for platform-specific code.
+
+4. **The `ContainerBackend` trait** — All backend implementations must implement every method in the `ContainerBackend` trait (defined in `backend/mod.rs`): `create`, `start`, `stop`, `exec`, `remove`, `logs`, `list`, and `is_available`.
+
+---
+
+## Cross-Platform CI Matrix
+
+The CI pipeline runs on three OS targets to validate cross-platform compatibility:
+
+| OS | Runner | Backend Tested | Notes |
+|---|---|---|---|
+| **Linux** | `ubuntu-latest` | `LinuxNativeBackend` | Full integration tests including namespace/cgroup operations |
+| **macOS** | `macos-latest` | Compilation + unit tests | VM backend integration tests require QEMU in CI |
+| **Windows** | `windows-latest` | Compilation + unit tests | VM backend integration tests require QEMU in CI |
+
+Unit tests run on all three platforms. Integration tests that require Linux kernel primitives are gated with `#[cfg(target_os = "linux")]` or are skipped on non-Linux runners.
 
 ---
 

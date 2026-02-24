@@ -1,7 +1,6 @@
 //! # containust-image
 //!
 //! Container image and layer management for the Containust runtime.
-#![allow(clippy::todo)]
 //!
 //! Handles:
 //! - **Layers**: Diff-based filesystem layers with caching.
@@ -10,6 +9,8 @@
 //! - **Hashing**: SHA-256 content verification.
 //! - **FUSE**: Lazy-loading for fast container startup.
 //! - **Registry**: Local image catalog management.
+
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
 pub mod fuse;
 pub mod hash;

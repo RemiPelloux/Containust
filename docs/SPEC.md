@@ -3,6 +3,7 @@
 **Version**: 1.0 (Definitive)
 **Language**: Rust (Systems)
 **Target**: Sovereign, secure, and modular infrastructure.
+**Platforms**: Linux (native), macOS (VM backend), Windows (VM backend)
 
 ## 1. Vision and Objectives
 
@@ -58,8 +59,10 @@ Containust maintains a local state index (e.g., `/var/lib/containust/state.json`
 | `ctst ps` | List containers with real-time metrics |
 | `ctst exec` | Enter a running container (namespace joining) |
 | `ctst stop` | Graceful stop and resource cleanup |
+| `ctst logs` | View container stdout/stderr logs |
 | `ctst images` | Manage the local RootFS catalog |
 | `ctst convert` | Convert docker-compose.yml to .ctst format |
+| `ctst vm start/stop` | Manage the platform VM (macOS/Windows) |
 
 ### 4.2 Observability
 
@@ -82,13 +85,54 @@ The SDK enables using Containust as a Rust library rather than a CLI tool.
 - **Read-Only Rootfs**: Immutable filesystem by default. Only declared volumes are writable.
 - **Capability Dropping**: Systematic removal of unnecessary Linux privileges.
 
-## 7. Technical Stack Summary
+## 7. Cross-Platform Support
+
+### 7.1 Native-First, VM-Fallback Architecture
+
+Containust uses a `ContainerBackend` trait to abstract platform-specific container operations. On Linux, the `LinuxNativeBackend` invokes kernel syscalls directly with zero overhead. On macOS and Windows, the `VMBackend` boots a lightweight Alpine Linux VM (~50MB) via QEMU and forwards container operations via JSON-RPC over TCP.
+
+| Platform | Backend | Acceleration | Boot Time |
+|---|---|---|---|
+| Linux | `LinuxNativeBackend` | N/A (native) | Instant |
+| macOS | `VMBackend` (QEMU) | HVF (Apple Hypervisor) | < 2s |
+| Windows | `VMBackend` (QEMU) | Hyper-V / WHPX | < 2s |
+
+### 7.2 VM Backend Specification
+
+- **Guest OS**: Alpine Linux (minimal, ~50MB image)
+- **VM Agent**: A lightweight JSON-RPC server running inside the VM that delegates to the `LinuxNativeBackend`
+- **Communication**: JSON-RPC 2.0 over TCP socket
+- **Lifecycle**: Auto-start on first container operation, explicit `ctst vm start/stop` for manual control
+- **Resource Isolation**: VM runs with constrained resources; individual containers inside the VM have their own cgroup limits
+- **State Persistence**: Container state files are stored on a shared directory between host and VM
+
+### 7.3 `ContainerBackend` Trait
+
+```rust
+pub trait ContainerBackend: Send + Sync {
+    fn create(&self, config: &ContainerConfig) -> Result<ContainerId>;
+    fn start(&self, id: &ContainerId) -> Result<u32>;
+    fn stop(&self, id: &ContainerId) -> Result<()>;
+    fn exec(&self, id: &ContainerId, cmd: &[String]) -> Result<ExecOutput>;
+    fn remove(&self, id: &ContainerId) -> Result<()>;
+    fn logs(&self, id: &ContainerId) -> Result<String>;
+    fn list(&self) -> Result<Vec<ContainerInfo>>;
+    fn is_available(&self) -> bool;
+}
+```
+
+## 8. Technical Stack Summary
 
 | Component | Technology |
 |---|---|
 | Language | Rust (Edition 2024) |
-| Parsing | nom |
-| System | nix, libc |
-| UI | ratatui, clap |
-| Graph | petgraph |
-| Observability | aya (eBPF) |
+| Parsing | nom 8 |
+| System | nix 0.29, libc |
+| CLI | clap 4.5 |
+| TUI | ratatui 0.30 |
+| Graph | petgraph 0.7 |
+| Observability | aya 0.13 (eBPF) |
+| Hashing | sha2 (SHA-256) |
+| Serialization | serde, serde_json |
+| Logging | tracing |
+| VM Backend | QEMU (via `which` crate for detection) |

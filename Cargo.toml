@@ -40,7 +40,7 @@ nom = "8"
 petgraph = "0.8"
 
 # Linux system
-nix = { version = "0.31", features = ["mount", "sched", "signal", "user", "process", "fs"] }
+nix = { version = "0.31", features = ["mount", "sched", "signal", "user", "process", "fs", "hostname"] }
 libc = "0.2"
 
 # eBPF
@@ -67,7 +67,12 @@ sha2 = "0.10"
 # YAML parsing (for docker-compose converter)
 serde_yaml = "0.9"
 
+# Archive & compression
+tar = "0.4"
+flate2 = "1"
+
 # Utilities
+which = "7"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tempfile = "3"

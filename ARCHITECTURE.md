@@ -53,10 +53,39 @@ Image and layer lifecycle:
 #### `containust-runtime`
 Container lifecycle management:
 - Container struct with state machine (Created → Running → Stopped → Failed).
-- Process spawning inside isolated namespaces.
+- Process spawning inside isolated namespaces with chroot isolation.
 - Persistent state index (`state.json`) for daemon-less management.
-- Namespace joining for `exec` operations.
-- Real-time metrics collection from cgroup stat files.
+- Namespace joining for `exec` operations via `nsenter`.
+- Real-time metrics collection from cgroup v2 stat files.
+- Container log management with append-only log files (`logs.rs`).
+- Platform-agnostic backend trait (`ContainerBackend`) with Linux native and VM implementations (`backend/`).
+- Runtime engine that orchestrates `.ctst` deployments through the compose layer (`engine.rs`).
+
+##### `ContainerBackend` Trait
+
+The `ContainerBackend` trait abstracts all platform-specific container operations:
+
+```rust
+pub trait ContainerBackend: Send + Sync {
+    fn create(&self, config: &ContainerConfig) -> Result<ContainerId>;
+    fn start(&self, id: &ContainerId) -> Result<u32>;
+    fn stop(&self, id: &ContainerId) -> Result<()>;
+    fn exec(&self, id: &ContainerId, cmd: &[String]) -> Result<ExecOutput>;
+    fn remove(&self, id: &ContainerId) -> Result<()>;
+    fn logs(&self, id: &ContainerId) -> Result<String>;
+    fn list(&self) -> Result<Vec<ContainerInfo>>;
+    fn is_available(&self) -> bool;
+}
+```
+
+Two implementations exist:
+
+| Implementation | Module | Platform | Mechanism |
+|---|---|---|---|
+| `LinuxNativeBackend` | `backend/linux.rs` | Linux | Direct syscalls: `clone(2)`, `unshare(2)`, cgroups v2, OverlayFS |
+| `VMBackend` | `backend/vm.rs` | macOS, Windows | QEMU VM with JSON-RPC over TCP to a Linux guest agent |
+
+Backend selection is automatic via `detect_backend()`, which uses compile-time `#[cfg(target_os)]` on Linux and runtime QEMU detection on other platforms.
 
 #### `containust-compose`
 `.ctst` language processing:
@@ -86,7 +115,7 @@ Public facade for using Containust as a library:
 ### CLI Layer
 
 #### `containust-cli`
-The `ctst` binary with subcommands: `build`, `plan`, `run`, `ps`, `exec`, `stop`, `images`.
+The `ctst` binary with subcommands: `build`, `plan`, `run`, `ps`, `exec`, `stop`, `logs`, `images`, `convert`, `vm`.
 Uses `clap` for argument parsing and `anyhow` for error reporting.
 
 #### `containust-tui`
@@ -104,7 +133,7 @@ Dependencies flow strictly downward through the layers. The complete allowed-dep
 | `containust-common` | None |
 | `containust-core` | `containust-common` |
 | `containust-image` | `containust-common`, `containust-core` |
-| `containust-runtime` | `containust-common`, `containust-core`, `containust-ebpf` |
+| `containust-runtime` | `containust-common`, `containust-core`, `containust-ebpf`, `containust-image`, `containust-compose` |
 | `containust-compose` | `containust-common`, `containust-core` |
 | `containust-ebpf` | `containust-common` |
 | `containust-sdk` | `containust-common`, `containust-runtime`, `containust-image`, `containust-compose` |
@@ -126,3 +155,62 @@ OverlayFS enables efficient layer caching and copy-on-write semantics without du
 
 ### Why feature-gated eBPF?
 eBPF requires a modern Linux kernel and BPF support. Feature-gating it with `ebpf` allows the core runtime to work on systems without BPF, including development on macOS via cross-compilation.
+
+### Why a VM backend on macOS/Windows?
+Linux containers require Linux kernel primitives (namespaces, cgroups, OverlayFS). On non-Linux platforms, Containust boots a lightweight Alpine Linux VM (~50MB) via QEMU with hardware acceleration (HVF on macOS, Hyper-V/WHPX on Windows). Container operations are forwarded to the native Linux backend inside the VM via JSON-RPC over TCP, achieving sub-2s boot time and near-native performance.
+
+## Platform Backend Architecture
+
+```mermaid
+graph TB
+    CLI[ctst CLI] --> SDK[containust-sdk]
+    SDK --> RT[containust-runtime]
+    RT --> |detect_backend| DETECT{Platform?}
+    DETECT --> |Linux| NATIVE[LinuxNativeBackend]
+    DETECT --> |macOS/Windows| VM[VMBackend]
+
+    NATIVE --> NS[Namespaces]
+    NATIVE --> CG[Cgroups v2]
+    NATIVE --> OFS[OverlayFS]
+
+    VM --> QEMU[QEMU VM]
+    QEMU --> |JSON-RPC/TCP| AGENT[VM Agent]
+    AGENT --> NS2[Namespaces]
+    AGENT --> CG2[Cgroups v2]
+    AGENT --> OFS2[OverlayFS]
+```
+
+## VM Lifecycle
+
+The VM backend follows this lifecycle on macOS and Windows:
+
+1. **Boot** — `ctst vm start` (or auto-start on first container operation) launches QEMU with hardware acceleration. The Alpine Linux VM image (~50MB) boots in under 2 seconds.
+2. **Connection** — The CLI establishes a JSON-RPC connection over TCP to the VM agent running inside the guest.
+3. **Container Operations** — All `ContainerBackend` trait calls (`create`, `start`, `stop`, `exec`, `logs`, `list`) are serialized as JSON-RPC requests and forwarded to the VM agent, which delegates to the `LinuxNativeBackend` inside the VM.
+4. **Shutdown** — `ctst vm stop` gracefully shuts down the VM. The VM is also stopped automatically when no containers are running and the CLI exits.
+
+## Module Dependency Graph (Mermaid)
+
+```mermaid
+graph TD
+    CLI[containust-cli] --> SDK[containust-sdk]
+    CLI --> TUI[containust-tui]
+    CLI --> COMMON[containust-common]
+    TUI --> SDK
+    TUI --> COMMON
+    SDK --> RUNTIME[containust-runtime]
+    SDK --> IMAGE[containust-image]
+    SDK --> COMPOSE[containust-compose]
+    SDK --> COMMON
+    RUNTIME --> CORE[containust-core]
+    RUNTIME --> IMAGE
+    RUNTIME --> COMPOSE
+    RUNTIME --> EBPF[containust-ebpf]
+    RUNTIME --> COMMON
+    IMAGE --> CORE
+    IMAGE --> COMMON
+    COMPOSE --> CORE
+    COMPOSE --> COMMON
+    EBPF --> COMMON
+    CORE --> COMMON
+```

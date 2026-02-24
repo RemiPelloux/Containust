@@ -1,17 +1,12 @@
-//! # containust-runtime
-//!
 //! Container lifecycle management for the Containust runtime.
-#![allow(clippy::todo)]
-//!
-//! Handles:
-//! - **Container**: Core container struct and lifecycle operations.
-//! - **Process**: Spawning processes inside isolated namespaces.
-//! - **State**: State machine tracking (Created -> Running -> Stopped).
-//! - **Exec**: Joining namespaces of running containers.
-//! - **Metrics**: Real-time resource usage collection.
 
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+
+pub mod backend;
 pub mod container;
+pub mod engine;
 pub mod exec;
+pub mod logs;
 pub mod metrics;
 pub mod process;
 pub mod state;

@@ -517,6 +517,7 @@ fn write_connections(out: &mut String, compose: &ComposeFile) {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -555,7 +556,7 @@ services:
 
     #[test]
     fn test_convert_with_depends_on() {
-        let yaml = r#"
+        let yaml = r"
 services:
   api:
     image: myapi:latest
@@ -566,7 +567,7 @@ services:
     image: postgres:16
   cache:
     image: redis:7
-"#;
+";
         let result = convert_string(yaml).expect("conversion should succeed");
 
         assert!(result.contains("CONNECT api -> db"));
@@ -618,14 +619,14 @@ services:
 
     #[test]
     fn test_convert_env_list_format() {
-        let yaml = r#"
+        let yaml = r"
 services:
   app:
     image: myapp
     environment:
       - PORT=8080
       - DEBUG=true
-"#;
+";
         let result = convert_string(yaml).expect("conversion should succeed");
 
         assert!(result.contains("PORT = \"8080\""));

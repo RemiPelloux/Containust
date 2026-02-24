@@ -28,7 +28,7 @@ Each crate has an explicit, closed set of allowed internal dependencies. Adding 
 | containust-common    | NONE (leaf crate)                                            |
 | containust-core      | containust-common                                            |
 | containust-image     | containust-common, containust-core                           |
-| containust-runtime   | containust-common, containust-core, containust-ebpf          |
+| containust-runtime   | containust-common, containust-core, containust-ebpf, containust-image, containust-compose |
 | containust-compose   | containust-common, containust-core                           |
 | containust-ebpf      | containust-common                                            |
 | containust-sdk       | containust-common, containust-runtime, containust-image, containust-compose |

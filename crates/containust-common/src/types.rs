@@ -125,3 +125,98 @@ impl fmt::Display for ContainerState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn container_id_new_stores_value() {
+        let id = ContainerId::new("abc-123");
+        assert_eq!(id.as_str(), "abc-123");
+    }
+
+    #[test]
+    fn container_id_generate_produces_unique_ids() {
+        let a = ContainerId::generate();
+        let b = ContainerId::generate();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn container_id_display_matches_inner() {
+        let id = ContainerId::new("test-id");
+        assert_eq!(format!("{id}"), "test-id");
+    }
+
+    #[test]
+    fn container_id_serialization_roundtrip() {
+        let id = ContainerId::new("serial-test");
+        let json = serde_json::to_string(&id).expect("serialize");
+        let back: ContainerId = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(id, back);
+    }
+
+    #[test]
+    fn image_id_new_and_display() {
+        let id = ImageId::new("img-42");
+        assert_eq!(id.as_str(), "img-42");
+        assert_eq!(format!("{id}"), "img-42");
+    }
+
+    #[test]
+    fn sha256_hash_valid_hex_accepted() {
+        let hex = "a".repeat(64);
+        let hash = Sha256Hash::from_hex(hex.clone()).expect("valid hex");
+        assert_eq!(hash.as_hex(), hex);
+    }
+
+    #[test]
+    fn sha256_hash_wrong_length_rejected() {
+        assert!(Sha256Hash::from_hex("abcdef").is_err());
+    }
+
+    #[test]
+    fn sha256_hash_non_hex_chars_rejected() {
+        let bad = format!("{}zz", "a".repeat(62));
+        assert!(Sha256Hash::from_hex(bad).is_err());
+    }
+
+    #[test]
+    fn sha256_hash_display_prefixed() {
+        let hex = "b".repeat(64);
+        let hash = Sha256Hash::from_hex(hex.clone()).expect("valid");
+        assert_eq!(format!("{hash}"), format!("sha256:{hex}"));
+    }
+
+    #[test]
+    fn resource_limits_default_all_none() {
+        let limits = ResourceLimits::default();
+        assert_eq!(limits.cpu_shares, None);
+        assert_eq!(limits.memory_bytes, None);
+        assert_eq!(limits.io_weight, None);
+    }
+
+    #[test]
+    fn container_state_display_values() {
+        assert_eq!(format!("{}", ContainerState::Created), "created");
+        assert_eq!(format!("{}", ContainerState::Running), "running");
+        assert_eq!(format!("{}", ContainerState::Stopped), "stopped");
+        assert_eq!(format!("{}", ContainerState::Failed), "failed");
+    }
+
+    #[test]
+    fn container_state_is_copy() {
+        let state = ContainerState::Running;
+        let copied = state;
+        assert_eq!(state, copied);
+    }
+
+    #[test]
+    fn container_state_serialization_roundtrip() {
+        let state = ContainerState::Running;
+        let json = serde_json::to_string(&state).expect("serialize");
+        let back: ContainerState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(state, back);
+    }
+}
