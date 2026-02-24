@@ -1,0 +1,66 @@
+// Full-stack application: API + PostgreSQL + Redis + background worker.
+// Demonstrates IMPORT, FROM, CONNECT, env, variable interpolation,
+// secrets, volumes, and healthcheck.
+// Run with: ctst run examples/full_stack.ctst
+
+IMPORT "templates/postgres.ctst" AS pg
+IMPORT "templates/redis.ctst" AS redis_tmpl
+
+COMPONENT api {
+    image    = "file:///opt/images/myapp-api"
+    port     = 8080
+    memory   = "256MiB"
+    cpu      = "1024"
+    env      = {
+        RUST_LOG     = "${env.RUST_LOG}"
+        DATABASE_URL = "postgres://${db.host}:${db.port}/myapp"
+        REDIS_URL    = "redis://${cache.host}:${cache.port}/0"
+        JWT_SECRET   = "${secret.jwt_key}"
+    }
+    command  = ["./api-server", "--bind", "0.0.0.0:8080"]
+    readonly = true
+    restart  = "on-failure"
+    healthcheck = {
+        command      = ["curl", "-f", "http://localhost:8080/healthz"]
+        interval     = "10s"
+        timeout      = "3s"
+        retries      = 5
+        start_period = "15s"
+    }
+}
+
+COMPONENT db FROM pg {
+    memory = "1GiB"
+    volume = "/data/myapp-pg:/var/lib/postgresql/data"
+    env    = {
+        POSTGRES_DB       = "myapp"
+        POSTGRES_USER     = "myapp_user"
+        POSTGRES_PASSWORD = "${secret.db_password}"
+    }
+}
+
+COMPONENT cache FROM redis_tmpl {
+    memory  = "256MiB"
+    command = ["redis-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
+}
+
+COMPONENT worker {
+    image    = "file:///opt/images/myapp-worker"
+    memory   = "128MiB"
+    cpu      = "512"
+    env      = {
+        DATABASE_URL = "postgres://${db.host}:${db.port}/myapp"
+        REDIS_URL    = "redis://${cache.host}:${cache.port}/0"
+        WORKER_QUEUE = "default,email,reports"
+    }
+    command  = ["./worker", "--concurrency", "4"]
+    readonly = true
+    restart  = "on-failure"
+}
+
+CONNECT api    -> db
+CONNECT api    -> cache
+CONNECT worker -> db
+CONNECT worker -> cache
+
+EXPOSE 8080

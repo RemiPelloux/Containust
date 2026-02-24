@@ -1,0 +1,24 @@
+// Nginx static file server.
+// Serves files from /srv/www on the host via port 80.
+// Run with: ctst run examples/nginx_static.ctst
+
+COMPONENT web {
+    image    = "file:///opt/images/nginx-1.25"
+    port     = 80
+    memory   = "128MiB"
+    // Volume mounts the host directory /srv/www into the container's
+    // default nginx document root, making static assets available.
+    volume   = "/srv/www:/usr/share/nginx/html"
+    readonly = true
+    restart  = "always"
+    healthcheck = {
+        command  = ["curl", "-f", "http://localhost:80/"]
+        interval = "15s"
+        timeout  = "3s"
+        retries  = 3
+    }
+}
+
+// Publish container port 80 to host port 80 so the site
+// is reachable from outside the container network.
+EXPOSE 80

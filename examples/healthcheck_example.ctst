@@ -1,0 +1,65 @@
+// Health checks and restart policies.
+//
+// Healthchecks control CONNECT ordering — a dependency is not
+// considered ready until its healthcheck passes. Combined with
+// restart policies, they enable self-healing deployments.
+
+COMPONENT api {
+    image    = "file:///opt/images/myapp-api"
+    port     = 8080
+    memory   = "256MiB"
+    readonly = true
+    // Restart only on crash or when healthcheck reports unhealthy.
+    restart  = "on-failure"
+    healthcheck = {
+        command      = ["curl", "-f", "http://localhost:8080/healthz"]
+        interval     = "10s"
+        timeout      = "3s"
+        retries      = 5
+        start_period = "20s"
+    }
+    env = {
+        DATABASE_URL = "postgres://${db.host}:${db.port}/app"
+    }
+}
+
+COMPONENT db {
+    image    = "file:///opt/images/postgres-16"
+    port     = 5432
+    memory   = "512MiB"
+    volume   = "/data/healthcheck-demo:/var/lib/postgresql/data"
+    readonly = false
+    // Critical data store — always restart regardless of exit code.
+    restart  = "always"
+    healthcheck = {
+        command  = ["pg_isready", "-U", "postgres"]
+        interval = "5s"
+        timeout  = "2s"
+        retries  = 10
+    }
+    env = {
+        POSTGRES_PASSWORD = "${secret.db_password}"
+    }
+}
+
+COMPONENT cache {
+    image    = "tar:///opt/images/redis-7.tar"
+    port     = 6379
+    memory   = "128MiB"
+    readonly = true
+    // Redis restarts on failure; healthcheck verifies PING response.
+    restart  = "on-failure"
+    healthcheck = {
+        command      = ["redis-cli", "ping"]
+        interval     = "5s"
+        timeout      = "2s"
+        retries      = 5
+        start_period = "5s"
+    }
+    command = ["redis-server", "--maxmemory", "100mb"]
+}
+
+CONNECT api -> db
+CONNECT api -> cache
+
+EXPOSE 8080

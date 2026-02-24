@@ -1,0 +1,23 @@
+// PostgreSQL template — reusable base for all PostgreSQL instances.
+// Usage: IMPORT "templates/postgres.ctst" AS pg
+//        COMPONENT mydb FROM pg { ... }
+
+COMPONENT postgres {
+    image   = "file:///opt/images/postgres-16"
+    port    = 5432
+    memory  = "512MiB"
+    cpu     = "1024"
+    volume  = "/data/postgres:/var/lib/postgresql/data"
+    env     = {
+        POSTGRES_USER = "postgres"
+        POSTGRES_DB   = "default"
+    }
+    readonly = false
+    restart  = "on-failure"
+    healthcheck = {
+        command  = ["pg_isready", "-U", "postgres"]
+        interval = "5s"
+        timeout  = "2s"
+        retries  = 10
+    }
+}

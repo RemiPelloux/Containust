@@ -1,0 +1,18 @@
+// Nginx template — reusable base for nginx reverse proxy / static server.
+// Usage: IMPORT "templates/nginx.ctst" AS web
+//        COMPONENT frontend FROM web { ... }
+
+COMPONENT nginx {
+    image    = "file:///opt/images/nginx-1.25"
+    port     = 80
+    memory   = "64MiB"
+    cpu      = "512"
+    readonly = true
+    restart  = "always"
+    healthcheck = {
+        command  = ["curl", "-f", "http://localhost:80/"]
+        interval = "15s"
+        timeout  = "3s"
+        retries  = 3
+    }
+}

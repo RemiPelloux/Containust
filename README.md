@@ -143,7 +143,41 @@ The `ctst` command is the single entry point for all container operations:
 | `--offline` | Block all outbound network access (build and run) |
 | `--state-file <path>` | Custom path to the state index file |
 
-See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for detailed usage and examples.
+See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for the complete CLI manual with output formats, exit codes, and troubleshooting.
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [`.ctst` Language Reference](docs/CTST_LANG.md) | Complete language specification — all keywords, types, syntax, protocols, and examples |
+| [CLI Reference](docs/CLI_REFERENCE.md) | Full `ctst` command manual — every flag, output format, exit code, troubleshooting |
+| [SDK Guide](docs/SDK_GUIDE.md) | Rust SDK API reference — `ContainerBuilder`, `GraphResolver`, `EventListener`, types, errors |
+| [Tutorials](docs/TUTORIALS.md) | 9 step-by-step tutorials from Hello World to SDK integration |
+| [Error Reference](docs/ERRORS.md) | Catalog of all error codes (parse, runtime, image, state) with causes and resolutions |
+| [Migration from Docker](docs/MIGRATION_FROM_DOCKER.md) | Docker Compose to `.ctst` conversion guide with side-by-side examples |
+| [Contributing Guide](docs/CONTRIBUTING.md) | Development setup, coding standards, how to add commands/keywords/backends |
+| [Architecture](ARCHITECTURE.md) | Crate dependency DAG, layer responsibilities, design decisions |
+| [Specification](docs/SPEC.md) | Technical specification — vision, engine design, security model |
+
+### Examples
+
+The `examples/` directory contains ready-to-use `.ctst` composition files and Rust SDK examples:
+
+| Example | What it demonstrates |
+|---|---|
+| [`hello_world.ctst`](examples/hello_world.ctst) | Minimal single container |
+| [`nginx_static.ctst`](examples/nginx_static.ctst) | Web server with volume mount and port exposure |
+| [`full_stack.ctst`](examples/full_stack.ctst) | API + PostgreSQL + Redis + worker with `CONNECT` auto-wiring |
+| [`microservices.ctst`](examples/microservices.ctst) | 5+ services with complex dependency graph |
+| [`offline_deployment.ctst`](examples/offline_deployment.ctst) | Air-gapped deployment with `tar://` sources |
+| [`secrets_example.ctst`](examples/secrets_example.ctst) | Secret injection patterns |
+| [`healthcheck_example.ctst`](examples/healthcheck_example.ctst) | Health checks and restart policies |
+| [`templates/`](examples/templates/) | Reusable templates (PostgreSQL, Redis, nginx) |
+| [`sdk_lifecycle.rs`](examples/sdk_lifecycle.rs) | Container lifecycle via Rust SDK |
+| [`sdk_composition.rs`](examples/sdk_composition.rs) | Loading `.ctst` files via SDK |
+| [`sdk_monitoring.rs`](examples/sdk_monitoring.rs) | Event monitoring via SDK |
 
 ---
 
@@ -286,32 +320,46 @@ cargo check --workspace
 
 ```
 Containust/
-├── Cargo.toml              # Workspace manifest
-├── crates/                 # All library and binary crates
-│   ├── containust-common/  # Shared types, errors, constants
-│   ├── containust-core/    # Linux isolation primitives
-│   ├── containust-image/   # Image/layer management
-│   ├── containust-runtime/ # Container lifecycle
-│   ├── containust-compose/ # .ctst parser + dependency graph
-│   ├── containust-ebpf/    # eBPF observability
-│   ├── containust-sdk/     # Public Rust SDK
-│   ├── containust-tui/     # Terminal dashboard
-│   └── containust-cli/     # ctst binary
-├── docs/                   # Specification, language ref, SDK guide
-├── tests/integration/      # Integration tests
-└── examples/               # Example .ctst files and SDK usage
+├── Cargo.toml                  # Workspace manifest
+├── crates/                     # All library and binary crates
+│   ├── containust-common/      # Shared types, errors, constants
+│   ├── containust-core/        # Linux isolation primitives
+│   ├── containust-image/       # Image/layer management
+│   ├── containust-runtime/     # Container lifecycle
+│   ├── containust-compose/     # .ctst parser + dependency graph
+│   ├── containust-ebpf/        # eBPF observability
+│   ├── containust-sdk/         # Public Rust SDK
+│   ├── containust-tui/         # Terminal dashboard
+│   └── containust-cli/         # ctst binary
+├── docs/                       # Documentation
+│   ├── CTST_LANG.md            # .ctst language reference
+│   ├── CLI_REFERENCE.md        # CLI manual
+│   ├── SDK_GUIDE.md            # Rust SDK guide
+│   ├── TUTORIALS.md            # Step-by-step tutorials
+│   ├── ERRORS.md               # Error code reference
+│   ├── CONTRIBUTING.md         # Contributor guide
+│   ├── MIGRATION_FROM_DOCKER.md # Docker Compose migration
+│   └── SPEC.md                 # Technical specification
+├── examples/                   # Example files
+│   ├── templates/              # Reusable .ctst templates
+│   ├── *.ctst                  # Composition examples
+│   └── *.rs                    # Rust SDK examples
+├── tests/integration/          # Integration tests
+└── ARCHITECTURE.md             # Crate architecture
 ```
 
 ---
 
 ## Contributing
 
-Contributions are welcome. Please read the [ARCHITECTURE.md](ARCHITECTURE.md) and the [Cursor rules](.cursor/rules/) before submitting code.
+Contributions are welcome. Please read the [Contributing Guide](docs/CONTRIBUTING.md) before submitting code.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/my-feature`)
 3. Ensure `cargo test --workspace`, `cargo clippy --workspace -- -D warnings`, and `cargo fmt --all --check` pass
 4. Submit a pull request
+
+See also: [ARCHITECTURE.md](ARCHITECTURE.md) | [Error Reference](docs/ERRORS.md) | [Cursor rules](.cursor/rules/)
 
 ---
 

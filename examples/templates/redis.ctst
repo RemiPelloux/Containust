@@ -1,0 +1,18 @@
+// Redis template — reusable base for Redis cache instances.
+// Usage: IMPORT "templates/redis.ctst" AS redis_tmpl
+//        COMPONENT cache FROM redis_tmpl { ... }
+
+COMPONENT redis {
+    image    = "tar:///opt/images/redis-7.tar"
+    port     = 6379
+    memory   = "128MiB"
+    readonly = true
+    restart  = "on-failure"
+    command  = ["redis-server", "--maxmemory", "100mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck = {
+        command  = ["redis-cli", "ping"]
+        interval = "5s"
+        timeout  = "2s"
+        retries  = 5
+    }
+}

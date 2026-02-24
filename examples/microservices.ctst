@@ -1,0 +1,112 @@
+// Microservices architecture — 5 services with complex dependency graph.
+// Services: gateway, auth, user, order, notification.
+// Demonstrates template inheritance, multiple CONNECT chains,
+// parallel dependencies, and network isolation.
+// Run with: ctst run examples/microservices.ctst
+
+IMPORT "templates/postgres.ctst" AS pg
+IMPORT "templates/redis.ctst" AS redis_tmpl
+
+// Shared base template for all microservices.
+COMPONENT svc_base {
+    image    = "file:///opt/images/platform-base"
+    memory   = "128MiB"
+    cpu      = "512"
+    readonly = true
+    restart  = "on-failure"
+    network  = "internal"
+    env      = {
+        LOG_LEVEL  = "${env.LOG_LEVEL}"
+        DEPLOY_ENV = "production"
+    }
+    healthcheck = {
+        command  = ["curl", "-f", "http://localhost:8080/healthz"]
+        interval = "10s"
+        timeout  = "3s"
+        retries  = 5
+    }
+}
+
+COMPONENT gateway FROM svc_base {
+    image   = "file:///opt/images/gateway"
+    port    = 443
+    memory  = "256MiB"
+    restart = "always"
+    network = "public"
+    env     = {
+        JWT_SECRET  = "${secret.jwt_key}"
+        AUTH_URL    = "http://${auth.host}:${auth.port}"
+        USER_URL    = "http://${user.host}:${user.port}"
+        ORDER_URL   = "http://${order.host}:${order.port}"
+    }
+}
+
+COMPONENT auth FROM svc_base {
+    image = "file:///opt/images/auth-service"
+    port  = 8081
+    env   = {
+        JWT_SECRET    = "${secret.jwt_key}"
+        SESSION_STORE = "redis://${session_cache.host}:${session_cache.port}/0"
+    }
+}
+
+COMPONENT user FROM svc_base {
+    image = "file:///opt/images/user-service"
+    port  = 8082
+    env   = {
+        DATABASE_URL = "postgres://${user_db.host}:${user_db.port}/users"
+    }
+}
+
+COMPONENT order FROM svc_base {
+    image  = "file:///opt/images/order-service"
+    port   = 8083
+    memory = "256MiB"
+    env    = {
+        DATABASE_URL  = "postgres://${order_db.host}:${order_db.port}/orders"
+        CACHE_URL     = "redis://${session_cache.host}:${session_cache.port}/1"
+        NOTIFY_URL    = "http://${notification.host}:${notification.port}"
+    }
+}
+
+COMPONENT notification FROM svc_base {
+    image = "file:///opt/images/notification-service"
+    port  = 8084
+    env   = {
+        SMTP_HOST    = "${env.SMTP_HOST}"
+        SMTP_API_KEY = "${secret.smtp_key}"
+    }
+}
+
+// Data stores — each service owns its database.
+COMPONENT user_db FROM pg {
+    memory = "512MiB"
+    volume = "/data/user-db:/var/lib/postgresql/data"
+    env    = { POSTGRES_PASSWORD = "${secret.user_db_pass}" }
+}
+
+COMPONENT order_db FROM pg {
+    memory = "512MiB"
+    volume = "/data/order-db:/var/lib/postgresql/data"
+    env    = { POSTGRES_PASSWORD = "${secret.order_db_pass}" }
+}
+
+COMPONENT session_cache FROM redis_tmpl {
+    memory = "256MiB"
+}
+
+// Dependency graph:
+// gateway -> auth, user, order (fan-out from edge)
+// auth -> session_cache
+// user -> user_db
+// order -> order_db, session_cache, notification
+CONNECT gateway      -> auth
+CONNECT gateway      -> user
+CONNECT gateway      -> order
+CONNECT auth         -> session_cache
+CONNECT user         -> user_db
+CONNECT order        -> order_db
+CONNECT order        -> session_cache
+CONNECT order        -> notification
+
+EXPOSE 443

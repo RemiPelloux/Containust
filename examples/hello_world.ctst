@@ -1,0 +1,9 @@
+// Hello World — minimal Containust example.
+// Run with: ctst run examples/hello_world.ctst
+
+COMPONENT hello {
+    image    = "file:///opt/images/alpine"
+    memory   = "32MiB"
+    command  = ["/bin/echo", "Hello from Containust!"]
+    readonly = true
+}

@@ -1,0 +1,49 @@
+// Air-gapped deployment — all images from local tar archives.
+// No network access required at build or run time.
+// Deploy with: ctst run --offline examples/offline_deployment.ctst
+//
+// The --offline flag enforces that no https:// sources are used
+// and all IMPORT paths resolve locally. This guarantees the stack
+// can be deployed in classified or disconnected environments.
+
+COMPONENT app {
+    image   = "tar:///opt/offline-images/myapp-v3.0.tar"
+    port    = 8080
+    memory  = "256MiB"
+    env     = {
+        DATABASE_URL = "postgres://${db.host}:${db.port}/secure_app"
+        CACHE_URL    = "redis://${cache.host}:${cache.port}/0"
+    }
+    command  = ["./server", "--bind", "0.0.0.0:8080"]
+    readonly = true
+    restart  = "on-failure"
+    network  = "isolated"
+}
+
+COMPONENT db {
+    image    = "tar:///opt/offline-images/postgres-16.tar"
+    port     = 5432
+    memory   = "512MiB"
+    volume   = "/secure-data/pg:/var/lib/postgresql/data"
+    env      = {
+        POSTGRES_PASSWORD = "${secret.db_pass}"
+    }
+    readonly = false
+    restart  = "on-failure"
+    network  = "isolated"
+}
+
+COMPONENT cache {
+    image    = "tar:///opt/offline-images/redis-7.tar"
+    port     = 6379
+    memory   = "128MiB"
+    readonly = true
+    restart  = "on-failure"
+    command  = ["redis-server", "--maxmemory", "100mb"]
+    network  = "isolated"
+}
+
+CONNECT app -> db
+CONNECT app -> cache
+
+EXPOSE 8080
