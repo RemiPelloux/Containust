@@ -19,8 +19,8 @@ pub struct RunArgs {
 /// # Errors
 ///
 /// Returns an error if deployment fails.
-pub fn execute(_args: RunArgs) -> anyhow::Result<()> {
-    tracing::info!(file = %_args.file, "deploying component graph");
-    println!("Running: {}", _args.file);
+pub fn execute(args: RunArgs) -> anyhow::Result<()> {
+    tracing::info!(file = %args.file, "deploying component graph");
+    println!("Running: {}", args.file);
     Ok(())
 }

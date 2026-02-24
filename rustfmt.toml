@@ -4,7 +4,5 @@ tab_spaces = 4
 use_field_init_shorthand = true
 use_try_shorthand = true
 newline_style = "Unix"
-imports_granularity = "Module"
-group_imports = "StdExternalCrate"
 reorder_imports = true
 reorder_modules = true

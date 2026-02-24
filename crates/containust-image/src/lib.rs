@@ -1,6 +1,7 @@
 //! # containust-image
 //!
 //! Container image and layer management for the Containust runtime.
+#![allow(clippy::todo)]
 //!
 //! Handles:
 //! - **Layers**: Diff-based filesystem layers with caching.

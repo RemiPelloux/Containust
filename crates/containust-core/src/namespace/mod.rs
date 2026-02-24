@@ -13,6 +13,7 @@ pub mod uts;
 use containust_common::error::Result;
 
 /// Configuration for which namespaces to create or join.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
 pub struct NamespaceConfig {
     /// Isolate PID namespace.
@@ -47,8 +48,8 @@ impl Default for NamespaceConfig {
 /// # Errors
 ///
 /// Returns an error if any namespace creation syscall fails.
-pub fn create_namespaces(_config: &NamespaceConfig) -> Result<()> {
-    tracing::info!("creating namespaces");
+pub fn create_namespaces(config: &NamespaceConfig) -> Result<()> {
+    tracing::info!(config = ?config, "creating namespaces");
     // Implementation will call unshare(2) with the appropriate flags
     Ok(())
 }

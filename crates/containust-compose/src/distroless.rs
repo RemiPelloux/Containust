@@ -13,7 +13,7 @@ use containust_common::error::Result;
 /// # Errors
 ///
 /// Returns an error if the binary cannot be read or is not a valid ELF file.
-pub fn analyze_dependencies(_binary: &Path) -> Result<Vec<String>> {
-    tracing::info!(binary = %_binary.display(), "analyzing binary dependencies");
+pub fn analyze_dependencies(binary: &Path) -> Result<Vec<String>> {
+    tracing::info!(binary = %binary.display(), "analyzing binary dependencies");
     todo!()
 }

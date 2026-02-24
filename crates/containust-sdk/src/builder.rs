@@ -54,21 +54,21 @@ impl ContainerBuilder {
 
     /// Sets the memory limit in bytes.
     #[must_use]
-    pub fn memory_limit(mut self, bytes: u64) -> Self {
+    pub const fn memory_limit(mut self, bytes: u64) -> Self {
         self.memory_limit = Some(bytes);
         self
     }
 
     /// Sets CPU shares (relative weight).
     #[must_use]
-    pub fn cpu_shares(mut self, shares: u64) -> Self {
+    pub const fn cpu_shares(mut self, shares: u64) -> Self {
         self.cpu_shares = Some(shares);
         self
     }
 
     /// Sets whether the root filesystem should be read-only.
     #[must_use]
-    pub fn readonly_rootfs(mut self, readonly: bool) -> Self {
+    pub const fn readonly_rootfs(mut self, readonly: bool) -> Self {
         self.readonly_rootfs = readonly;
         self
     }
@@ -79,16 +79,13 @@ impl ContainerBuilder {
     ///
     /// Returns an error if required fields (image) are missing.
     pub fn build(self) -> Result<Container> {
-        let _image = self.image.ok_or_else(|| {
-            containust_common::error::ContainustError::Config {
-                message: "image source is required".to_string(),
-            }
-        })?;
+        let _image =
+            self.image
+                .ok_or_else(|| containust_common::error::ContainustError::Config {
+                    message: "image source is required".to_string(),
+                })?;
 
-        let mut container = Container::new(
-            ContainerId::new(self.name),
-            self.command,
-        );
+        let mut container = Container::new(ContainerId::new(self.name), self.command);
         container.env = self.env;
 
         if let Some(mem) = self.memory_limit {

@@ -39,8 +39,8 @@ impl CgroupManager {
     /// # Errors
     ///
     /// Returns an error if writing to cgroup control files fails.
-    pub fn apply_limits(&self, _limits: &ResourceLimits) -> Result<()> {
-        tracing::debug!(path = %self.path.display(), "applying resource limits");
+    pub fn apply_limits(&self, limits: &ResourceLimits) -> Result<()> {
+        tracing::debug!(path = %self.path.display(), limits = ?limits, "applying resource limits");
         Ok(())
     }
 

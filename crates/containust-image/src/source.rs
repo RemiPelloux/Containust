@@ -28,7 +28,7 @@ pub enum ImageSource {
 /// # Errors
 ///
 /// Returns an error if the URI scheme is unsupported or the path is invalid.
-pub fn resolve_source(_uri: &str) -> Result<ImageSource> {
-    tracing::debug!(uri = _uri, "resolving image source");
+pub fn resolve_source(uri: &str) -> Result<ImageSource> {
+    tracing::debug!(uri = uri, "resolving image source");
     todo!()
 }

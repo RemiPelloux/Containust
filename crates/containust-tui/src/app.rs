@@ -27,7 +27,7 @@ pub struct App {
 impl App {
     /// Creates a new application state.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             running: true,
             current_view: View::Dashboard,
@@ -36,7 +36,7 @@ impl App {
     }
 
     /// Signals the app to quit.
-    pub fn quit(&mut self) {
+    pub const fn quit(&mut self) {
         self.running = false;
     }
 }

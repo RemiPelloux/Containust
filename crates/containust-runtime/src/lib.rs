@@ -1,6 +1,7 @@
 //! # containust-runtime
 //!
 //! Container lifecycle management for the Containust runtime.
+#![allow(clippy::todo)]
 //!
 //! Handles:
 //! - **Container**: Core container struct and lifecycle operations.

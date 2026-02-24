@@ -92,7 +92,7 @@ impl fmt::Display for Sha256Hash {
 }
 
 /// Resource limits for a container.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceLimits {
     /// CPU shares (relative weight).
     pub cpu_shares: Option<u64>,
@@ -100,16 +100,6 @@ pub struct ResourceLimits {
     pub memory_bytes: Option<u64>,
     /// I/O weight (1-10000).
     pub io_weight: Option<u16>,
-}
-
-impl Default for ResourceLimits {
-    fn default() -> Self {
-        Self {
-            cpu_shares: None,
-            memory_bytes: None,
-            io_weight: None,
-        }
-    }
 }
 
 /// Lifecycle state of a container.

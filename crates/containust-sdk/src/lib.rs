@@ -1,6 +1,7 @@
 //! # containust-sdk
 //!
 //! Public SDK for using Containust as a Rust library.
+#![allow(clippy::todo)]
 //!
 //! Provides three main entry points:
 //! - [`ContainerBuilder`](builder::ContainerBuilder): Fluent API for configuring and launching containers.

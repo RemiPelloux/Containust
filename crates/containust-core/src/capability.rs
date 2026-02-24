@@ -25,10 +25,7 @@ pub enum Capability {
 /// # Errors
 ///
 /// Returns an error if capability manipulation syscalls fail.
-pub fn drop_capabilities(_keep: &[Capability]) -> Result<()> {
-    tracing::info!(
-        retained = _keep.len(),
-        "dropping capabilities"
-    );
+pub fn drop_capabilities(keep: &[Capability]) -> Result<()> {
+    tracing::info!(retained = keep.len(), "dropping capabilities");
     Ok(())
 }

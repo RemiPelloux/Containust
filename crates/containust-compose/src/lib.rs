@@ -1,6 +1,7 @@
 //! # containust-compose
 //!
 //! Parser and resolver for the `.ctst` composition language.
+#![allow(clippy::todo)]
 //!
 //! Handles:
 //! - **Parser**: Lexing, AST construction, and validation of `.ctst` files.

@@ -27,8 +27,8 @@ pub struct StateEntry {
 /// # Errors
 ///
 /// Returns an error if the file cannot be read or parsed.
-pub fn load_state(_path: &Path) -> Result<Vec<StateEntry>> {
-    tracing::debug!(path = %_path.display(), "loading state index");
+pub fn load_state(path: &Path) -> Result<Vec<StateEntry>> {
+    tracing::debug!(path = %path.display(), "loading state index");
     Ok(Vec::new())
 }
 
@@ -37,7 +37,7 @@ pub fn load_state(_path: &Path) -> Result<Vec<StateEntry>> {
 /// # Errors
 ///
 /// Returns an error if the file cannot be written.
-pub fn save_state(_path: &Path, _entries: &[StateEntry]) -> Result<()> {
-    tracing::debug!(path = %_path.display(), "saving state index");
+pub fn save_state(path: &Path, _entries: &[StateEntry]) -> Result<()> {
+    tracing::debug!(path = %path.display(), "saving state index");
     Ok(())
 }

@@ -12,8 +12,8 @@ use containust_common::error::Result;
 /// # Errors
 ///
 /// Returns an error if any mount syscall fails.
-pub fn mount_essential_filesystems(_rootfs: &Path) -> Result<()> {
-    tracing::debug!(rootfs = %_rootfs.display(), "mounting essential filesystems");
+pub fn mount_essential_filesystems(rootfs: &Path) -> Result<()> {
+    tracing::debug!(rootfs = %rootfs.display(), "mounting essential filesystems");
     Ok(())
 }
 
@@ -22,10 +22,10 @@ pub fn mount_essential_filesystems(_rootfs: &Path) -> Result<()> {
 /// # Errors
 ///
 /// Returns an error if the `mount(2)` syscall fails.
-pub fn bind_mount(_source: &Path, _target: &Path, _readonly: bool) -> Result<()> {
+pub fn bind_mount(source: &Path, target: &Path, _readonly: bool) -> Result<()> {
     tracing::debug!(
-        source = %_source.display(),
-        target = %_target.display(),
+        source = %source.display(),
+        target = %target.display(),
         "creating bind mount"
     );
     Ok(())

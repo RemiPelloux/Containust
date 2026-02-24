@@ -18,9 +18,9 @@ pub struct ExecArgs {
 /// # Errors
 ///
 /// Returns an error if the container is not running or namespace joining fails.
-pub fn execute(_args: ExecArgs) -> anyhow::Result<()> {
+pub fn execute(args: ExecArgs) -> anyhow::Result<()> {
     tracing::info!(
-        container = %_args.container,
+        container = %args.container,
         "executing command in container"
     );
     Ok(())

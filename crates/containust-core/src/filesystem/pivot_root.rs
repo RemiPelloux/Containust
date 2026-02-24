@@ -14,9 +14,9 @@ use containust_common::error::Result;
 /// # Errors
 ///
 /// Returns an error if `pivot_root(2)` or the subsequent cleanup fails.
-pub fn pivot_root(_new_root: &Path, _put_old: &Path) -> Result<()> {
+pub fn pivot_root(new_root: &Path, _put_old: &Path) -> Result<()> {
     tracing::info!(
-        new_root = %_new_root.display(),
+        new_root = %new_root.display(),
         "performing pivot_root"
     );
     Ok(())

@@ -27,7 +27,7 @@ pub struct MetricsSnapshot {
 /// # Errors
 ///
 /// Returns an error if cgroup stat files cannot be read.
-pub fn collect_metrics(_container_id: &ContainerId) -> Result<MetricsSnapshot> {
-    tracing::debug!(id = %_container_id, "collecting metrics");
+pub fn collect_metrics(container_id: &ContainerId) -> Result<MetricsSnapshot> {
+    tracing::debug!(id = %container_id, "collecting metrics");
     todo!()
 }

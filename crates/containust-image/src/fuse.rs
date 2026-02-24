@@ -12,9 +12,9 @@ use containust_common::error::Result;
 /// # Errors
 ///
 /// Returns an error if the FUSE mount cannot be established.
-pub fn mount_lazy(_image_path: &Path, _mount_point: &Path) -> Result<()> {
+pub fn mount_lazy(_image_path: &Path, mount_point: &Path) -> Result<()> {
     tracing::info!(
-        mount = %_mount_point.display(),
+        mount = %mount_point.display(),
         "mounting FUSE lazy-loader"
     );
     Ok(())

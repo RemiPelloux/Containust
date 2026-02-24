@@ -22,7 +22,7 @@ pub struct SyscallEvent {
 /// # Errors
 ///
 /// Returns an error if eBPF program loading or attachment fails.
-pub fn start_tracer(_target_pid: u32) -> Result<()> {
-    tracing::info!(pid = _target_pid, "starting syscall tracer");
+pub fn start_tracer(target_pid: u32) -> Result<()> {
+    tracing::info!(pid = target_pid, "starting syscall tracer");
     Ok(())
 }

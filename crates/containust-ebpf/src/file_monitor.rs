@@ -22,7 +22,7 @@ pub struct FileOpenEvent {
 /// # Errors
 ///
 /// Returns an error if the eBPF program cannot be loaded.
-pub fn start_file_monitor(_target_pid: u32) -> Result<()> {
-    tracing::info!(pid = _target_pid, "starting file monitor");
+pub fn start_file_monitor(target_pid: u32) -> Result<()> {
+    tracing::info!(pid = target_pid, "starting file monitor");
     Ok(())
 }

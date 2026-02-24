@@ -14,7 +14,7 @@ use crate::parser::ast::CompositionFile;
 /// # Errors
 ///
 /// Returns an error if the source cannot be found, read, or parsed.
-pub fn resolve_import(_source: &str, _base_dir: &Path) -> Result<CompositionFile> {
-    tracing::info!(source = _source, "resolving import");
+pub fn resolve_import(source: &str, _base_dir: &Path) -> Result<CompositionFile> {
+    tracing::info!(source = source, "resolving import");
     todo!()
 }

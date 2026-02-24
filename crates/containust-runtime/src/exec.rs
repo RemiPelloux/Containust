@@ -11,10 +11,7 @@ use containust_common::types::ContainerId;
 /// # Errors
 ///
 /// Returns an error if the container is not running or namespace joining fails.
-pub fn exec_in_container(
-    _container_id: &ContainerId,
-    _command: &[String],
-) -> Result<()> {
-    tracing::info!(id = %_container_id, "exec into container");
+pub fn exec_in_container(container_id: &ContainerId, _command: &[String]) -> Result<()> {
+    tracing::info!(id = %container_id, "exec into container");
     todo!()
 }

@@ -12,8 +12,8 @@ use containust_common::types::Sha256Hash;
 /// # Errors
 ///
 /// Returns an error if the file cannot be read.
-pub fn hash_file(_path: &Path) -> Result<Sha256Hash> {
-    tracing::debug!(path = %_path.display(), "computing SHA-256 hash");
+pub fn hash_file(path: &Path) -> Result<Sha256Hash> {
+    tracing::debug!(path = %path.display(), "computing SHA-256 hash");
     todo!()
 }
 
@@ -22,7 +22,7 @@ pub fn hash_file(_path: &Path) -> Result<Sha256Hash> {
 /// # Errors
 ///
 /// Returns `ContainustError::HashMismatch` if the hashes do not match.
-pub fn validate_hash(_path: &Path, _expected: &Sha256Hash) -> Result<()> {
-    tracing::debug!(path = %_path.display(), "validating SHA-256 hash");
+pub fn validate_hash(path: &Path, _expected: &Sha256Hash) -> Result<()> {
+    tracing::debug!(path = %path.display(), "validating SHA-256 hash");
     todo!()
 }

@@ -33,7 +33,7 @@ pub struct EventListener {
 impl EventListener {
     /// Creates a new event listener.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             _marker: std::marker::PhantomData,
         }

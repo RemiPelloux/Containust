@@ -15,8 +15,8 @@ pub struct PlanArgs {
 /// # Errors
 ///
 /// Returns an error if parsing or plan computation fails.
-pub fn execute(_args: PlanArgs) -> anyhow::Result<()> {
-    tracing::info!(file = %_args.file, "computing plan");
-    println!("Plan for: {}", _args.file);
+pub fn execute(args: PlanArgs) -> anyhow::Result<()> {
+    tracing::info!(file = %args.file, "computing plan");
+    println!("Plan for: {}", args.file);
     Ok(())
 }

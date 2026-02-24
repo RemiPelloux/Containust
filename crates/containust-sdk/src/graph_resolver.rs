@@ -25,8 +25,8 @@ impl GraphResolver {
     /// # Errors
     ///
     /// Returns an error if parsing, validation, or resolution fails.
-    pub fn load_ctst(&mut self, _path: &std::path::Path) -> Result<()> {
-        tracing::info!(path = %_path.display(), "loading .ctst file");
+    pub fn load_ctst(&mut self, path: &std::path::Path) -> Result<()> {
+        tracing::info!(path = %path.display(), "loading .ctst file");
         todo!()
     }
 

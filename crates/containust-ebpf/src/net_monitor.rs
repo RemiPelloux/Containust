@@ -26,7 +26,7 @@ pub struct NetworkEvent {
 /// # Errors
 ///
 /// Returns an error if the eBPF program cannot be loaded.
-pub fn start_net_monitor(_target_pid: u32) -> Result<()> {
-    tracing::info!(pid = _target_pid, "starting network monitor");
+pub fn start_net_monitor(target_pid: u32) -> Result<()> {
+    tracing::info!(pid = target_pid, "starting network monitor");
     Ok(())
 }

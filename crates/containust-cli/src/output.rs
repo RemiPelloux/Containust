@@ -4,6 +4,7 @@
 //! and human-readable byte/duration formatting.
 
 /// Formats a byte count into a human-readable string (e.g., "128 MiB").
+#[allow(clippy::cast_precision_loss)]
 #[must_use]
 pub fn format_bytes(bytes: u64) -> String {
     const KIB: u64 = 1024;

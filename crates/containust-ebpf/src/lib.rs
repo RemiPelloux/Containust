@@ -1,6 +1,7 @@
 //! # containust-ebpf
 //!
 //! eBPF-based observability for the Containust runtime.
+#![allow(clippy::todo)]
 //!
 //! Provides real-time, low-overhead monitoring of container activity:
 //! - **Syscall tracing**: Track system calls made by container processes.

@@ -7,6 +7,8 @@
 //! - Per-container resource metrics (CPU, memory, I/O).
 //! - eBPF trace viewer for syscalls, file access, and network events.
 
+#![allow(clippy::missing_const_for_fn)]
+
 pub mod app;
 pub mod event;
 pub mod ui;

@@ -15,8 +15,8 @@ pub struct BuildArgs {
 /// # Errors
 ///
 /// Returns an error if parsing or image building fails.
-pub fn execute(_args: BuildArgs) -> anyhow::Result<()> {
-    tracing::info!(file = %_args.file, "building from .ctst file");
-    println!("Building from: {}", _args.file);
+pub fn execute(args: BuildArgs) -> anyhow::Result<()> {
+    tracing::info!(file = %args.file, "building from .ctst file");
+    println!("Building from: {}", args.file);
     Ok(())
 }
