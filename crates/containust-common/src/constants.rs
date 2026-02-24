@@ -25,6 +25,39 @@ pub fn data_dir() -> &'static PathBuf {
     DATA_DIR.get_or_init(resolve_data_dir)
 }
 
+/// Returns the global cache directory for immutable shared assets
+/// (Alpine kernel, initramfs). Stored at `~/.containust/cache/`.
+pub fn global_cache_dir() -> PathBuf {
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        let cache = PathBuf::from(home).join(".containust").join("cache");
+        let _ = std::fs::create_dir_all(&cache);
+        return cache;
+    }
+    PathBuf::from(SYSTEM_DATA_DIR).join("cache")
+}
+
+/// Resolves the project-local `.containust/` directory next to a `.ctst` file.
+/// Creates the directory if it doesn't exist.
+pub fn project_dir(ctst_path: &std::path::Path) -> PathBuf {
+    let cwd = || std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let parent = ctst_path
+        .canonicalize()
+        .ok()
+        .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+        .unwrap_or_else(|| {
+            ctst_path.parent().map_or_else(cwd, |p| {
+                if p.as_os_str().is_empty() {
+                    cwd()
+                } else {
+                    p.to_path_buf()
+                }
+            })
+        });
+    let project = parent.join(".containust");
+    let _ = std::fs::create_dir_all(&project);
+    project
+}
+
 /// Returns the default state file path.
 pub fn default_state_file() -> String {
     data_dir().join("state.json").to_string_lossy().into_owned()

@@ -6,7 +6,8 @@
 #![allow(
     clippy::unnecessary_wraps,
     clippy::needless_pass_by_value,
-    clippy::print_stdout
+    clippy::print_stdout,
+    clippy::print_stderr
 )]
 
 mod commands;

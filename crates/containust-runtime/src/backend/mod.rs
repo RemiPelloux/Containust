@@ -165,12 +165,17 @@ mod tests {
     }
 
     #[test]
-    fn detect_backend_returns_usable_backend() {
+    fn detect_backend_returns_instance() {
         let backend = detect_backend();
+        // On Linux the native backend is always available.
+        // On macOS/Windows the VM backend is available when QEMU is installed.
         #[cfg(target_os = "linux")]
         assert!(backend.is_available());
         #[cfg(not(target_os = "linux"))]
-        assert!(!backend.is_available());
+        {
+            // Just verify detect_backend returns a valid object.
+            let _ = backend.is_available();
+        }
     }
 
     #[test]

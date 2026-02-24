@@ -21,6 +21,9 @@ chrono = { workspace = true }
 nix = { workspace = true }
 libc = { workspace = true }
 which = { workspace = true }
+reqwest = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

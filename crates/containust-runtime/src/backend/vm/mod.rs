@@ -16,11 +16,15 @@ use containust_common::types::ContainerId;
 use super::{ContainerBackend, ContainerConfig, ContainerInfo};
 use crate::exec::ExecOutput;
 
+pub mod initramfs;
+
 const VM_PORT: u16 = 10809;
 const VM_MEMORY_MB: u32 = 512;
 const VM_CPUS: u32 = 2;
-const VM_BOOT_TIMEOUT_SECS: u64 = 30;
+const VM_BOOT_TIMEOUT_SECS: u64 = 60;
 const VM_POLL_INTERVAL_MS: u64 = 500;
+
+const ALPINE_VERSION: &str = "3.21";
 
 /// Backend that runs containers inside a lightweight Linux VM.
 ///
@@ -30,29 +34,30 @@ const VM_POLL_INTERVAL_MS: u64 = 500;
 pub struct VMBackend {
     vm_dir: PathBuf,
     vm_process: Mutex<Option<Child>>,
+    forwarded_ports: Mutex<Vec<u16>>,
 }
 
 impl VMBackend {
     /// Creates a new VM backend.
     ///
-    /// The VM assets directory defaults to `~/.containust/vm/`.
+    /// VM assets are stored in the global cache at `~/.containust/cache/vm/`.
     #[must_use]
     pub fn new() -> Self {
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .unwrap_or_else(|_| "/tmp".into());
+        let vm_dir = containust_common::constants::global_cache_dir().join("vm");
         Self {
-            vm_dir: PathBuf::from(home).join(".containust").join("vm"),
+            vm_dir,
             vm_process: Mutex::new(None),
+            forwarded_ports: Mutex::new(Vec::new()),
         }
     }
 
-    /// Ensures the VM assets (kernel + initramfs) are present on disk.
+    /// Ensures the VM assets (kernel + custom initramfs) are present on disk.
+    /// Downloads Alpine Linux kernel and base initramfs on first run,
+    /// then builds a custom initramfs with the Containust agent.
     ///
     /// # Errors
     ///
-    /// Returns an error if the directory cannot be created or
-    /// placeholder files cannot be written.
+    /// Returns an error if downloads fail or the initramfs cannot be built.
     fn ensure_vm_assets(&self) -> Result<(PathBuf, PathBuf)> {
         std::fs::create_dir_all(&self.vm_dir).map_err(|e| ContainustError::Io {
             path: self.vm_dir.clone(),
@@ -60,63 +65,30 @@ impl VMBackend {
         })?;
 
         let kernel_path = self.vm_dir.join("vmlinuz");
-        let initramfs_path = self.vm_dir.join("initramfs.img");
+        let custom_initramfs_path = self.vm_dir.join("initramfs-containust.img");
 
-        if !kernel_path.exists() || !initramfs_path.exists() {
-            self.create_placeholder_assets(&kernel_path, &initramfs_path)?;
+        if !kernel_path.exists() || kernel_is_empty(&kernel_path) {
+            download_kernel(&kernel_path)?;
         }
 
-        Ok((kernel_path, initramfs_path))
-    }
+        // Always rebuild to pick up agent script changes
+        let _ = std::fs::remove_file(&custom_initramfs_path);
+        let base_initramfs_path = self.vm_dir.join("initramfs-base.img");
+        if !base_initramfs_path.exists() {
+            download_initramfs(&base_initramfs_path)?;
+        }
+        initramfs::build_initramfs(&base_initramfs_path, &custom_initramfs_path)?;
 
-    /// Writes empty placeholder files plus a README with download instructions.
-    fn create_placeholder_assets(&self, kernel: &Path, initramfs: &Path) -> Result<()> {
-        let readme_path = self.vm_dir.join("README.md");
-        let readme_content = concat!(
-            "# Containust VM Assets\n\n",
-            "To run containers on macOS or Windows, Containust needs a ",
-            "lightweight Linux VM.\n\n",
-            "## Quick Setup\n\n",
-            "Download the Alpine Linux virtual kernel and initramfs:\n\n",
-            "```bash\n",
-            "# For x86_64\n",
-            "curl -L -o vmlinuz ",
-            "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/",
-            "x86_64/netboot/vmlinuz-virt\n",
-            "curl -L -o initramfs.img ",
-            "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/",
-            "x86_64/netboot/initramfs-virt\n\n",
-            "# For aarch64\n",
-            "curl -L -o vmlinuz ",
-            "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/",
-            "aarch64/netboot/vmlinuz-virt\n",
-            "curl -L -o initramfs.img ",
-            "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/",
-            "aarch64/netboot/initramfs-virt\n",
-            "```\n\n",
-            "Place both files in this directory: `~/.containust/vm/`\n",
-        );
-
-        write_file(&readme_path, readme_content)?;
-        write_file(kernel, "")?;
-        write_file(initramfs, "")?;
-
-        tracing::info!(
-            dir = %self.vm_dir.display(),
-            "VM asset placeholders created — see README.md for setup"
-        );
-        Ok(())
+        Ok((kernel_path, custom_initramfs_path))
     }
 
     /// Boots the QEMU VM if it is not already running.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - QEMU is not installed
-    /// - VM assets are missing (empty placeholders)
-    /// - The VM fails to become reachable within the timeout
-    fn ensure_vm_running(&self) -> Result<()> {
+    /// Returns an error if QEMU is not installed, assets fail to download,
+    /// or the VM fails to become reachable within the timeout.
+    fn ensure_vm_running(&self, ports: &[u16]) -> Result<()> {
         let mut guard = lock_vm_process(&self.vm_process)?;
 
         if guard.is_some() {
@@ -126,12 +98,17 @@ impl VMBackend {
         let qemu = find_qemu()?;
         let (kernel, initramfs) = self.ensure_vm_assets()?;
 
-        validate_kernel_not_empty(&kernel)?;
-
-        let child = spawn_qemu(&qemu, &kernel, &initramfs)?;
+        eprintln!("  Booting lightweight Linux VM...");
+        let child = spawn_qemu(&qemu, &kernel, &initramfs, ports)?;
 
         *guard = Some(child);
         drop(guard);
+
+        let mut port_guard = self.forwarded_ports.lock().map_err(|_| ContainustError::Config {
+            message: "port list lock poisoned".into(),
+        })?;
+        port_guard.extend_from_slice(ports);
+        drop(port_guard);
 
         wait_for_vm_ready()
     }
@@ -142,8 +119,8 @@ impl VMBackend {
     ///
     /// Returns an error if the VM is unreachable, the request cannot be
     /// serialized, or the agent returns an error response.
+    #[allow(clippy::unused_self)]
     fn send_command(&self, method: &str, params: &serde_json::Value) -> Result<serde_json::Value> {
-        self.ensure_vm_running()?;
         send_rpc(method, params)
     }
 
@@ -174,6 +151,12 @@ impl Default for VMBackend {
 
 impl ContainerBackend for VMBackend {
     fn create(&self, config: &ContainerConfig) -> Result<ContainerId> {
+        let ports_to_forward: Vec<u16> = std::iter::once(config.port)
+            .flatten()
+            .collect();
+
+        self.ensure_vm_running(&ports_to_forward)?;
+
         tracing::info!(
             name = %config.name,
             "creating container via VM backend"
@@ -273,7 +256,71 @@ impl Drop for VMBackend {
 }
 
 // ---------------------------------------------------------------------------
-// Free helper functions
+// Asset download helpers
+// ---------------------------------------------------------------------------
+
+/// Returns the Alpine Linux CDN architecture string.
+const fn alpine_arch() -> &'static str {
+    if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else {
+        "x86_64"
+    }
+}
+
+/// Downloads the Alpine Linux netboot kernel.
+fn download_kernel(dest: &Path) -> Result<()> {
+    let arch = alpine_arch();
+    let url = format!(
+        "https://dl-cdn.alpinelinux.org/alpine/v{ALPINE_VERSION}/releases/{arch}/netboot/vmlinuz-virt"
+    );
+    eprintln!("  Downloading Alpine Linux kernel (first run only)...");
+    download_file(&url, dest)
+}
+
+/// Downloads the Alpine Linux netboot initramfs.
+fn download_initramfs(dest: &Path) -> Result<()> {
+    let arch = alpine_arch();
+    let url = format!(
+        "https://dl-cdn.alpinelinux.org/alpine/v{ALPINE_VERSION}/releases/{arch}/netboot/initramfs-virt"
+    );
+    eprintln!("  Downloading Alpine Linux initramfs (first run only)...");
+    download_file(&url, dest)
+}
+
+/// Downloads a file from `url` to `dest` with progress indication.
+fn download_file(url: &str, dest: &Path) -> Result<()> {
+    let response = reqwest::blocking::get(url).map_err(|e| ContainustError::Config {
+        message: format!("failed to download {url}: {e}"),
+    })?;
+
+    if !response.status().is_success() {
+        return Err(ContainustError::Config {
+            message: format!("HTTP {} downloading {url}", response.status()),
+        });
+    }
+
+    let total = response.content_length().unwrap_or(0);
+    let bytes = response.bytes().map_err(|e| ContainustError::Config {
+        message: format!("failed to read response body from {url}: {e}"),
+    })?;
+
+    if total > 0 {
+        #[allow(clippy::cast_precision_loss)]
+        let mb = bytes.len() as f64 / 1_048_576.0;
+        eprintln!("  Downloaded {mb:.1} MB");
+    }
+
+    std::fs::write(dest, &bytes).map_err(|e| ContainustError::Io {
+        path: dest.to_path_buf(),
+        source: e,
+    })?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// QEMU helpers
 // ---------------------------------------------------------------------------
 
 /// Returns the QEMU binary name for the host architecture.
@@ -308,9 +355,18 @@ fn accel_flags() -> Vec<String> {
 /// Finds the QEMU binary for the current architecture.
 fn find_qemu() -> Result<PathBuf> {
     let binary = qemu_binary_name();
-    which::which(binary).map_err(|_| ContainustError::NotFound {
-        kind: "QEMU binary",
-        id: format!("{binary} (install QEMU to use containers on this platform)"),
+    which::which(binary).map_err(|_| {
+        let install_hint = if cfg!(target_os = "macos") {
+            "Install with: brew install qemu"
+        } else if cfg!(target_os = "windows") {
+            "Install with: choco install qemu"
+        } else {
+            "Install with: apt install qemu-system"
+        };
+        ContainustError::NotFound {
+            kind: "QEMU binary",
+            id: format!("{binary} — {install_hint}"),
+        }
     })
 }
 
@@ -323,39 +379,30 @@ fn lock_vm_process(
     })
 }
 
-/// Validates that the kernel file is not an empty placeholder.
-fn validate_kernel_not_empty(kernel: &Path) -> Result<()> {
-    let meta = std::fs::metadata(kernel).map_err(|e| ContainustError::Io {
-        path: kernel.to_path_buf(),
-        source: e,
-    })?;
-    if meta.len() == 0 {
-        return Err(ContainustError::Config {
-            message: format!(
-                "VM kernel not found. Download Alpine Linux kernel to {}. \
-                 See ~/.containust/vm/README.md for instructions.",
-                kernel.display()
-            ),
-        });
-    }
-    Ok(())
+/// Checks if a kernel file exists but is empty (a placeholder).
+fn kernel_is_empty(kernel: &Path) -> bool {
+    std::fs::metadata(kernel)
+        .map(|m| m.len() == 0)
+        .unwrap_or(true)
 }
 
-/// Writes `contents` to `path`, mapping I/O errors to the domain type.
-fn write_file(path: &Path, contents: &str) -> Result<()> {
-    std::fs::write(path, contents).map_err(|e| ContainustError::Io {
-        path: path.to_path_buf(),
-        source: e,
-    })
-}
-
-/// Spawns the QEMU process with all required arguments.
-fn spawn_qemu(qemu: &Path, kernel: &Path, initramfs: &Path) -> Result<Child> {
+/// Spawns the QEMU process with all required arguments including dynamic port forwarding.
+fn spawn_qemu(qemu: &Path, kernel: &Path, initramfs: &Path, ports: &[u16]) -> Result<Child> {
     tracing::info!(qemu = %qemu.display(), "booting VM");
 
-    Command::new(qemu)
+    let mut hostfwd = format!("user,id=net0,hostfwd=tcp::{VM_PORT}-:{VM_PORT}");
+    for &port in ports {
+        if port != VM_PORT {
+            use std::fmt::Write as _;
+            let _ = write!(hostfwd, ",hostfwd=tcp::{port}-:{port}");
+        }
+    }
+
+    let mut cmd = Command::new(qemu);
+    let _ = cmd
         .args(["-machine", machine_type()])
         .args(accel_flags())
+        .args(["-cpu", "max"])
         .args(["-kernel", &kernel.display().to_string()])
         .args(["-initrd", &initramfs.display().to_string()])
         .args(["-m", &VM_MEMORY_MB.to_string()])
@@ -364,21 +411,33 @@ fn spawn_qemu(qemu: &Path, kernel: &Path, initramfs: &Path) -> Result<Child> {
         .arg("-no-reboot")
         .args([
             "-append",
-            &format!("console=ttyS0 quiet containust_port={VM_PORT}"),
+            if cfg!(target_arch = "aarch64") {
+                "console=ttyAMA0 quiet loglevel=0"
+            } else {
+                "console=ttyS0 quiet loglevel=0"
+            },
         ])
-        .args([
-            "-netdev",
-            &format!("user,id=net0,hostfwd=tcp::{VM_PORT}-:{VM_PORT}"),
-            "-device",
-            "virtio-net-pci,netdev=net0",
-        ])
+        .args(["-netdev", &hostfwd, "-device", "virtio-net-pci,netdev=net0"])
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| ContainustError::Io {
-            path: qemu.to_path_buf(),
-            source: e,
-        })
+        .stderr(Stdio::piped());
+
+    cmd.spawn().map_err(|e| ContainustError::Io {
+        path: qemu.to_path_buf(),
+        source: e,
+    })
+}
+
+/// Sends a ping to the agent and checks for a pong response.
+fn check_agent_ping(stream: &mut TcpStream) -> bool {
+    let request = serde_json::json!({"method": "ping", "params": {}});
+    let mut payload = serde_json::to_string(&request).unwrap_or_default();
+    payload.push('\n');
+    if stream.write_all(payload.as_bytes()).is_err() {
+        return false;
+    }
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line).is_ok() && line.contains("pong")
 }
 
 /// Polls TCP until the VM agent is reachable or the timeout elapses.
@@ -387,9 +446,12 @@ fn wait_for_vm_ready() -> Result<()> {
     let timeout = std::time::Duration::from_secs(VM_BOOT_TIMEOUT_SECS);
 
     while start.elapsed() < timeout {
-        if TcpStream::connect(format!("127.0.0.1:{VM_PORT}")).is_ok() {
-            tracing::info!("VM is ready");
-            return Ok(());
+        if let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{VM_PORT}")) {
+            if check_agent_ping(&mut stream) {
+                eprintln!("  VM is ready.");
+                tracing::info!("VM is ready");
+                return Ok(());
+            }
         }
         std::thread::sleep(std::time::Duration::from_millis(VM_POLL_INTERVAL_MS));
     }
@@ -399,21 +461,52 @@ fn wait_for_vm_ready() -> Result<()> {
     })
 }
 
+/// Maximum RPC attempts before giving up.
+const RPC_MAX_RETRIES: u32 = 8;
+/// Delay between RPC retries.
+const RPC_RETRY_DELAY_MS: u64 = 800;
+
 /// Sends a single JSON-RPC request to the in-VM agent over TCP.
+/// Retries on connection failure or empty responses.
 fn send_rpc(method: &str, params: &serde_json::Value) -> Result<serde_json::Value> {
+    let request = serde_json::json!({ "method": method, "params": params });
+    let mut payload = serde_json::to_string(&request)?;
+    payload.push('\n');
+
+    let mut last_err = None;
+    for attempt in 0..RPC_MAX_RETRIES {
+        if attempt > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(RPC_RETRY_DELAY_MS));
+        }
+        match try_send_rpc(&payload) {
+            Ok(val) => {
+                if let Some(error) = val.get("error") {
+                    return Err(ContainustError::Config {
+                        message: format!("VM agent error: {error}"),
+                    });
+                }
+                return Ok(val);
+            }
+            Err(e) => {
+                tracing::debug!(attempt, error = %e, "RPC attempt failed, retrying");
+                last_err = Some(e);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| ContainustError::Config {
+        message: "RPC failed after all retries".into(),
+    }))
+}
+
+/// Single attempt to connect, send, and receive an RPC response.
+fn try_send_rpc(payload: &str) -> Result<serde_json::Value> {
     let mut stream =
         TcpStream::connect(format!("127.0.0.1:{VM_PORT}")).map_err(|e| ContainustError::Io {
             path: PathBuf::from("VM agent"),
             source: e,
         })?;
 
-    let request = serde_json::json!({
-        "method": method,
-        "params": params,
-    });
-
-    let mut payload = serde_json::to_string(&request)?;
-    payload.push('\n');
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
 
     stream
         .write_all(payload.as_bytes())
@@ -422,24 +515,20 @@ fn send_rpc(method: &str, params: &serde_json::Value) -> Result<serde_json::Valu
             source: e,
         })?;
 
-    let mut reader = BufReader::new(stream);
+    let mut reader = BufReader::new(&stream);
     let mut line = String::new();
-    let _bytes = reader
-        .read_line(&mut line)
-        .map_err(|e| ContainustError::Io {
-            path: PathBuf::from("VM agent"),
-            source: e,
-        })?;
+    let _bytes = reader.read_line(&mut line).map_err(|e| ContainustError::Io {
+        path: PathBuf::from("VM agent"),
+        source: e,
+    })?;
 
-    let response: serde_json::Value = serde_json::from_str(&line)?;
-
-    if let Some(error) = response.get("error") {
+    if line.trim().is_empty() {
         return Err(ContainustError::Config {
-            message: format!("VM agent error: {error}"),
+            message: "empty response from VM agent".into(),
         });
     }
 
-    Ok(response)
+    serde_json::from_str(&line).map_err(Into::into)
 }
 
 /// Safely converts a `u64` to `u32`, returning an error on overflow.

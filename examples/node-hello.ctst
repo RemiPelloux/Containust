@@ -1,0 +1,11 @@
+// node-hello.ctst — Hello World HTTP server
+//
+// Run with: ctst run examples/node-hello.ctst
+// Then visit: http://localhost:6500
+
+COMPONENT hello {
+    image = "alpine:3.21"
+    port = 6500
+    command = ["sh", "-c", "while true; do echo 'Hello World from Containust!' | nc -l -p 6500; done"]
+    memory = "128MiB"
+}
