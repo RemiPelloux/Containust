@@ -59,8 +59,9 @@ mod tests {
 
     #[test]
     fn log_path_is_constructed_correctly() {
-        let p = log_path(Path::new("/var/lib/containust"), "abc-123");
-        assert_eq!(p.to_str().unwrap(), "/var/lib/containust/logs/abc-123.log");
+        let base = Path::new("/var/lib/containust");
+        let p = log_path(base, "abc-123");
+        assert_eq!(p, base.join("logs").join("abc-123.log"));
     }
 
     #[test]

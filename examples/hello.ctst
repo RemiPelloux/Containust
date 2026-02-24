@@ -1,0 +1,10 @@
+COMPONENT hello {
+    image = "file:///tmp/test-rootfs"
+    port = 8080
+    command = ["/bin/echo", "Hello from Containust!"]
+    memory = "128MiB"
+    cpu = "0.5"
+    env = {
+        RUST_LOG = "info"
+    }
+}

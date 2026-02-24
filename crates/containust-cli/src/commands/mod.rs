@@ -25,8 +25,8 @@ pub struct Cli {
     pub offline: bool,
 
     /// Path to the state file.
-    #[arg(long, global = true, default_value = containust_common::constants::DEFAULT_STATE_FILE)]
-    pub state_file: String,
+    #[arg(long, global = true)]
+    pub state_file: Option<String>,
 }
 
 /// Available CLI subcommands.

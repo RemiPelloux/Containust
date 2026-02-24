@@ -1,0 +1,38 @@
+COMPONENT database {
+    image = "file:///opt/images/postgres"
+    port = 5432
+    memory = "512MiB"
+    env = {
+        POSTGRES_PASSWORD = "secret"
+        POSTGRES_DB = "myapp"
+    }
+    volume = "/data:/var/lib/postgresql/data"
+    healthcheck = {
+        command = ["pg_isready", "-U", "postgres"]
+        interval = "10s"
+        timeout = "5s"
+        retries = 3
+    }
+}
+
+COMPONENT api {
+    image = "file:///opt/images/api"
+    port = 3000
+    memory = "256MiB"
+    cpu = "1.0"
+    env = {
+        NODE_ENV = "production"
+    }
+    command = ["node", "server.js"]
+}
+
+COMPONENT frontend {
+    image = "file:///opt/images/frontend"
+    port = 8080
+    memory = "128MiB"
+    command = ["nginx", "-g", "daemon off;"]
+    readonly = true
+}
+
+CONNECT api -> database
+CONNECT frontend -> api

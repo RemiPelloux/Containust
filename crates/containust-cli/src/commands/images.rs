@@ -26,7 +26,7 @@ pub struct ImagesArgs {
 ///
 /// Returns an error if catalog operations fail.
 pub fn execute(args: ImagesArgs) -> anyhow::Result<()> {
-    let data_dir = std::path::Path::new(containust_common::constants::DEFAULT_DATA_DIR);
+    let data_dir = containust_common::constants::data_dir();
     let catalog = ImageCatalog::open(data_dir).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if let Some(ref id) = args.remove {

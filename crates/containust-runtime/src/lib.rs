@@ -1,5 +1,6 @@
 //! Container lifecycle management for the Containust runtime.
 
+#![allow(unsafe_code)]
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
 pub mod backend;

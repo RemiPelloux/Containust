@@ -11,6 +11,8 @@
 //! All unsafe system calls are encapsulated in safe wrappers with
 //! proper error handling and `// SAFETY:` documentation.
 
+#![allow(unsafe_code)]
+
 pub mod capability;
 pub mod cgroup;
 pub mod filesystem;

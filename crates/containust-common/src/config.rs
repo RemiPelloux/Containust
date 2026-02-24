@@ -19,9 +19,11 @@ pub struct ContainustConfig {
 
 impl Default for ContainustConfig {
     fn default() -> Self {
+        let dd = crate::constants::data_dir().clone();
+        let sf = dd.join("state.json");
         Self {
-            data_dir: PathBuf::from(crate::constants::DEFAULT_DATA_DIR),
-            state_file: PathBuf::from(crate::constants::DEFAULT_STATE_FILE),
+            data_dir: dd,
+            state_file: sf,
             offline: false,
             default_limits: crate::types::ResourceLimits::default(),
         }
@@ -33,15 +35,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_default_uses_standard_paths() {
+    fn config_default_uses_resolved_paths() {
         let cfg = ContainustConfig::default();
-        assert_eq!(
-            cfg.data_dir,
-            PathBuf::from(crate::constants::DEFAULT_DATA_DIR)
-        );
+        assert_eq!(cfg.data_dir, *crate::constants::data_dir());
         assert_eq!(
             cfg.state_file,
-            PathBuf::from(crate::constants::DEFAULT_STATE_FILE)
+            crate::constants::data_dir().join("state.json")
         );
     }
 

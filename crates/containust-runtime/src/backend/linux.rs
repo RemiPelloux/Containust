@@ -21,7 +21,7 @@ impl LinuxNativeBackend {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            data_dir: PathBuf::from(containust_common::constants::DEFAULT_DATA_DIR),
+            data_dir: containust_common::constants::data_dir().clone(),
         }
     }
 }

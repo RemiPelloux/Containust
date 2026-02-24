@@ -24,7 +24,7 @@ impl Engine {
     pub fn new() -> Self {
         Self {
             backend: backend::detect_backend(),
-            data_dir: PathBuf::from(containust_common::constants::DEFAULT_DATA_DIR),
+            data_dir: containust_common::constants::data_dir().clone(),
         }
     }
 
