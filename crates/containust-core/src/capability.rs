@@ -52,23 +52,30 @@ pub fn drop_capabilities(keep: &[Capability]) -> Result<()> {
         keep.iter().map(|c| c.linux_cap_number()).collect();
 
     for cap in 0..CAP_LAST_CAP {
-        if !kept_caps.contains(&cap) {
-            // SAFETY: prctl with PR_CAPBSET_DROP is a safe operation — it only
-            // removes capabilities from the bounding set. Returns EINVAL for
-            // invalid capability numbers, which we silently ignore.
-            let ret = unsafe { libc::prctl(libc::PR_CAPBSET_DROP, cap, 0, 0, 0) };
-            if ret == -1 {
-                let errno = std::io::Error::last_os_error();
-                if errno.raw_os_error() != Some(libc::EINVAL) {
-                    return Err(ContainustError::PermissionDenied {
-                        message: format!("failed to drop capability {cap}: {errno}"),
-                    });
-                }
-            }
+        if kept_caps.contains(&cap) {
+            continue;
         }
+        drop_single_cap(cap)?;
     }
     tracing::info!(retained = keep.len(), "capabilities dropped");
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn drop_single_cap(cap: u32) -> Result<()> {
+    // SAFETY: prctl with PR_CAPBSET_DROP only removes capabilities from the
+    // bounding set. Returns EINVAL for invalid capability numbers.
+    let ret = unsafe { libc::prctl(libc::PR_CAPBSET_DROP, cap, 0, 0, 0) };
+    if ret != -1 {
+        return Ok(());
+    }
+    let errno = std::io::Error::last_os_error();
+    if errno.raw_os_error() == Some(libc::EINVAL) {
+        return Ok(());
+    }
+    Err(ContainustError::PermissionDenied {
+        message: format!("failed to drop capability {cap}: {errno}"),
+    })
 }
 
 /// Stub for non-Linux platforms.

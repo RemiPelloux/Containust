@@ -83,26 +83,32 @@ impl Container {
     #[cfg(target_os = "linux")]
     pub fn stop(&mut self) -> Result<()> {
         if let Some(pid) = self.pid {
-            use nix::sys::signal::{Signal, kill};
-            use nix::unistd::Pid;
-
-            let nix_pid = Pid::from_raw(i32::try_from(pid).unwrap_or(i32::MAX));
-
-            if kill(nix_pid, Signal::SIGTERM).is_ok() {
-                tracing::info!(pid, "sent SIGTERM");
-                std::thread::sleep(std::time::Duration::from_secs(2));
-
-                if kill(nix_pid, None).is_ok() {
-                    let _ = kill(nix_pid, Signal::SIGKILL);
-                    tracing::info!(pid, "sent SIGKILL");
-                }
-            }
+            Self::terminate_process(pid);
         }
 
         self.state = ContainerState::Stopped;
         self.pid = None;
         tracing::info!(id = %self.id, "container stopped");
         Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn terminate_process(pid: u32) {
+        use nix::sys::signal::{Signal, kill};
+        use nix::unistd::Pid;
+
+        let nix_pid = Pid::from_raw(i32::try_from(pid).unwrap_or(i32::MAX));
+
+        if kill(nix_pid, Signal::SIGTERM).is_err() {
+            return;
+        }
+        tracing::info!(pid, "sent SIGTERM");
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        if kill(nix_pid, None).is_ok() {
+            let _ = kill(nix_pid, Signal::SIGKILL);
+            tracing::info!(pid, "sent SIGKILL");
+        }
     }
 
     /// Stops the container, transitioning to `Stopped`.

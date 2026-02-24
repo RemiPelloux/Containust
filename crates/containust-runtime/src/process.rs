@@ -62,14 +62,7 @@ pub fn spawn_container_process(
     // SAFETY: pre_exec runs in the child process between fork and exec.
     // chroot and chdir are safe here as we've validated rootfs exists.
     unsafe {
-        let _ = child_cmd.pre_exec(move || {
-            nix::unistd::chroot(&rootfs_owned).map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.to_string())
-            })?;
-            std::env::set_current_dir("/")
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-            Ok(())
-        });
+        let _ = child_cmd.pre_exec(move || enter_rootfs(&rootfs_owned));
     }
 
     let child = child_cmd.spawn().map_err(|e| ContainustError::Io {
@@ -80,6 +73,13 @@ pub fn spawn_container_process(
     let pid = child.id();
     tracing::info!(pid, "container process spawned");
     Ok(pid)
+}
+
+#[cfg(target_os = "linux")]
+fn enter_rootfs(rootfs: &Path) -> std::io::Result<()> {
+    nix::unistd::chroot(rootfs)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.to_string()))?;
+    std::env::set_current_dir("/")
 }
 
 /// Spawns a new process inside the container's rootfs.
