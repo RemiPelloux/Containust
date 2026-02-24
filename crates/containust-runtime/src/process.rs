@@ -47,22 +47,22 @@ pub fn spawn_container_process(
 
     let mut child_cmd = std::process::Command::new(&command[0]);
     if command.len() > 1 {
-        child_cmd.args(&command[1..]);
+        let _ = child_cmd.args(&command[1..]);
     }
 
-    child_cmd.env_clear();
-    child_cmd.env("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin");
-    child_cmd.env("HOME", "/root");
-    child_cmd.env("TERM", "xterm");
+    let _ = child_cmd.env_clear();
+    let _ = child_cmd.env("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin");
+    let _ = child_cmd.env("HOME", "/root");
+    let _ = child_cmd.env("TERM", "xterm");
     for (key, value) in env {
-        child_cmd.env(key, value);
+        let _ = child_cmd.env(key, value);
     }
 
     let rootfs_owned = rootfs.to_path_buf();
     // SAFETY: pre_exec runs in the child process between fork and exec.
     // chroot and chdir are safe here as we've validated rootfs exists.
     unsafe {
-        child_cmd.pre_exec(move || {
+        let _ = child_cmd.pre_exec(move || {
             nix::unistd::chroot(&rootfs_owned).map_err(|e| {
                 std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.to_string())
             })?;

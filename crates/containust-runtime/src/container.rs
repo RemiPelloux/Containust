@@ -86,7 +86,7 @@ impl Container {
             use nix::sys::signal::{Signal, kill};
             use nix::unistd::Pid;
 
-            let nix_pid = Pid::from_raw(pid as i32);
+            let nix_pid = Pid::from_raw(i32::try_from(pid).unwrap_or(i32::MAX));
 
             if kill(nix_pid, Signal::SIGTERM).is_ok() {
                 tracing::info!(pid, "sent SIGTERM");
