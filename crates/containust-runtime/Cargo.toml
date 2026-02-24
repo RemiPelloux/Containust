@@ -1,0 +1,24 @@
+[package]
+name = "containust-runtime"
+version = "0.1.0"
+description = "Container lifecycle management: creation, execution, state tracking, and metrics."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+containust-common = { workspace = true }
+containust-core = { workspace = true }
+containust-ebpf = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

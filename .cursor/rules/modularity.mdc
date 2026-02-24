@@ -1,0 +1,41 @@
+---
+description: Anti-monolith rules, single responsibility, module size limits, and trait-based abstraction patterns.
+globs: ["**/*.rs"]
+alwaysApply: true
+---
+
+# Modularity Rules — Containust
+
+## Module Size Limits
+
+1. **Max 300 lines per file.** If a module exceeds this, split it into submodules.
+2. **Max 50 lines per function.** Extract sub-functions when approaching this limit.
+3. **Max 10 public items per module.** A module exposing too many items is doing too much.
+4. **Max 5 fields on a struct** before considering a builder pattern or nested structs.
+
+## Single Responsibility
+
+1. **One concern per file.** A file named `storage.rs` handles storage — not networking, not parsing.
+2. **One concern per struct.** A struct should model a single concept. If it has methods spanning multiple domains, split it.
+3. **No god-objects.** No struct should accumulate unrelated state or behavior.
+4. **No mega-enums.** If an enum variant count exceeds 10, consider splitting into separate types or using trait objects.
+
+## Abstraction Patterns
+
+1. **Trait-first design.** Define traits for cross-cutting concerns (storage backends, source protocols, namespace operations) before writing concrete implementations.
+2. **Dependency injection.** Accept trait objects or generics rather than hard-coding concrete types. This enables testing with mocks.
+3. **No global mutable state.** Use dependency injection to pass shared state. No `lazy_static!` or `once_cell` for mutable data.
+4. **Opaque types.** Expose behavior through methods, not raw fields. Prefer `pub struct Foo { ... }` with accessor methods over `pub` fields.
+
+## Module Hierarchy
+
+1. **Flat when possible.** Avoid deeply nested module trees (max 3 levels: `crate::module::submodule`).
+2. **`mod.rs` as orchestrator.** The `mod.rs` (or parent module file) should only declare submodules and re-export the public API — no business logic.
+3. **Explicit re-exports.** Use `pub use` at module boundaries to define a clean public API surface. Internal types stay private.
+
+## Avoiding Monolith Patterns
+
+1. **No catch-all utility modules.** Files named `utils.rs`, `helpers.rs`, or `misc.rs` are banned. Place each utility where it semantically belongs.
+2. **No multi-purpose crates.** Each crate has a documented, singular purpose. If a crate's README needs more than two sentences to describe its purpose, it is doing too much.
+3. **Bounded contexts.** Each crate owns its domain types and logic. Cross-crate sharing goes through `containust-common` for primitives only — not business logic.
+4. **No feature creep in common.** `containust-common` holds only: error types, ID types, configuration models, and constants. No algorithms, no I/O, no business rules.

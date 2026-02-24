@@ -1,0 +1,20 @@
+[package]
+name = "containust-sdk"
+version = "0.1.0"
+description = "Public SDK for using Containust as a Rust library: ContainerBuilder, GraphResolver, EventListener."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+containust-common = { workspace = true }
+containust-runtime = { workspace = true }
+containust-image = { workspace = true }
+containust-compose = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

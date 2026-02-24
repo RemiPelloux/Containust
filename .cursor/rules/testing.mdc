@@ -1,0 +1,61 @@
+---
+description: Testing standards, coverage targets, test organization, and quality requirements.
+globs: ["**/*.rs", "tests/**"]
+alwaysApply: true
+---
+
+# Testing Rules — Containust
+
+## Test Organization
+
+1. **Unit tests** are co-located with the code they test, inside `#[cfg(test)] mod tests { ... }` at the bottom of each module.
+2. **Integration tests** live in the workspace-level `tests/integration/` directory.
+3. **Test fixtures** are minimal and focused. Prefer builders/factories over shared, mutable test data.
+4. **One assertion per test** when feasible. Name tests after the behavior they verify, not the function they call.
+
+## Naming Convention
+
+```
+#[test]
+fn <unit>_<scenario>_<expected_outcome>()
+```
+
+Examples:
+- `fn container_with_invalid_image_returns_error()`
+- `fn parser_empty_input_produces_empty_ast()`
+- `fn cgroup_memory_limit_enforced_correctly()`
+
+## Coverage & Quality
+
+1. **Target: 90% line coverage** for library crates. CLI/TUI crates may have lower coverage due to I/O.
+2. **No `#[ignore]`** without a tracking issue reference in a comment explaining why.
+3. **No flaky tests.** Tests must be deterministic. Mock external dependencies (filesystem, network, clock).
+4. **Tests must be fast.** Unit tests should complete in < 100ms individually. Integration tests should complete in < 5s.
+
+## What to Test
+
+1. **Happy path:** The normal, successful execution flow.
+2. **Error paths:** Invalid input, missing files, permission denied, resource exhaustion.
+3. **Edge cases:** Empty inputs, boundary values, maximum sizes, Unicode in paths.
+4. **State transitions:** Container lifecycle states (Created → Running → Stopped).
+5. **Invariants:** Dependency graph is acyclic, cgroup limits are non-negative, hashes are valid.
+
+## Test Isolation
+
+1. **No shared mutable state** between tests. Each test sets up its own context.
+2. **Use `tempfile`** for filesystem operations in tests. Never write to fixed paths.
+3. **Mock system calls** in unit tests. Only integration tests should touch real namespaces/cgroups.
+4. **No network calls** in unit tests. Use recorded responses or mock servers.
+
+## Test Utilities
+
+1. Place shared test helpers in a `testutil` module within each crate (not in `containust-common`).
+2. Use `#[cfg(test)]` to gate test-only code so it does not ship in release builds.
+3. Prefer assertion macros that produce clear failure messages: `assert_eq!`, `assert_matches!`.
+
+## Continuous Integration
+
+1. `cargo test --workspace` must pass on every commit.
+2. `cargo clippy --workspace -- -D warnings` must pass with zero warnings.
+3. `cargo fmt --check` must pass.
+4. `cargo deny check` must pass.

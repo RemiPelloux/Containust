@@ -1,0 +1,19 @@
+[package]
+name = "containust-tui"
+version = "0.1.0"
+description = "Interactive terminal dashboard for monitoring Containust containers."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+containust-common = { workspace = true }
+containust-sdk = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

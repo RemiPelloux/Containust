@@ -1,0 +1,25 @@
+[package]
+name = "containust-ebpf"
+version = "0.1.0"
+description = "eBPF-based observability: syscall tracing, file monitoring, and network surveillance."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+containust-common = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+# aya is optional — requires Linux and BPF support at runtime
+[target.'cfg(target_os = "linux")'.dependencies]
+aya = { workspace = true, optional = true }
+
+[features]
+default = []
+ebpf = ["aya"]
+
+[lints]
+workspace = true

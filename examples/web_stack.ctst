@@ -1,0 +1,42 @@
+// Full web stack: API server + PostgreSQL + Redis.
+// Demonstrates IMPORT, COMPONENT, CONNECT, and auto-wiring.
+
+IMPORT "templates/postgres.ctst" AS pg_template
+
+COMPONENT api {
+    image = "file:///opt/images/myapp-api"
+    port = 8080
+    memory = "256MiB"
+    cpu = "1024"
+    env = {
+        RUST_LOG = "info"
+        DATABASE_URL = "postgres://${db.host}:${db.port}/app"
+        REDIS_URL = "redis://${cache.host}:${cache.port}"
+    }
+    command = ["./api-server", "--bind", "0.0.0.0:8080"]
+    readonly = true
+}
+
+COMPONENT db FROM pg_template {
+    port = 5432
+    memory = "512MiB"
+    volume = "/data/postgres:/var/lib/postgresql/data"
+    env = {
+        POSTGRES_DB = "app"
+        POSTGRES_USER = "app_user"
+        POSTGRES_PASSWORD = "${secret.db_password}"
+    }
+}
+
+COMPONENT cache {
+    image = "tar:///opt/images/redis-7.tar"
+    port = 6379
+    memory = "128MiB"
+    readonly = true
+    command = ["redis-server", "--maxmemory", "100mb"]
+}
+
+// Dependency graph: api depends on both db and cache.
+// db and cache start first (in parallel), then api starts.
+CONNECT api -> db
+CONNECT api -> cache

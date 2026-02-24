@@ -1,0 +1,62 @@
+---
+description: Rust coding style, naming conventions, function design, and idiomatic patterns for Containust.
+globs: ["**/*.rs"]
+alwaysApply: true
+---
+
+# Coding Style Rules — Containust
+
+## Naming Conventions
+
+1. **Modules & files:** `snake_case` — e.g., `pivot_root.rs`, `file_monitor.rs`.
+2. **Types (structs, enums, traits):** `PascalCase` — e.g., `ContainerState`, `LayerHash`.
+3. **Functions & methods:** `snake_case` — e.g., `create_namespace`, `resolve_graph`.
+4. **Constants:** `SCREAMING_SNAKE_CASE` — e.g., `DEFAULT_CGROUP_PATH`.
+5. **Type parameters:** Single uppercase letter or short `PascalCase` — e.g., `T`, `Err`.
+6. **No abbreviations** unless universally understood (e.g., `id`, `fs`, `io`, `cpu`, `pid`).
+
+## Function Design
+
+1. **Single responsibility.** Each function does one thing.
+2. **Max 25 lines** per function body. If longer, extract helpers.
+3. **Max 3 parameters.** Beyond 3, use a config/options struct.
+4. **Early returns.** Use guard clauses to reduce nesting. Avoid deep `if/else` chains.
+5. **Prefer pure functions.** Isolate side effects (I/O, system calls) at the boundary.
+6. **Return `Result<T, E>`** for all fallible operations. Never silently ignore errors.
+
+## Error Handling
+
+1. **Library crates:** Use `thiserror` for typed errors. Each crate defines its own error enum.
+2. **Binary crate (CLI):** Use `anyhow` for ergonomic error propagation.
+3. **No `.unwrap()` in library crates.** Use `.expect("reason")` only in tests.
+4. **No `panic!`** in library code. Reserve panics for truly unrecoverable states.
+5. **Error messages must be actionable.** Bad: `"failed"`. Good: `"failed to mount overlayfs at {path}: {source}"`.
+
+## Code Organization
+
+1. **Imports:** Group by std → external → internal crate, separated by blank lines.
+2. **Module order in `lib.rs`:** public modules first, then private, alphabetical within groups.
+3. **Doc comments (`///`)** on all public items. Include `# Errors` section for fallible functions.
+4. **No commented-out code.** Delete it; git has history.
+5. **No `TODO` or `FIXME`** without an associated tracking issue reference.
+
+## Rust Idioms
+
+1. **Use `impl Trait`** in argument position for flexibility, concrete types in return position for clarity.
+2. **Prefer `&str` over `String`** in function parameters when ownership is not needed.
+3. **Use iterators** over manual loops when they improve readability.
+4. **Derive traits** in consistent order: `Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize`.
+5. **Use `#[must_use]`** on functions that return values which should not be ignored.
+6. **Prefer `Into<T>` / `AsRef<T>`** in public APIs for ergonomic parameter types.
+
+## Lints
+
+The workspace enforces `clippy::pedantic` and `clippy::nursery` as warnings. Do not suppress them with `#[allow(...)]` unless you provide a justification comment next to the attribute.
+
+## Formatting
+
+All code must pass `cargo fmt --check`. The project uses `rustfmt.toml` with:
+- Max line width: 100 characters
+- Unix line endings
+- Module-level import granularity
+- Grouped imports (std, external, crate)

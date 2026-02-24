@@ -1,0 +1,98 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/containust-common",
+    "crates/containust-core",
+    "crates/containust-image",
+    "crates/containust-runtime",
+    "crates/containust-compose",
+    "crates/containust-ebpf",
+    "crates/containust-sdk",
+    "crates/containust-tui",
+    "crates/containust-cli",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/containust/containust"
+rust-version = "1.85.0"
+
+[workspace.dependencies]
+# Internal crates
+containust-common = { path = "crates/containust-common" }
+containust-core = { path = "crates/containust-core" }
+containust-image = { path = "crates/containust-image" }
+containust-runtime = { path = "crates/containust-runtime" }
+containust-compose = { path = "crates/containust-compose" }
+containust-ebpf = { path = "crates/containust-ebpf" }
+containust-sdk = { path = "crates/containust-sdk" }
+containust-tui = { path = "crates/containust-tui" }
+containust-cli = { path = "crates/containust-cli" }
+
+# CLI & TUI
+clap = { version = "4.5", features = ["derive", "env", "unicode"] }
+ratatui = "0.30"
+crossterm = "0.28"
+
+# Parsing & Graph
+nom = "8"
+petgraph = "0.7"
+
+# Linux system
+nix = { version = "0.29", features = ["mount", "sched", "signal", "user", "process", "fs"] }
+libc = "0.2"
+
+# eBPF
+aya = "0.13"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Crypto
+sha2 = "0.10"
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+missing_docs = "warn"
+unused_results = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true

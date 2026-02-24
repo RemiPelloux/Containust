@@ -1,0 +1,38 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Containust state
+/var/lib/containust/
+state.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+*.profraw
+*.profdata
+lcov.info
+coverage/
+
+# Debug
+*.dSYM/
+
+# Temporary
+tmp/
+temp/

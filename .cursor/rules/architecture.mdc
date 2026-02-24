@@ -1,0 +1,48 @@
+---
+description: Crate boundary enforcement, dependency DAG, and layered architecture rules for the Containust workspace.
+globs: ["crates/**/*.rs", "Cargo.toml", "crates/*/Cargo.toml"]
+alwaysApply: true
+---
+
+# Architecture Rules — Containust
+
+## Layered Architecture (Strict DAG)
+
+The workspace is organized into five layers. Dependencies flow strictly downward — never upward or sideways across layers.
+
+```
+CLI Layer      →  containust-cli, containust-tui
+SDK Layer      →  containust-sdk
+Engine Layer   →  containust-compose, containust-runtime, containust-image
+Observe Layer  →  containust-ebpf
+Core Layer     →  containust-core
+Common Layer   →  containust-common
+```
+
+## Allowed Internal Dependencies
+
+Each crate has an explicit, closed set of allowed internal dependencies. Adding a dependency not listed here is a violation.
+
+| Crate                | Allowed Internal Deps                                        |
+|----------------------|--------------------------------------------------------------|
+| containust-common    | NONE (leaf crate)                                            |
+| containust-core      | containust-common                                            |
+| containust-image     | containust-common, containust-core                           |
+| containust-runtime   | containust-common, containust-core, containust-ebpf          |
+| containust-compose   | containust-common, containust-core                           |
+| containust-ebpf      | containust-common                                            |
+| containust-sdk       | containust-common, containust-runtime, containust-image, containust-compose |
+| containust-tui       | containust-common, containust-sdk                            |
+| containust-cli       | containust-common, containust-sdk, containust-tui            |
+
+## Rules
+
+1. **No circular dependencies.** The dependency graph must remain a DAG at all times.
+2. **No cross-layer imports.** A crate in the Engine Layer must never import from the CLI or SDK layer.
+3. **SDK is the public facade.** External consumers and the CLI only interact with engine crates through `containust-sdk`.
+4. **Common is dependency-free.** `containust-common` must never depend on any other internal crate.
+5. **Core crates are UI-agnostic.** `containust-core`, `containust-image`, `containust-runtime`, `containust-compose`, and `containust-ebpf` must never depend on `clap`, `ratatui`, `crossterm`, or any presentation crate.
+6. **One binary crate.** Only `containust-cli` produces a binary (`ctst`). All other crates are libraries.
+7. **Feature flags for optional capabilities.** Heavy dependencies (aya/eBPF, ratatui/TUI, fuse) must be gated behind cargo feature flags so downstream consumers can opt out.
+8. **No re-exports of internal types.** Each crate owns its public API surface. The SDK re-exports a curated subset — it does not blanket re-export engine internals.
+9. **Workspace-level dependency versions.** All external dependency versions are declared in the root `Cargo.toml` under `[workspace.dependencies]`. Crate-level `Cargo.toml` files reference them with `workspace = true`.

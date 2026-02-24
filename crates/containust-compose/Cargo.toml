@@ -1,0 +1,23 @@
+[package]
+name = "containust-compose"
+version = "0.1.0"
+description = "Parser for the .ctst composition language and dependency graph resolver."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+containust-common = { workspace = true }
+containust-core = { workspace = true }
+nom = { workspace = true }
+petgraph = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

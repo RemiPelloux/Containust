@@ -1,0 +1,21 @@
+[package]
+name = "containust-core"
+version = "0.1.0"
+description = "Linux isolation primitives: namespaces, cgroups v2, OverlayFS, and capability management."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+containust-common = { workspace = true }
+nix = { workspace = true }
+libc = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

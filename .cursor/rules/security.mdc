@@ -1,0 +1,49 @@
+---
+description: Security rules for unsafe code, capability management, filesystem isolation, and secrets handling.
+globs: ["**/*.rs"]
+alwaysApply: true
+---
+
+# Security Rules — Containust
+
+## Unsafe Code
+
+1. **All `unsafe` blocks require a `// SAFETY:` comment** explaining why the invariants are upheld.
+2. **Minimize unsafe scope.** Wrap unsafe operations in safe abstractions as close to the call site as possible.
+3. **No `unsafe` in library public APIs.** If the underlying operation is unsafe, encapsulate it in a safe wrapper that validates preconditions.
+4. **Audit all unsafe blocks** during code review. Unsafe code must be reviewed by at least one other contributor.
+
+## Error Handling for Security
+
+1. **No `.unwrap()` in library crates.** A panic in a container runtime is a security incident.
+2. **No silent error swallowing.** Every `Result` must be handled — either propagated, logged, or explicitly acknowledged.
+3. **Fail closed.** On any security-relevant error, deny the operation rather than proceeding with degraded state.
+4. **Validate all external input.** File paths, image sources, and `.ctst` files must be validated before use.
+
+## Linux Capability Model
+
+1. **Drop all capabilities by default.** Containers start with zero capabilities.
+2. **Allowlist only required capabilities.** Never use `CAP_SYS_ADMIN` or blanket capability sets.
+3. **Document each retained capability** with a justification comment in the code.
+4. **No setuid binaries** inside container rootfs.
+
+## Filesystem Isolation
+
+1. **Read-only rootfs by default.** Container root filesystems are mounted read-only.
+2. **Only declared volumes are writable.** Writable paths must be explicitly listed in the composition file.
+3. **No host filesystem leaks.** Mounts must be validated to prevent path traversal (`../`) attacks.
+4. **Validate symlinks.** Resolve and validate all symlinks before mounting to prevent escape.
+
+## Network & Secrets
+
+1. **`--offline` mode blocks all egress.** When enabled, no outbound network connections are allowed during build or run.
+2. **No hardcoded secrets.** Credentials, tokens, and keys must come from environment variables or mounted secret files.
+3. **No secrets in logs.** Scrub sensitive data from log output and error messages.
+4. **No secrets in state files.** The state index (`state.json`) must not contain credentials.
+
+## Supply Chain
+
+1. **SHA-256 validation** for all downloaded or loaded images and layers.
+2. **Local-first sources.** Prefer `file://` and `tar://` protocols. Remote sources require explicit opt-in.
+3. **`cargo deny`** must pass before merge. All dependencies are audited for known vulnerabilities and license compliance.
+4. **Pin dependency versions** in `Cargo.lock`. The lock file is committed to the repository.

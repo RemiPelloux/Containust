@@ -1,0 +1,10 @@
+// Simple single-container example.
+// Runs an Alpine shell with restricted resources.
+
+COMPONENT shell {
+    image = "file:///opt/images/alpine"
+    memory = "64MiB"
+    cpu = "512"
+    command = ["/bin/sh"]
+    readonly = true
+}
