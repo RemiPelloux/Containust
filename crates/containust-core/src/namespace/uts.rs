@@ -57,3 +57,22 @@ pub fn set_hostname(_hostname: &str) -> Result<()> {
         message: "Linux required for native container operations".into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn create_uts_namespace_succeeds_with_root() {
+        let result = create_uts_namespace();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn set_hostname_succeeds_with_root() {
+        let result = set_hostname("test-container");
+        assert!(result.is_ok());
+    }
+}

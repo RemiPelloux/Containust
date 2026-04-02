@@ -1,8 +1,8 @@
 //! `ctst run` — Deploy and run the component graph.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use clap::Args;
@@ -63,7 +63,10 @@ pub fn execute(args: RunArgs) -> anyhow::Result<()> {
 
 fn print_header() {
     eprintln!();
-    eprintln!("  {BOLD}Containust{RESET} {DIM}v{}{RESET}", env!("CARGO_PKG_VERSION"));
+    eprintln!(
+        "  {BOLD}Containust{RESET} {DIM}v{}{RESET}",
+        env!("CARGO_PKG_VERSION")
+    );
     eprintln!();
 }
 
@@ -89,10 +92,13 @@ fn deploy_and_report(
     eprintln!();
 
     for comp in &deployed {
-        let port_info = comp
-            .port
-            .map_or_else(String::new, |p| format!(" {CYAN}->{RESET} http://localhost:{p}"));
-        eprintln!("    {GREEN}●{RESET} {BOLD}{}{RESET} {DIM}[{}]{RESET}{port_info}", comp.name, comp.id);
+        let port_info = comp.port.map_or_else(String::new, |p| {
+            format!(" {CYAN}->{RESET} http://localhost:{p}")
+        });
+        eprintln!(
+            "    {GREEN}●{RESET} {BOLD}{}{RESET} {DIM}[{}]{RESET}{port_info}",
+            comp.name, comp.id
+        );
     }
 
     let ports: Vec<_> = deployed.iter().filter_map(|c| c.port).collect();

@@ -21,5 +21,8 @@ aya = { workspace = true, optional = true }
 default = []
 ebpf = ["aya"]
 
+[dev-dependencies]
+serde_json = { workspace = true }
+
 [lints]
 workspace = true

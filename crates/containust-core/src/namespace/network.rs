@@ -33,3 +33,15 @@ pub fn create_network_namespace() -> Result<()> {
         message: "Linux required for native container operations".into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn create_network_namespace_succeeds_with_root() {
+        let result = create_network_namespace();
+        assert!(result.is_ok());
+    }
+}

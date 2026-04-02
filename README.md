@@ -17,7 +17,7 @@
   <a href="README.md"><img src="https://img.shields.io/badge/macOS-VM_backend-blue?logo=apple" alt="macOS"></a>
   <a href="README.md"><img src="https://img.shields.io/badge/Windows-VM_backend-blue?logo=windows" alt="Windows"></a>
   <img src="https://img.shields.io/badge/daemon-zero-brightgreen.svg" alt="Zero Daemon">
-  <img src="https://img.shields.io/badge/tests-167_passing-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-384_passing-success" alt="Tests">
 </p>
 
 ---

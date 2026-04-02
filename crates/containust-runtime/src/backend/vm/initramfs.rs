@@ -298,9 +298,18 @@ impl<W: Write> CpioWriter<W> {
              {:08X}{:08X}{:08X}{:08X}\
              {:08X}{:08X}{:08X}{:08X}\
              {:08X}",
-            self.ino, mode, 0u32, 0u32,
-            1u32, 0u32, filesize, 0u32,
-            0u32, 0u32, 0u32, namesize,
+            self.ino,
+            mode,
+            0u32,
+            0u32,
+            1u32,
+            0u32,
+            filesize,
+            0u32,
+            0u32,
+            0u32,
+            0u32,
+            namesize,
             0u32,
         );
 
@@ -399,7 +408,9 @@ impl<R: Read> CpioReader<R> {
 
         let mut name_buf = vec![0u8; namesize];
         self.read_exact_cpio(&mut name_buf)?;
-        let name = String::from_utf8_lossy(&name_buf).trim_end_matches('\0').to_string();
+        let name = String::from_utf8_lossy(&name_buf)
+            .trim_end_matches('\0')
+            .to_string();
         self.skip_padding(110 + namesize);
 
         let mut data = vec![0u8; filesize];
@@ -415,4 +426,121 @@ impl<R: Read> CpioReader<R> {
 fn parse_hex(bytes: &[u8]) -> u32 {
     let s = std::str::from_utf8(bytes).unwrap_or("0");
     u32::from_str_radix(s, 16).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn parse_hex_valid() {
+        assert_eq!(parse_hex(b"000000FF"), 255);
+        assert_eq!(parse_hex(b"00000010"), 16);
+        assert_eq!(parse_hex(b"00000000"), 0);
+        assert_eq!(parse_hex(b"00001000"), 4096);
+    }
+
+    #[test]
+    fn parse_hex_invalid_returns_zero() {
+        assert_eq!(parse_hex(b"ZZZZZZZZ"), 0);
+    }
+
+    #[test]
+    fn parse_hex_empty_returns_zero() {
+        assert_eq!(parse_hex(b""), 0);
+    }
+
+    #[test]
+    fn parse_hex_mixed_case() {
+        assert_eq!(parse_hex(b"000000Ab"), 0xABu32);
+        assert_eq!(parse_hex(b"000000ab"), 0xABu32);
+    }
+
+    #[test]
+    fn cpio_writer_creates_entries() {
+        let buf = Cursor::new(Vec::new());
+        let mut writer = CpioWriter::new(buf);
+
+        writer
+            .write_entry("test.txt", 0o100_644, b"hello")
+            .expect("failed to write entry");
+        writer.write_trailer().expect("failed to write trailer");
+
+        let inner = writer.finish();
+        let data = inner.into_inner();
+        assert!(!data.is_empty());
+        // First bytes should be the newc magic "070701"
+        let magic = std::str::from_utf8(&data[..6]).expect("valid utf8");
+        assert_eq!(magic, "070701");
+    }
+
+    #[test]
+    fn cpio_writer_write_dir() {
+        let buf = Cursor::new(Vec::new());
+        let mut writer = CpioWriter::new(buf);
+
+        writer.write_dir("tmp").expect("failed to write dir");
+        writer.write_trailer().expect("failed to write trailer");
+
+        let inner = writer.finish();
+        assert!(!inner.into_inner().is_empty());
+    }
+
+    #[test]
+    fn cpio_writer_multiple_entries() {
+        let buf = Cursor::new(Vec::new());
+        let mut writer = CpioWriter::new(buf);
+
+        writer
+            .write_entry("file_a.txt", 0o100_644, b"aaa")
+            .expect("write a");
+        writer
+            .write_entry("file_b.txt", 0o100_755, b"bbb")
+            .expect("write b");
+        writer.write_dir("subdir").expect("write dir");
+        writer.write_trailer().expect("write trailer");
+
+        let inner = writer.finish();
+        let data = inner.into_inner();
+        assert!(!data.is_empty());
+    }
+
+    #[test]
+    fn cpio_writer_write_and_trailer() {
+        let buf = Cursor::new(Vec::new());
+        let mut writer = CpioWriter::new(buf);
+        writer.write_trailer().expect("write trailer");
+        let inner = writer.finish();
+        assert!(!inner.into_inner().is_empty());
+    }
+
+    #[test]
+    fn init_script_is_not_empty() {
+        assert!(!INIT_SCRIPT.is_empty());
+        assert!(INIT_SCRIPT.contains("#!/bin/sh"));
+        assert!(INIT_SCRIPT.contains("exec /sbin/containust-agent"));
+    }
+
+    #[test]
+    fn agent_script_is_not_empty() {
+        assert!(!AGENT_SCRIPT.is_empty());
+        assert!(AGENT_SCRIPT.contains("#!/bin/sh"));
+        assert!(AGENT_SCRIPT.contains("h_create"));
+        assert!(AGENT_SCRIPT.contains("h_start"));
+        assert!(AGENT_SCRIPT.contains("h_stop"));
+        assert!(AGENT_SCRIPT.contains("h_list"));
+        assert!(AGENT_SCRIPT.contains("h_remove"));
+    }
+
+    #[test]
+    fn build_initramfs_fails_on_missing_base() {
+        let result = build_initramfs(
+            Path::new("/nonexistent/initramfs.img"),
+            Path::new("/tmp/out.img"),
+        );
+        assert!(result.is_err());
+    }
 }

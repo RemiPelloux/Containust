@@ -67,3 +67,27 @@ pub fn join_pid_namespace(_ns_fd: i32) -> Result<()> {
         message: "Linux required for native container operations".into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Requires root — only verifies the syscall entry point is reached.
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn create_pid_namespace_succeeds_with_root() {
+        let result = create_pid_namespace();
+        assert!(result.is_ok());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn join_pid_namespace_invalid_fd_returns_error() {
+        let result = join_pid_namespace(-1);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ContainustError::PermissionDenied { .. }
+        ));
+    }
+}

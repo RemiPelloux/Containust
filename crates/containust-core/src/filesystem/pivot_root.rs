@@ -71,3 +71,28 @@ pub fn pivot_root(_new_root: &Path, _put_old: &Path) -> Result<()> {
         message: "Linux required for native container operations".into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pivot_root_paths_constructed_correctly() {
+        let new_root = Path::new("/mnt/container-root");
+        let put_old = Path::new("/mnt/container-root/.old_root");
+        assert!(put_old.starts_with(new_root));
+        assert!(put_old.ends_with(".old_root"));
+    }
+
+    /// Requires root privileges and mount namespace.
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn pivot_root_succeeds_with_root() {
+        let temp = std::env::temp_dir().join("containust_pivot_test");
+        let new_root = temp.join("new_root");
+        let put_old = new_root.join(".old_root");
+        let _ = std::fs::create_dir_all(&new_root);
+        pivot_root(&new_root, &put_old).ok();
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+}

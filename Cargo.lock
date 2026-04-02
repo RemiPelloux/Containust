@@ -388,6 +388,7 @@ dependencies = [
  "aya",
  "containust-common",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "tracing",
 ]
@@ -439,6 +440,7 @@ dependencies = [
  "containust-compose",
  "containust-image",
  "containust-runtime",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

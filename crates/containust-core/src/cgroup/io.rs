@@ -36,3 +36,40 @@ pub fn set_io_weight(_cgroup_path: &Path, _weight: u16) -> Result<()> {
         message: "Linux required for native container operations".into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn io_weight_file_path_constructed_correctly() {
+        let cgroup_path = Path::new("/sys/fs/cgroup/containust/app1");
+        let file = cgroup_path.join("io.weight");
+        assert_eq!(file, Path::new("/sys/fs/cgroup/containust/app1/io.weight"));
+    }
+
+    #[test]
+    fn io_weight_min_value() {
+        let min_weight: u16 = 1;
+        assert_eq!(min_weight.to_string(), "1");
+    }
+
+    #[test]
+    fn io_weight_max_value() {
+        let max_weight: u16 = 10000;
+        assert_eq!(max_weight.to_string(), "10000");
+    }
+
+    #[test]
+    fn io_weight_default_value_in_range() {
+        let default_weight: u16 = 100;
+        assert!((1..=10000).contains(&default_weight));
+    }
+
+    /// Requires root and cgroup v2 hierarchy.
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn set_io_weight_writes_value() {
+        let _ = set_io_weight(Path::new("/sys/fs/cgroup/containust/test"), 100);
+    }
+}

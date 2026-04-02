@@ -632,4 +632,416 @@ services:
         assert!(result.contains("PORT = \"8080\""));
         assert!(result.contains("DEBUG = \"true\""));
     }
+
+    #[test]
+    fn test_convert_empty_compose() {
+        let yaml = "services: {}\n";
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("// Components: 0"));
+        assert!(!result.contains("COMPONENT "));
+    }
+
+    #[test]
+    fn test_convert_file_image_passthrough() {
+        let yaml = r"
+services:
+  app:
+    image: file:///opt/custom.img
+";
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("image = \"file:///opt/custom.img\""));
+    }
+
+    #[test]
+    fn test_convert_tar_image_passthrough() {
+        let yaml = r"
+services:
+  app:
+    image: tar:///tmp/image.tar
+";
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("image = \"tar:///tmp/image.tar\""));
+    }
+
+    #[test]
+    fn test_convert_https_image_passthrough() {
+        let yaml = r"
+services:
+  app:
+    image: https://example.com/image.tar
+";
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("image = \"https://example.com/image.tar\""));
+    }
+
+    #[test]
+    fn test_convert_with_build_context_simple() {
+        let yaml = r"
+services:
+  app:
+    build: ./src
+";
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("file://./src"));
+    }
+
+    #[test]
+    fn test_convert_with_build_context_extended() {
+        let yaml = r"
+services:
+  app:
+    build:
+      context: ./app
+";
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("file://./app"));
+    }
+
+    #[test]
+    fn test_convert_with_readonly() {
+        let yaml = r"
+services:
+  app:
+    image: myapp
+    read_only: true
+";
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("readonly = true"));
+    }
+
+    #[test]
+    fn test_convert_with_network() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    networks:
+      - backend
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("network = \"backend\""));
+    }
+
+    #[test]
+    fn test_convert_multiple_ports() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    ports:
+      - "8080:80"
+      - "8443:443"
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("ports = [80, 443]"));
+    }
+
+    #[test]
+    fn test_convert_with_workdir() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    working_dir: /app
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("workdir = \"/app\""));
+    }
+
+    #[test]
+    fn test_convert_with_user() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    user: "1000:1000"
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("user = \"1000:1000\""));
+    }
+
+    #[test]
+    fn test_convert_with_hostname() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    hostname: myhost
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("hostname = \"myhost\""));
+    }
+
+    #[test]
+    fn test_convert_with_command_string() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    command: myserver --port 8080
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("command = [\"myserver\", \"--port\", \"8080\"]"));
+    }
+
+    #[test]
+    fn test_convert_with_command_list() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    command:
+      - myserver
+      - --port
+      - "8080"
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("command = [\"myserver\", \"--port\", \"8080\"]"));
+    }
+
+    #[test]
+    fn test_convert_with_entrypoint() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    entrypoint:
+      - /bin/sh
+      - -c
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("entrypoint = [\"/bin/sh\", \"-c\"]"));
+    }
+
+    #[test]
+    fn test_convert_with_depends_on_map() {
+        let yaml = r#"
+services:
+  api:
+    image: myapi
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_started
+  db:
+    image: postgres
+  cache:
+    image: redis
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("CONNECT api -> db"));
+        assert!(result.contains("CONNECT api -> cache"));
+    }
+
+    #[test]
+    fn test_convert_restart_policy_never() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    restart: "no"
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("restart = \"never\""));
+    }
+
+    #[test]
+    fn test_convert_with_healthcheck_string_test() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    healthcheck:
+      test: curl -f http://localhost/
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("healthcheck = {"));
+        assert!(result.contains("command = [\"curl -f http://localhost/\"]"));
+        assert!(result.contains("interval = \"10s\""));
+        assert!(result.contains("timeout = \"5s\""));
+        assert!(result.contains("retries = 5"));
+        assert!(result.contains("start_period = \"30s\""));
+    }
+
+    #[test]
+    fn test_convert_with_deploy_resources() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("memory = \"256MiB\""));
+        assert!(result.contains("cpu = \"512\""));
+    }
+
+    #[test]
+    fn test_convert_env_secret_interpolation() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    environment:
+      API_KEY: ${MY_API_KEY}
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("API_KEY = \"${secret.MY_API_KEY}\""));
+    }
+
+    #[test]
+    fn test_convert_env_map_with_various_types() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    environment:
+      COUNT: 42
+      ENABLED: true
+      EMPTY: null
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("COUNT = \"42\""));
+        assert!(result.contains("ENABLED = \"true\""));
+    }
+
+    #[test]
+    fn test_convert_multiple_volumes_uses_array() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("volumes = [\"./data:/app/data\", \"./config:/app/config\"]"));
+    }
+
+    #[test]
+    fn test_convert_single_volume_uses_singular() {
+        let yaml = r#"
+services:
+  app:
+    image: myapp
+    volumes:
+      - ./data:/app/data
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("volume = \"./data:/app/data\""));
+    }
+
+    #[test]
+    fn test_convert_image_ref_library_prefix() {
+        assert_eq!(
+            convert_image_ref("library/alpine:3.18"),
+            "tar:///opt/images/alpine.tar"
+        );
+    }
+
+    #[test]
+    fn test_convert_image_ref_org_repo() {
+        assert_eq!(
+            convert_image_ref("myorg/myimage:v1.0"),
+            "tar:///opt/images/myimage.tar"
+        );
+    }
+
+    #[test]
+    fn test_convert_memory_plain_number() {
+        assert_eq!(convert_memory_notation("1073741824"), "1073741824");
+    }
+
+    #[test]
+    fn test_convert_memory_lowercase_g() {
+        assert_eq!(convert_memory_notation("2g"), "2GiB");
+    }
+
+    #[test]
+    fn test_convert_memory_lowercase_k() {
+        assert_eq!(convert_memory_notation("512k"), "512KiB");
+    }
+
+    #[test]
+    fn test_convert_single_port_expose_comment() {
+        let yaml = r#"
+services:
+  web:
+    image: nginx
+    ports:
+      - "8080:80"
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("port = 80"));
+        assert!(result.contains("// EXPOSE 8080:80"));
+    }
+
+    #[test]
+    fn test_convert_port_no_host_mapping() {
+        let yaml = r#"
+services:
+  web:
+    image: nginx
+    ports:
+      - "80"
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("port = 80"));
+        assert!(!result.contains("EXPOSE"));
+    }
+
+    #[test]
+    fn test_convert_file_reads_from_disk() {
+        use std::io::Write;
+
+        let yaml = r"
+services:
+  app:
+    image: myapp
+";
+        let tmp = std::env::temp_dir().join("test_compose.yml");
+        let mut f = std::fs::File::create(&tmp).expect("create tmp file");
+        f.write_all(yaml.as_bytes()).expect("write tmp file");
+
+        let result = convert_file(&tmp).expect("conversion should succeed");
+        assert!(result.contains("COMPONENT app"));
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_convert_string_invalid_yaml_fails() {
+        // serde_yaml is lenient --- we need YAML that structurally fails,
+        // e.g. mixed tabs/spaces causing an indentation error.
+        let result = convert_string("services:\n\tapp:\n\t  image: test\n");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_convert_file_nonexistent_fails() {
+        let result = convert_file(std::path::Path::new("/nonexistent/file.yml"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_convert_header_auto_generated_comment() {
+        let yaml = r"
+services:
+  svc:
+    image: test
+";
+        let result = convert_string(yaml).expect("conversion should succeed");
+        assert!(result.contains("// Auto-generated by: ctst convert"));
+        assert!(result.contains("// Source: docker-compose.yml"));
+    }
 }

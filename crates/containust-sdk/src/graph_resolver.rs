@@ -66,3 +66,136 @@ impl Default for GraphResolver {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use std::io::Write;
+
+    use crate::graph_resolver::GraphResolver;
+
+    #[test]
+    fn graph_resolver_new_starts_empty() {
+        let resolver = GraphResolver::new();
+        // Empty graph resolves to empty order
+        assert!(resolver.deployment_order().is_ok());
+    }
+
+    #[test]
+    fn graph_resolver_default_equals_new() {
+        let a = GraphResolver::new();
+        let b = GraphResolver::default();
+        assert_eq!(
+            a.deployment_order().unwrap().len(),
+            b.deployment_order().unwrap().len()
+        );
+    }
+
+    #[test]
+    fn graph_resolver_load_ctst_parses_and_populates_graph() {
+        let mut content = tempfile::NamedTempFile::new().expect("create temp file");
+        content
+            .write_all(
+                b"COMPONENT api {\n    image = \"file:///opt/api\"\n}\n\
+                  COMPONENT db {\n    image = \"file:///opt/db\"\n}\n\
+                  CONNECT api -> db\n",
+            )
+            .expect("write");
+
+        let mut resolver = GraphResolver::new();
+        let result = resolver.load_ctst(content.path());
+        assert!(result.is_ok(), "should load ctst file: {result:?}");
+
+        let order = resolver.deployment_order().expect("resolve should succeed");
+        assert_eq!(order.len(), 2);
+        let db_pos = order.iter().position(|n| n == "db").expect("db present");
+        let api_pos = order.iter().position(|n| n == "api").expect("api present");
+        assert!(db_pos < api_pos, "db must deploy before api");
+    }
+
+    #[test]
+    fn graph_resolver_load_missing_file_returns_error() {
+        let mut resolver = GraphResolver::new();
+        let missing = std::path::Path::new("/nonexistent/path/file.ctst");
+        assert!(resolver.load_ctst(missing).is_err());
+    }
+
+    #[test]
+    fn graph_resolver_load_invalid_ctst_returns_error() {
+        let mut content = tempfile::NamedTempFile::new().expect("create temp file");
+        content
+            .write_all(b"COMPONENT bad {\n    # missing image\n}\n")
+            .expect("write");
+
+        let mut resolver = GraphResolver::new();
+        assert!(resolver.load_ctst(content.path()).is_err());
+    }
+
+    #[test]
+    fn graph_resolver_complex_dependency_order() {
+        let mut content = tempfile::NamedTempFile::new().expect("create temp file");
+        content
+            .write_all(
+                b"COMPONENT frontend {\n    image = \"file:///fe\"\n}\n\
+                  COMPONENT api {\n    image = \"file:///api\"\n}\n\
+                  COMPONENT db {\n    image = \"file:///db\"\n}\n\
+                  COMPONENT cache {\n    image = \"file:///cache\"\n}\n\
+                  CONNECT frontend -> api\n\
+                  CONNECT api -> db\n\
+                  CONNECT api -> cache\n",
+            )
+            .expect("write");
+
+        let mut resolver = GraphResolver::new();
+        resolver.load_ctst(content.path()).expect("load ctst");
+        let order = resolver.deployment_order().expect("resolve");
+        assert_eq!(order.len(), 4);
+
+        let api_pos = order.iter().position(|n| n == "api").expect("api");
+        let db_pos = order.iter().position(|n| n == "db").expect("db");
+        let cache_pos = order.iter().position(|n| n == "cache").expect("cache");
+        let fe_pos = order
+            .iter()
+            .position(|n| n == "frontend")
+            .expect("frontend");
+
+        assert!(db_pos < api_pos, "db before api");
+        assert!(cache_pos < api_pos, "cache before api");
+        assert!(api_pos < fe_pos, "api before frontend");
+    }
+
+    #[test]
+    fn graph_resolver_load_replaces_existing_graph() {
+        // Load first file
+        let mut first = tempfile::NamedTempFile::new().expect("create");
+        first
+            .write_all(b"COMPONENT a {\n    image = \"file:///a\"\n}\n")
+            .expect("write");
+        let mut resolver = GraphResolver::new();
+        resolver.load_ctst(first.path()).expect("load first");
+
+        // Load second file — should replace the first
+        let mut second = tempfile::NamedTempFile::new().expect("create");
+        second
+            .write_all(
+                b"COMPONENT x {\n    image = \"file:///x\"\n}\n\
+                  COMPONENT y {\n    image = \"file:///y\"\n}\n",
+            )
+            .expect("write");
+        resolver.load_ctst(second.path()).expect("load second");
+
+        let order = resolver.deployment_order().expect("resolve");
+        assert_eq!(order.len(), 2);
+        assert!(order.contains(&"x".to_string()));
+        assert!(order.contains(&"y".to_string()));
+        assert!(!order.contains(&"a".to_string()));
+    }
+
+    #[test]
+    fn graph_resolver_debug_output() {
+        let resolver = GraphResolver::new();
+        let debug = format!("{resolver:?}");
+        assert!(debug.contains("GraphResolver"));
+    }
+}

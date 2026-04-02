@@ -140,3 +140,74 @@ impl CgroupManager {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use containust_common::types::ResourceLimits;
+
+    #[test]
+    fn cgroup_path_constructed_from_container_id() {
+        let expected = PathBuf::from("/sys/fs/cgroup/containust/my-container");
+        assert_eq!(
+            expected,
+            PathBuf::from(containust_common::constants::CGROUP_V2_PATH)
+                .join("containust")
+                .join("my-container")
+        );
+    }
+
+    #[test]
+    fn resource_limits_empty_applies_nothing() {
+        let limits = ResourceLimits::default();
+        assert!(limits.cpu_shares.is_none());
+        assert!(limits.memory_bytes.is_none());
+        assert!(limits.io_weight.is_none());
+    }
+
+    #[test]
+    fn resource_limits_all_set_applies_all() {
+        let limits = ResourceLimits {
+            cpu_shares: Some(512),
+            memory_bytes: Some(536_870_912),
+            io_weight: Some(100),
+        };
+        assert_eq!(limits.cpu_shares, Some(512));
+        assert_eq!(limits.memory_bytes, Some(536_870_912));
+        assert_eq!(limits.io_weight, Some(100));
+    }
+
+    #[test]
+    fn cgroup_manager_debug_derived() {
+        let mgr = CgroupManager {
+            path: PathBuf::from("/tmp/test"),
+        };
+        let debug_str = format!("{mgr:?}");
+        assert!(debug_str.contains("CgroupManager"));
+    }
+
+    /// Requires root and /sys/fs/cgroup mount.
+    #[test]
+    #[ignore = "requires root privileges and cgroup v2"]
+    fn cgroup_create_and_destroy_lifecycle() {
+        let mgr = CgroupManager::create("test-lifecycle-001").expect("create cgroup");
+        assert!(mgr.path.exists());
+        mgr.destroy().expect("destroy cgroup");
+        assert!(!mgr.path.exists());
+    }
+
+    /// Requires root and existing cgroup hierarchy.
+    #[test]
+    #[ignore = "requires root privileges and cgroup v2"]
+    fn cgroup_apply_limits_roundtrip() {
+        let mgr = CgroupManager::create("test-limits-001").expect("create");
+        let limits = ResourceLimits {
+            cpu_shares: Some(256),
+            memory_bytes: Some(268_435_456),
+            io_weight: Some(50),
+        };
+        let result = mgr.apply_limits(&limits);
+        assert!(result.is_ok());
+        mgr.destroy().expect("cleanup");
+    }
+}

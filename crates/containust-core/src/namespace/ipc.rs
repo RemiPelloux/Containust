@@ -34,3 +34,15 @@ pub fn create_ipc_namespace() -> Result<()> {
         message: "Linux required for native container operations".into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn create_ipc_namespace_succeeds_with_root() {
+        let result = create_ipc_namespace();
+        assert!(result.is_ok());
+    }
+}

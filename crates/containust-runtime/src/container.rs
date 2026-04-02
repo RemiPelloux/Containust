@@ -155,4 +155,47 @@ mod tests {
         c.stop().expect("stop should succeed");
         assert_eq!(c.state, ContainerState::Stopped);
     }
+
+    #[test]
+    fn new_container_has_default_limits() {
+        let id = ContainerId::new("test-4");
+        let c = Container::new(id, "test".into(), vec!["sh".into()]);
+        assert_eq!(c.limits.memory_bytes, None);
+        assert_eq!(c.limits.cpu_shares, None);
+    }
+
+    #[test]
+    fn new_container_created_at_is_valid_timestamp() {
+        let id = ContainerId::new("test-5");
+        let c = Container::new(id, "test".into(), vec!["sh".into()]);
+        assert!(c.created_at.contains('T'));
+        assert!(c.created_at.contains(':'));
+    }
+
+    #[test]
+    fn container_debug_format_is_not_empty() {
+        let id = ContainerId::new("test-6");
+        let c = Container::new(id, "debug-test".into(), vec!["sh".into()]);
+        let debug_str = format!("{c:?}");
+        assert!(!debug_str.is_empty());
+        assert!(debug_str.contains("Container"));
+    }
+
+    #[test]
+    fn start_fails_when_already_running() {
+        let id = ContainerId::new("test-7");
+        let mut c = Container::new(id, "test".into(), vec!["sh".into()]);
+        c.state = ContainerState::Running;
+        let result = c.start(std::path::Path::new("/tmp"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn container_created_at_preserves_order() {
+        let id1 = ContainerId::new("test-8");
+        let c1 = Container::new(id1, "first".into(), vec!["sh".into()]);
+        let id2 = ContainerId::new("test-9");
+        let c2 = Container::new(id2, "second".into(), vec!["sh".into()]);
+        assert!(c2.created_at >= c1.created_at);
+    }
 }

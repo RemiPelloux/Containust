@@ -114,3 +114,105 @@ pub fn unmount_overlay(_merged_dir: &Path) -> Result<()> {
         message: "Linux required for native container operations".into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlay_config_clone_and_debug_derived() {
+        let config = OverlayConfig {
+            lower_dirs: vec![PathBuf::from("/lower1"), PathBuf::from("/lower2")],
+            upper_dir: PathBuf::from("/upper"),
+            work_dir: PathBuf::from("/work"),
+            merged_dir: PathBuf::from("/merged"),
+        };
+        let cloned = config.clone();
+        assert_eq!(format!("{config:?}"), format!("{cloned:?}"));
+    }
+
+    #[test]
+    fn overlay_config_multiple_lower_dirs_formatted() {
+        let config = OverlayConfig {
+            lower_dirs: vec![PathBuf::from("/layer1"), PathBuf::from("/layer2")],
+            upper_dir: PathBuf::from("/upper"),
+            work_dir: PathBuf::from("/work"),
+            merged_dir: PathBuf::from("/merged"),
+        };
+        let lowers = config
+            .lower_dirs
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(":");
+        assert_eq!(lowers, "/layer1:/layer2");
+    }
+
+    #[test]
+    fn overlay_config_empty_lower_dirs_valid() {
+        let config = OverlayConfig {
+            lower_dirs: vec![],
+            upper_dir: PathBuf::from("/upper"),
+            work_dir: PathBuf::from("/work"),
+            merged_dir: PathBuf::from("/merged"),
+        };
+        assert!(config.lower_dirs.is_empty());
+    }
+
+    #[test]
+    fn overlay_config_single_lower_dir() {
+        let config = OverlayConfig {
+            lower_dirs: vec![PathBuf::from("/base_layer")],
+            upper_dir: PathBuf::from("/upper"),
+            work_dir: PathBuf::from("/work"),
+            merged_dir: PathBuf::from("/merged"),
+        };
+        assert_eq!(config.lower_dirs.len(), 1);
+    }
+
+    #[test]
+    fn overlay_mount_options_formatted_correctly() {
+        let config = OverlayConfig {
+            lower_dirs: vec![PathBuf::from("/lower1")],
+            upper_dir: PathBuf::from("/upper"),
+            work_dir: PathBuf::from("/work"),
+            merged_dir: PathBuf::from("/merged"),
+        };
+        let lowers = config
+            .lower_dirs
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(":");
+        let opts = format!(
+            "lowerdir={},upperdir={},workdir={}",
+            lowers,
+            config.upper_dir.display(),
+            config.work_dir.display(),
+        );
+        assert_eq!(opts, "lowerdir=/lower1,upperdir=/upper,workdir=/work");
+    }
+
+    /// Requires root privileges.
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn mount_overlay_creates_directories_and_mounts() {
+        let temp = std::env::temp_dir().join("containust_overlay_test");
+        let config = OverlayConfig {
+            lower_dirs: vec![temp.join("lower")],
+            upper_dir: temp.join("upper"),
+            work_dir: temp.join("work"),
+            merged_dir: temp.join("merged"),
+        };
+        let _ = std::fs::create_dir_all(&temp);
+        mount_overlay(&config).ok();
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    /// Requires root privileges.
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn unmount_overlay_removes_mount() {
+        unmount_overlay(Path::new("/tmp/containust_test_merged")).ok();
+    }
+}

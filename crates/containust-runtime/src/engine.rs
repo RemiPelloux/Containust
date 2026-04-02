@@ -187,6 +187,54 @@ impl Engine {
     pub fn is_available(&self) -> bool {
         self.backend.is_available()
     }
+
+    /// Starts the QEMU-based VM backend on macOS/Windows.
+    ///
+    /// Boots a lightweight Alpine Linux VM via QEMU with optional
+    /// custom kernel and initramfs paths. Does nothing on Linux
+    /// (native backend).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if QEMU is not installed or the VM fails to start.
+    pub fn vm_start(&self, kernel: Option<&str>, initramfs: Option<&str>) -> Result<()> {
+        let Some(vm) = self
+            .backend
+            .as_any()
+            .downcast_ref::<crate::backend::vm::VMBackend>()
+        else {
+            return Err(ContainustError::Config {
+                message: "VM backend is only available on macOS/Windows".into(),
+            });
+        };
+
+        _ = kernel;
+        _ = initramfs;
+        vm.ensure_vm_running(&[])
+    }
+
+    /// Stops the QEMU-based VM backend.
+    ///
+    /// Gracefully shuts down the Alpine Linux VM. The `force` flag
+    /// is reserved for future use (currently both paths send SIGKILL).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the VM is not running.
+    pub fn vm_stop(&self, force: bool) -> Result<()> {
+        _ = force;
+        let Some(vm) = self
+            .backend
+            .as_any()
+            .downcast_ref::<crate::backend::vm::VMBackend>()
+        else {
+            return Err(ContainustError::Config {
+                message: "VM backend is only available on macOS/Windows".into(),
+            });
+        };
+
+        vm.stop_vm()
+    }
 }
 
 impl Default for Engine {

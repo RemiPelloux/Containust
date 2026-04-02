@@ -88,7 +88,7 @@ impl VMBackend {
     ///
     /// Returns an error if QEMU is not installed, assets fail to download,
     /// or the VM fails to become reachable within the timeout.
-    fn ensure_vm_running(&self, ports: &[u16]) -> Result<()> {
+    pub fn ensure_vm_running(&self, ports: &[u16]) -> Result<()> {
         let mut guard = lock_vm_process(&self.vm_process)?;
 
         if guard.is_some() {
@@ -104,9 +104,12 @@ impl VMBackend {
         *guard = Some(child);
         drop(guard);
 
-        let mut port_guard = self.forwarded_ports.lock().map_err(|_| ContainustError::Config {
-            message: "port list lock poisoned".into(),
-        })?;
+        let mut port_guard = self
+            .forwarded_ports
+            .lock()
+            .map_err(|_| ContainustError::Config {
+                message: "port list lock poisoned".into(),
+            })?;
         port_guard.extend_from_slice(ports);
         drop(port_guard);
 
@@ -150,10 +153,11 @@ impl Default for VMBackend {
 }
 
 impl ContainerBackend for VMBackend {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     fn create(&self, config: &ContainerConfig) -> Result<ContainerId> {
-        let ports_to_forward: Vec<u16> = std::iter::once(config.port)
-            .flatten()
-            .collect();
+        let ports_to_forward: Vec<u16> = std::iter::once(config.port).flatten().collect();
 
         self.ensure_vm_running(&ports_to_forward)?;
 
@@ -517,10 +521,12 @@ fn try_send_rpc(payload: &str) -> Result<serde_json::Value> {
 
     let mut reader = BufReader::new(&stream);
     let mut line = String::new();
-    let _bytes = reader.read_line(&mut line).map_err(|e| ContainustError::Io {
-        path: PathBuf::from("VM agent"),
-        source: e,
-    })?;
+    let _bytes = reader
+        .read_line(&mut line)
+        .map_err(|e| ContainustError::Io {
+            path: PathBuf::from("VM agent"),
+            source: e,
+        })?;
 
     if line.trim().is_empty() {
         return Err(ContainustError::Config {
@@ -576,4 +582,185 @@ fn parse_container_info(value: &serde_json::Value) -> Option<ContainerInfo> {
         image: value.get("image")?.as_str()?.to_string(),
         created_at: value.get("created_at")?.as_str()?.to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+
+    use super::*;
+    use containust_common::types::ContainerId;
+
+    #[test]
+    fn alpine_arch_aarch64() {
+        // This test runs on whatever platform it's on.
+        // Just verify the function returns a valid arch string.
+        let arch = alpine_arch();
+        assert!(matches!(arch, "aarch64" | "x86_64"));
+    }
+
+    #[test]
+    fn qemu_binary_name_is_valid() {
+        let binary = qemu_binary_name();
+        assert!(matches!(
+            binary,
+            "qemu-system-aarch64" | "qemu-system-x86_64"
+        ));
+    }
+
+    #[test]
+    fn machine_type_is_valid() {
+        let machine = machine_type();
+        assert!(matches!(machine, "virt" | "q35"));
+    }
+
+    #[test]
+    fn accel_flags_returns_non_empty() {
+        let flags = accel_flags();
+        assert!(!flags.is_empty());
+        // Must contain -accel
+        assert_eq!(flags[0], "-accel");
+    }
+
+    #[test]
+    fn truncate_u64_to_u32_within_range() {
+        let result = truncate_u64_to_u32(42);
+        assert_eq!(result.expect("should succeed"), 42u32);
+    }
+
+    #[test]
+    fn truncate_u64_to_u32_max_u32() {
+        let result = truncate_u64_to_u32(u64::from(u32::MAX));
+        assert_eq!(result.expect("should succeed"), u32::MAX);
+    }
+
+    #[test]
+    fn truncate_u64_to_u32_overflow_returns_error() {
+        let result = truncate_u64_to_u32(u64::from(u32::MAX) + 1);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn truncate_u64_to_u32_zero() {
+        let result = truncate_u64_to_u32(0);
+        assert_eq!(result.expect("should succeed"), 0u32);
+    }
+
+    #[test]
+    fn parse_exec_output_with_all_fields() {
+        let response = serde_json::json!({
+            "result": {
+                "stdout": "hello world",
+                "stderr": "warning",
+                "exit_code": 0
+            }
+        });
+        let output = parse_exec_output(&response);
+        assert_eq!(output.stdout, "hello world");
+        assert_eq!(output.stderr, "warning");
+        assert_eq!(output.exit_code, 0);
+    }
+
+    #[test]
+    fn parse_exec_output_missing_fields_uses_defaults() {
+        let response = serde_json::json!({});
+        let output = parse_exec_output(&response);
+        assert_eq!(output.stdout, "");
+        assert_eq!(output.stderr, "");
+        assert_eq!(output.exit_code, -1);
+    }
+
+    #[test]
+    fn parse_exec_output_with_error_code() {
+        let response = serde_json::json!({
+            "result": {
+                "exit_code": 1
+            }
+        });
+        let output = parse_exec_output(&response);
+        assert_eq!(output.exit_code, 1);
+    }
+
+    #[test]
+    fn parse_exec_output_negative_exit_code() {
+        let response = serde_json::json!({
+            "result": {
+                "exit_code": -42
+            }
+        });
+        let output = parse_exec_output(&response);
+        assert_eq!(output.exit_code, -42);
+    }
+
+    #[test]
+    fn parse_container_info_valid_json() {
+        let value = serde_json::json!({
+            "id": "test-123",
+            "name": "my-app",
+            "state": "running",
+            "pid": 1234,
+            "image": "file:///app",
+            "created_at": "2024-01-01T00:00:00Z"
+        });
+        let info = parse_container_info(&value);
+        let info = info.expect("should parse");
+        assert_eq!(info.id, ContainerId::new("test-123"));
+        assert_eq!(info.name, "my-app");
+        assert_eq!(info.state, "running");
+        assert_eq!(info.pid, Some(1234));
+    }
+
+    #[test]
+    fn parse_container_info_missing_fields_returns_none() {
+        let value = serde_json::json!({
+            "id": "x"
+        });
+        let info = parse_container_info(&value);
+        assert!(info.is_none());
+    }
+
+    #[test]
+    fn parse_container_info_without_pid() {
+        let value = serde_json::json!({
+            "id": "test-no-pid",
+            "name": "app",
+            "state": "stopped",
+            "image": "file:///app",
+            "created_at": "2024-01-01T00:00:00Z"
+        });
+        let info = parse_container_info(&value);
+        let info = info.expect("should parse");
+        assert!(info.pid.is_none());
+    }
+
+    #[test]
+    fn send_rpc_constructs_valid_json() {
+        // Verify the JSON structure that send_rpc would construct
+        let method = "create";
+        let params = &serde_json::json!({"name": "test"});
+        let request = serde_json::json!({ "method": method, "params": params });
+        let payload = serde_json::to_string(&request).expect("serialize");
+        assert!(payload.contains("\"method\":\"create\""));
+        assert!(payload.contains("\"name\":\"test\""));
+    }
+
+    #[test]
+    fn vm_backend_new_creates_instance() {
+        let backend = VMBackend::new();
+        // VMBackend::new() does not require QEMU
+        // just verify it returns a backend instance
+        let _ = backend.is_available();
+    }
+
+    #[test]
+    fn vm_backend_default_creates_instance() {
+        let backend = VMBackend::default();
+        let _ = backend.is_available();
+    }
+
+    #[test]
+    fn kernel_is_empty_returns_true_for_nonexistent_path() {
+        let path = std::path::PathBuf::from("/nonexistent/kernel");
+        assert!(kernel_is_empty(&path));
+    }
 }

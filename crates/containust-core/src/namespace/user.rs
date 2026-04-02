@@ -90,3 +90,32 @@ pub fn write_uid_gid_map(_pid: u32, _container_id: u32, _host_id: u32, _range: u
         message: "Linux required for native container operations".into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn create_user_namespace_succeeds_with_root() {
+        let result = create_user_namespace();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[ignore = "requires root privileges and proc filesystem"]
+    fn write_uid_gid_map_succeeds_with_root() {
+        let result = write_uid_gid_map(0, 0, 1000, 65536);
+        assert!(result.is_ok());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn write_uid_gid_map_nonexistent_proc_returns_error() {
+        // PID 1 typically doesn't allow unprivileged UID/GID map writes
+        // This verifies the /proc path construction works even if the write fails
+        let result = write_uid_gid_map(999_999_999, 0, 1000, 65536);
+        // Expected to fail (no such process / permission denied) but shouldn't panic
+        assert!(result.is_err());
+    }
+}

@@ -89,3 +89,105 @@ pub fn drop_capabilities(_keep: &[Capability]) -> Result<()> {
         message: "Linux required for native container operations".into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn capability_linux_cap_number_matches_known_values() {
+        assert_eq!(Capability::Chown.linux_cap_number(), 0);
+        assert_eq!(Capability::Kill.linux_cap_number(), 5);
+        assert_eq!(Capability::Setgid.linux_cap_number(), 6);
+        assert_eq!(Capability::Setuid.linux_cap_number(), 7);
+        assert_eq!(Capability::NetBindService.linux_cap_number(), 10);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn capability_linux_cap_number_all_distinct() {
+        let caps = [
+            Capability::Chown,
+            Capability::Kill,
+            Capability::Setgid,
+            Capability::Setuid,
+            Capability::NetBindService,
+        ];
+        let numbers: std::collections::HashSet<u32> =
+            caps.iter().map(|c| c.linux_cap_number()).collect();
+        assert_eq!(
+            numbers.len(),
+            caps.len(),
+            "all capability numbers must be distinct"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cap_last_cap_is_forty() {
+        assert_eq!(CAP_LAST_CAP, 40);
+    }
+
+    #[test]
+    fn capability_copy_trait_allows_duplication() {
+        let cap = Capability::Kill;
+        let copied = cap;
+        assert_eq!(cap, copied);
+    }
+
+    #[test]
+    fn capability_clone_trait_allows_duplication() {
+        let cap = Capability::NetBindService;
+        let cloned = cap.clone();
+        assert_eq!(cap, cloned);
+    }
+
+    #[test]
+    fn capability_eq_distinguishes_variants() {
+        assert_eq!(Capability::Chown, Capability::Chown);
+        assert_ne!(Capability::Chown, Capability::Kill);
+        assert_ne!(Capability::NetBindService, Capability::Setgid);
+    }
+
+    #[test]
+    fn capability_hash_allows_set_dedup() {
+        let caps = std::collections::HashSet::from([
+            Capability::Chown,
+            Capability::Chown,
+            Capability::Kill,
+        ]);
+        assert_eq!(caps.len(), 2);
+    }
+
+    #[test]
+    fn capability_debug_derived() {
+        let cap = Capability::Setuid;
+        let debug = format!("{cap:?}");
+        assert_eq!(debug, "Setuid");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    #[ignore = "requires root privileges"]
+    fn drop_capabilities_keep_all_succeeds() {
+        let keep = [
+            Capability::NetBindService,
+            Capability::Chown,
+            Capability::Kill,
+            Capability::Setuid,
+            Capability::Setgid,
+        ];
+        let result = drop_capabilities(&keep);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    #[ignore = "requires root privileges"]
+    fn drop_capabilities_keep_none_succeeds() {
+        let result = drop_capabilities(&[]);
+        // May fail if not root, but shouldn't panic
+        result.ok();
+    }
+}

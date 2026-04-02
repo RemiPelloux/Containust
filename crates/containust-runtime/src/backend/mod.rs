@@ -53,6 +53,9 @@ pub struct ContainerInfo {
 /// Implementors handle the platform-specific details of container
 /// creation, execution, and teardown.
 pub trait ContainerBackend: Send + Sync {
+    /// Returns self as `Any` for downcasting to concrete backend types.
+    fn as_any(&self) -> &dyn std::any::Any;
+
     /// Creates a container from the given configuration.
     ///
     /// # Errors
@@ -179,6 +182,15 @@ mod tests {
     }
 
     #[test]
+    fn platform_info_native_available_matches_target_os() {
+        let info = platform_info();
+        #[cfg(target_os = "linux")]
+        assert!(info.native_available);
+        #[cfg(not(target_os = "linux"))]
+        assert!(!info.native_available);
+    }
+
+    #[test]
     fn container_config_can_be_constructed() {
         let cfg = ContainerConfig {
             name: "test".into(),
@@ -193,5 +205,91 @@ mod tests {
         };
         assert_eq!(cfg.name, "test");
         assert!(cfg.readonly_rootfs);
+    }
+
+    #[test]
+    fn container_config_defaults() {
+        let cfg = ContainerConfig {
+            name: "minimal".into(),
+            image: String::new(),
+            command: Vec::new(),
+            env: Vec::new(),
+            memory_bytes: None,
+            cpu_shares: None,
+            readonly_rootfs: false,
+            volumes: Vec::new(),
+            port: None,
+        };
+        assert_eq!(cfg.name, "minimal");
+        assert!(cfg.image.is_empty());
+        assert!(cfg.memory_bytes.is_none());
+        assert!(!cfg.readonly_rootfs);
+        assert!(cfg.port.is_none());
+    }
+
+    #[test]
+    fn container_config_clone_is_independent() {
+        let cfg = ContainerConfig {
+            name: "clone-test".into(),
+            image: "file:///src".into(),
+            command: vec!["sh".into()],
+            env: vec![("A".into(), "1".into())],
+            memory_bytes: Some(64 * 1024 * 1024),
+            cpu_shares: Some(512),
+            readonly_rootfs: false,
+            volumes: vec!["/host:/guest".into()],
+            port: Some(3000),
+        };
+        let cloned = cfg.clone();
+        assert_eq!(cfg.name, cloned.name);
+        assert_eq!(cfg.port, cloned.port);
+    }
+
+    #[test]
+    fn container_info_can_be_constructed() {
+        let id = ContainerId::new("abc-123");
+        let info = ContainerInfo {
+            id: id.clone(),
+            name: "my-app".into(),
+            state: "running".into(),
+            pid: Some(42),
+            image: "file:///app".into(),
+            created_at: "2024-01-01T00:00:00Z".into(),
+        };
+        assert_eq!(info.id, id);
+        assert_eq!(info.name, "my-app");
+        assert_eq!(info.state, "running");
+        assert_eq!(info.pid, Some(42));
+    }
+
+    #[test]
+    fn container_info_stopped_has_no_pid() {
+        let id = ContainerId::new("stopped-1");
+        let info = ContainerInfo {
+            id,
+            name: "stopped-app".into(),
+            state: "stopped".into(),
+            pid: None,
+            image: String::new(),
+            created_at: String::new(),
+        };
+        assert!(info.pid.is_none());
+        assert_eq!(info.state, "stopped");
+    }
+
+    #[test]
+    fn container_info_clone_preserves_all_fields() {
+        let id = ContainerId::new("clone-info");
+        let info = ContainerInfo {
+            id: id.clone(),
+            name: "test".into(),
+            state: "created".into(),
+            pid: None,
+            image: "tar:///archive.tar".into(),
+            created_at: "2024-06-15T12:00:00Z".into(),
+        };
+        let cloned = info.clone();
+        assert_eq!(cloned.id, id);
+        assert_eq!(cloned.image, "tar:///archive.tar");
     }
 }

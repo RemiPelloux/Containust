@@ -144,3 +144,51 @@ pub fn bind_mount(_source: &Path, _target: &Path, _readonly: bool) -> Result<()>
         message: "Linux required for native container operations".into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mount_essential_filesystems_paths_constructed_correctly() {
+        let rootfs = Path::new("/container/rootfs");
+        assert_eq!(rootfs.join("proc"), Path::new("/container/rootfs/proc"));
+        assert_eq!(rootfs.join("sys"), Path::new("/container/rootfs/sys"));
+        assert_eq!(rootfs.join("dev"), Path::new("/container/rootfs/dev"));
+    }
+
+    /// Requires root privileges and mount namespace.
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn mount_essential_filesystems_succeeds_with_root() {
+        let temp = std::env::temp_dir().join("containust_mount_test");
+        let rootfs = temp.join("rootfs");
+        let _ = std::fs::create_dir_all(&rootfs);
+        let _ = mount_essential_filesystems(&rootfs);
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    /// Requires root privileges and mount namespace.
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn bind_mount_readonly_succeeds_with_root() {
+        let temp = std::env::temp_dir().join("containust_bind_test");
+        let source = temp.join("source");
+        let target = temp.join("target");
+        let _ = std::fs::create_dir_all(&source);
+        let _ = bind_mount(&source, &target, true);
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    /// Requires root privileges and mount namespace.
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn bind_mount_readwrite_succeeds_with_root() {
+        let temp = std::env::temp_dir().join("containust_bind_rw_test");
+        let source = temp.join("source");
+        let target = temp.join("target");
+        let _ = std::fs::create_dir_all(&source);
+        bind_mount(&source, &target, false).ok();
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+}

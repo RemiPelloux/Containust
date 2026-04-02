@@ -12,6 +12,7 @@
 //! proper error handling and `// SAFETY:` documentation.
 
 #![allow(unsafe_code)]
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
 pub mod capability;
 pub mod cgroup;

@@ -94,3 +94,87 @@ pub fn create_namespaces(_config: &NamespaceConfig) -> Result<()> {
         message: "Linux required for native container operations".into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn namespace_config_default_has_all_flags_true() {
+        let config = NamespaceConfig::default();
+        assert!(config.pid);
+        assert!(config.mount);
+        assert!(config.network);
+        assert!(config.user);
+        assert!(config.ipc);
+        assert!(config.uts);
+    }
+
+    #[test]
+    fn namespace_config_clone_and_debug_derived() {
+        let config = NamespaceConfig::default();
+        let cloned = config.clone();
+        assert_eq!(format!("{config:?}"), format!("{cloned:?}"));
+    }
+
+    #[test]
+    fn namespace_config_all_false_can_be_constructed() {
+        let config = NamespaceConfig {
+            pid: false,
+            mount: false,
+            network: false,
+            user: false,
+            ipc: false,
+            uts: false,
+        };
+        assert!(!config.pid);
+        assert!(!config.mount);
+        assert!(!config.network);
+        assert!(!config.user);
+        assert!(!config.ipc);
+        assert!(!config.uts);
+    }
+
+    #[test]
+    fn namespace_config_partial_selection() {
+        let config = NamespaceConfig {
+            pid: true,
+            mount: true,
+            network: false,
+            user: false,
+            ipc: false,
+            uts: true,
+        };
+        assert!(config.pid);
+        assert!(config.mount);
+        assert!(!config.network);
+        assert!(!config.user);
+        assert!(!config.ipc);
+        assert!(config.uts);
+    }
+
+    /// Requires root — ignored in CI. Tests that Linux syscall entry is reached.
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn create_namespaces_all_succeed_with_root() {
+        let config = NamespaceConfig::default();
+        let result = create_namespaces(&config);
+        assert!(result.is_ok());
+    }
+
+    /// Tests that a config with no namespaces still succeeds (nothing to unshare).
+    #[test]
+    #[ignore = "requires root privileges"]
+    fn create_namespaces_empty_config_succeeds_with_root() {
+        let config = NamespaceConfig {
+            pid: false,
+            mount: false,
+            network: false,
+            user: false,
+            ipc: false,
+            uts: false,
+        };
+        let result = create_namespaces(&config);
+        assert!(result.is_ok());
+    }
+}
