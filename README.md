@@ -181,11 +181,7 @@ ctst --help
 
 ```bash
 # Run the Hello World example (auto-downloads VM assets on first run)
-ctst run examples/node-hello.ctst
-
-# In another terminal:
-curl localhost:6500
-# => Hello World from Containust!
+ctst run examples/hello.ctst
 ```
 
 The first run downloads ~15MB of Alpine Linux VM assets to `~/.containust/cache/`. Subsequent runs boot in under 2 seconds.
@@ -241,7 +237,7 @@ The `examples/` directory contains ready-to-use `.ctst` composition files and Ru
 
 | Example | What it demonstrates |
 |---|---|
-| [`node-hello.ctst`](examples/node-hello.ctst) | **Working demo** — Hello World HTTP server on port 6500 |
+| [`hello.ctst`](examples/hello.ctst) | **Working demo** — Hello World container on port 8080 |
 | [`hello_world.ctst`](examples/hello_world.ctst) | Minimal single container |
 | [`nginx_static.ctst`](examples/nginx_static.ctst) | Web server with volume mount and port exposure |
 | [`full_stack.ctst`](examples/full_stack.ctst) | API + PostgreSQL + Redis + worker with `CONNECT` auto-wiring |
@@ -263,7 +259,7 @@ Containust uses a **declarative, LLM-friendly composition language** designed fo
 **Simple container (working demo):**
 
 ```
-// node-hello.ctst — try it: ctst run examples/node-hello.ctst
+// hello.ctst — try it: ctst run examples/hello.ctst
 COMPONENT hello {
     image = "alpine:3.21"
     port = 6500
@@ -375,8 +371,8 @@ When built with the `ebpf` feature and running on a supported kernel:
 | CLI | clap 4.5 |
 | TUI | ratatui 0.30 |
 | Parsing | nom 8 |
-| Dependency Graph | petgraph 0.7 |
-| Linux Syscalls | nix 0.29, libc |
+| Dependency Graph | petgraph 0.8 |
+| Linux Syscalls | nix 0.31, libc |
 | eBPF | aya 0.13 |
 | Serialization | serde, serde_json |
 | Hashing | sha2 (SHA-256) |
