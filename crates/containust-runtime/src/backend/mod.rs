@@ -288,7 +288,7 @@ mod tests {
             image: "tar:///archive.tar".into(),
             created_at: "2024-06-15T12:00:00Z".into(),
         };
-        let cloned = info.clone();
+        let cloned = info;
         assert_eq!(cloned.id, id);
         assert_eq!(cloned.image, "tar:///archive.tar");
     }

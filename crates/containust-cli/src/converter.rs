@@ -517,7 +517,7 @@ fn write_connections(out: &mut String, compose: &ComposeFile) {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
+#[allow(clippy::expect_used, clippy::needless_raw_string_hashes)]
 mod tests {
     use super::*;
 

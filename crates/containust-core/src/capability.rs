@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn capability_clone_trait_allows_duplication() {
         let cap = Capability::NetBindService;
-        let cloned = cap.clone();
+        let cloned = cap;
         assert_eq!(cap, cloned);
     }
 

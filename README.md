@@ -1,477 +1,177 @@
-<p align="center">
-  <h1 align="center">Containust</h1>
-  <p align="center">
-    <strong>Daemon-less, sovereign container runtime written in Rust</strong>
-  </p>
-  <p align="center">
-    A next-generation container engine — zero daemon, native composition, air-gap ready. Cross-platform: Linux, macOS, Windows.
-  </p>
-</p>
+# Containust
 
-<p align="center">
-  <a href="https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml"><img src="https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/RemiPelloux/Containust/actions/workflows/security.yml"><img src="https://github.com/RemiPelloux/Containust/actions/workflows/security.yml/badge.svg" alt="Security"></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg" alt="License"></a>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-Edition%202024-orange.svg?logo=rust" alt="Rust"></a>
-  <a href="README.md"><img src="https://img.shields.io/badge/Linux-native-success?logo=linux" alt="Linux"></a>
-  <a href="README.md"><img src="https://img.shields.io/badge/macOS-VM_backend-blue?logo=apple" alt="macOS"></a>
-  <a href="README.md"><img src="https://img.shields.io/badge/Windows-VM_backend-blue?logo=windows" alt="Windows"></a>
-  <img src="https://img.shields.io/badge/daemon-zero-brightgreen.svg" alt="Zero Daemon">
-  <img src="https://img.shields.io/badge/tests-384_passing-success" alt="Tests">
-</p>
+Containust is a daemon-less container runtime and declarative composition tool written in Rust. It is designed for local, sovereign, and air-gapped workflows where a long-running privileged daemon is undesirable.
 
----
+> **Project status: alpha (0.1.0).** The parser, dependency graph, local image primitives, state/log persistence, CLI parsing, and unit/integration test suite are working. Native Linux process isolation and the QEMU VM backend are implemented but require privileged, platform-specific validation before production use.
 
-## What is Containust?
+[![CI](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml)
+[![Security audit](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml)
+[![License](https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
-Containust is **not a Docker clone** — it is an evolution of container technology. It combines the power of Linux isolation (namespaces, cgroups v2, OverlayFS) with Infrastructure-as-Code composition (Terraform-style) in a **single secure binary with no daemon**.
+## Why Containust
 
-Built entirely in Rust for **memory safety, performance, and reliability**, Containust targets sovereign infrastructures, air-gapped environments, and security-critical deployments where a permanent root daemon is unacceptable. It runs **natively on Linux** with zero overhead, and on **macOS/Windows** via a lightweight QEMU-backed VM with near-native performance.
+- **No daemon:** the CLI talks directly to the selected backend and persists state as files.
+- **Declarative composition:** `.ctst` files describe components and `CONNECT` dependencies.
+- **Local-first images:** `file://` directories and `tar://` archives work without a registry.
+- **Rust SDK:** the parser, graph resolver, runtime types, and event APIs are reusable from Rust.
+- **Platform-aware runtime:** native Linux isolation is selected on Linux; QEMU is used on macOS and Windows.
 
-### Why Containust?
+## Verified capabilities
 
-| Problem | Containust's Answer |
-|---|---|
-| Docker requires a root daemon | **Zero daemon** — direct syscalls, state file |
-| Compose files are imperative | **Declarative `.ctst` language** with dependency graphs |
-| Online-only image pulling | **Local-first** — `file://`, `tar://` protocols, air-gap native |
-| Opaque container behavior | **eBPF tracing** — real-time syscall/file/network monitoring |
-| Monolithic tooling | **9 modular crates** — use as CLI or embed as Rust SDK |
+| Area | Status | Notes |
+| --- | --- | --- |
+| `.ctst` lexer, parser, and validation | Working | Syntax, properties, imports, health checks, and invalid-input paths are covered. |
+| Dependency graph and auto-wiring | Working | Topological ordering, cycle detection, and connection environment variables are covered. |
+| Local image sources | Working | Existing `file://` directories and `tar://` archives can be resolved and extracted. |
+| Image hashing and catalog | Working | SHA-256 validation and JSON catalog CRUD are covered. |
+| State and logs | Working | JSON state and per-container logs round-trip on disk. |
+| CLI parsing and Compose conversion | Working | `ctst` subcommands and the supported Compose subset have tests. |
+| Linux isolation backend | Experimental | Requires Linux namespaces, a usable cgroups v2 hierarchy, mount permissions, and a valid rootfs. |
+| QEMU backend | Experimental | Requires QEMU and network access for first-run Alpine assets; no cross-platform runtime test runs in this repository. |
+| eBPF observability | Experimental | The API and feature-gated code compile; kernel attachment is not covered by the default test run. |
 
----
+The default test run executes **410 tests**. **23 tests are intentionally ignored** because they require root privileges or a host cgroups/mount configuration; additional feature/platform-gated tests are listed only when their target is enabled.
 
-## Platform Support
+## Platform requirements
 
-| Platform | Backend | Performance | Requirements |
-|----------|---------|-------------|--------------|
-| **Linux** | Native (direct syscalls) | Zero overhead | Linux 5.10+, cgroups v2 |
-| **macOS** | Lightweight VM via QEMU | Near-native | QEMU (`brew install qemu`) |
-| **Windows** | Lightweight VM via QEMU | Near-native | QEMU (via `winget` or installer) |
+| Host | Backend | Requirements |
+| --- | --- | --- |
+| Linux | Native | Linux 5.10+, user/mount/PID namespaces, cgroups v2, and mount permissions. |
+| macOS | QEMU VM | QEMU 7+ (`brew install qemu`) and a Linux VM asset download on first use. |
+| Windows | QEMU VM | QEMU 7+ and a Linux VM asset download on first use. |
 
----
+Rust 1.86 or newer is required by the workspace manifest. The checked-in toolchain file selects the stable channel.
 
-## How It Works
+## Quick start
 
-Containust uses a **native-first, VM-fallback** architecture:
-
-- **On Linux**: Direct kernel integration using namespaces (`clone(2)`, `unshare(2)`), cgroups v2, `OverlayFS`, and `pivot_root`. Zero overhead, zero daemon.
-- **On macOS/Windows**: A lightweight Alpine Linux VM (~15MB kernel+initramfs) boots via QEMU with hardware acceleration (HVF on macOS, Hyper-V/WHPX on Windows). A custom initramfs includes a BusyBox-based agent that accepts JSON-RPC commands over TCP for container lifecycle management. Sub-2s boot time.
-
-This is the same architecture used by Docker Desktop, Podman Desktop, and Colima — but Containust is a **single binary with no daemon**.
-
-### Project-Local Storage
-
-Containust uses a **two-tier storage model** for full project isolation:
-
-| Tier | Location | Contents |
-|------|----------|----------|
-| **Global cache** | `~/.containust/cache/` | Immutable VM assets (kernel, initramfs) — downloaded once, shared across all projects |
-| **Project state** | `.containust/` (next to your `.ctst` file) | Per-project container state, logs, and image data |
-
-Each project is self-contained. Moving or deleting a project removes all its container state. No global state pollution.
-
----
-
-## Key Features
-
-- **Zero Daemon Architecture** — No persistent root process. Containers managed via state file and direct Linux syscalls.
-- **Native Composition Language** — `.ctst` declarative format with `IMPORT`, `COMPONENT`, `CONNECT`, and automatic environment wiring.
-- **Sovereign & Air-Gap Ready** — Priority to local sources (`file://`, `tar://`). `--offline` flag blocks all network egress.
-- **Security by Default** — Read-only rootfs, Linux capability dropping, SHA-256 content verification.
-- **eBPF Observability** — Real-time syscall tracing, file access monitoring, network socket tracking inside containers.
-- **Interactive TUI Dashboard** — Terminal-based monitoring with live CPU, memory, I/O metrics via ratatui.
-- **Rust SDK** — Embed container management in your Rust applications with `ContainerBuilder`, `GraphResolver`, `EventListener`.
-- **Distroless Auto-Build** — Automatic binary dependency analysis (internal ldd) for minimal container images.
-
----
-
-## Architecture
-
-The project is organized as a **Cargo workspace with 9 specialized crates** arranged in a strict layered dependency DAG:
-
-```
-CLI Layer        containust-cli (ctst binary), containust-tui
-                        |
-SDK Layer        containust-sdk (public facade)
-                        |
-Engine Layer     containust-compose, containust-runtime, containust-image
-                        |
-Observe Layer    containust-ebpf
-                        |
-Core Layer       containust-core (namespaces, cgroups, filesystem)
-                        |
-Common Layer     containust-common (types, errors, constants)
-```
-
-| Crate | Responsibility |
-|---|---|
-| `containust-common` | Shared types, error definitions, configuration, constants |
-| `containust-core` | Linux namespace, cgroup v2, OverlayFS, and capability primitives |
-| `containust-image` | Image/layer management, storage, source protocols, SHA-256 validation |
-| `containust-runtime` | Container lifecycle, process spawning, state machine, metrics |
-| `containust-compose` | `.ctst` parser (nom), dependency graph (petgraph), auto-wiring |
-| `containust-ebpf` | eBPF-based syscall/file/network monitoring (aya) |
-| `containust-sdk` | Public SDK: `ContainerBuilder`, `GraphResolver`, `EventListener` |
-| `containust-tui` | Interactive terminal dashboard (ratatui) |
-| `containust-cli` | `ctst` binary with all subcommands (clap) |
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full dependency graph and design decisions.
-
----
-
-## Quick Start
-
-### Prerequisites
-
-**Linux:**
-```bash
-# No additional dependencies needed
-# Requires Linux kernel 5.10+ (cgroups v2, user namespaces, OverlayFS)
-# Optional: kernel 5.15+ for eBPF observability features
-curl -sSL https://github.com/containust/containust/releases/latest/download/ctst-x86_64-unknown-linux-gnu.tar.gz | tar xz
-sudo mv ctst /usr/local/bin/
-```
-
-**macOS:**
-```bash
-brew install qemu
-curl -sSL https://github.com/containust/containust/releases/latest/download/ctst-aarch64-apple-darwin.tar.gz | tar xz
-sudo mv ctst /usr/local/bin/
-```
-
-**Windows:**
-```powershell
-winget install QEMU.QEMU
-# Download ctst from GitHub Releases
-```
-
-**Build from Source (all platforms):**
-
-- **Rust 1.85+** (Edition 2024)
-
-### Build from Source
+Build and verify the workspace:
 
 ```bash
 git clone https://github.com/RemiPelloux/Containust.git
 cd Containust
-
-# Build the entire workspace
-cargo build --workspace
-
-# Build optimized release binary
-cargo build --release -p containust-cli
-
-# The binary is at target/release/ctst
+cargo check --workspace
+cargo test --workspace --lib --tests
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-### Install
+Install the CLI locally:
 
 ```bash
 cargo install --path crates/containust-cli
-```
-
-### Verify
-
-```bash
 ctst --version
 ctst --help
 ```
 
-### Run the Demo
+Inspect a composition without starting containers:
 
 ```bash
-# Run the Hello World example (auto-downloads VM assets on first run)
-ctst run examples/hello.ctst
+ctst plan examples/hello.ctst
+ctst build examples/hello.ctst
 ```
 
-The first run downloads ~15MB of Alpine Linux VM assets to `~/.containust/cache/`. Subsequent runs boot in under 2 seconds.
+Run a composition on a host with a supported backend:
 
----
-
-## CLI Reference
-
-The `ctst` command is the single entry point for all container operations:
-
-| Command | Description |
-|---|---|
-| `ctst build` | Parse a `.ctst` file and generate images/layers |
-| `ctst plan` | Display planned infrastructure changes before applying |
-| `ctst run` | Deploy the component graph |
-| `ctst ps` | List containers with real-time metrics |
-| `ctst exec` | Execute a command inside a running container |
-| `ctst stop` | Stop containers and clean up resources |
-| `ctst logs` | View container logs (`--follow` for live tailing) |
-| `ctst images` | Manage the local image catalog |
-| `ctst convert` | Convert a `docker-compose.yml` to `.ctst` format |
-| `ctst vm start` | Start the platform VM (macOS/Windows only) |
-| `ctst vm stop` | Stop the platform VM |
-
-### Global Flags
-
-| Flag | Description |
-|---|---|
-| `--offline` | Block all outbound network access (build and run) |
-| `--state-file <path>` | Custom path to the state index file |
-
-See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for the complete CLI manual with output formats, exit codes, and troubleshooting.
-
----
-
-## Documentation
-
-| Document | Description |
-|---|---|
-| [`.ctst` Language Reference](docs/CTST_LANG.md) | Complete language specification — all keywords, types, syntax, protocols, and examples |
-| [CLI Reference](docs/CLI_REFERENCE.md) | Full `ctst` command manual — every flag, output format, exit code, troubleshooting |
-| [SDK Guide](docs/SDK_GUIDE.md) | Rust SDK API reference — `ContainerBuilder`, `GraphResolver`, `EventListener`, types, errors |
-| [Tutorials](docs/TUTORIALS.md) | 9 step-by-step tutorials from Hello World to SDK integration |
-| [Error Reference](docs/ERRORS.md) | Catalog of all error codes (parse, runtime, image, state) with causes and resolutions |
-| [Migration from Docker](docs/MIGRATION_FROM_DOCKER.md) | Docker Compose to `.ctst` conversion guide with side-by-side examples |
-| [Contributing Guide](docs/CONTRIBUTING.md) | Development setup, coding standards, how to add commands/keywords/backends |
-| [Architecture](ARCHITECTURE.md) | Crate dependency DAG, layer responsibilities, design decisions |
-| [Specification](docs/SPEC.md) | Technical specification — vision, engine design, security model |
-
-### Examples
-
-The `examples/` directory contains ready-to-use `.ctst` composition files and Rust SDK examples:
-
-| Example | What it demonstrates |
-|---|---|
-| [`hello.ctst`](examples/hello.ctst) | **Working demo** — Hello World container on port 8080 |
-| [`hello_world.ctst`](examples/hello_world.ctst) | Minimal single container |
-| [`nginx_static.ctst`](examples/nginx_static.ctst) | Web server with volume mount and port exposure |
-| [`full_stack.ctst`](examples/full_stack.ctst) | API + PostgreSQL + Redis + worker with `CONNECT` auto-wiring |
-| [`microservices.ctst`](examples/microservices.ctst) | 5+ services with complex dependency graph |
-| [`offline_deployment.ctst`](examples/offline_deployment.ctst) | Air-gapped deployment with `tar://` sources |
-| [`secrets_example.ctst`](examples/secrets_example.ctst) | Secret injection patterns |
-| [`healthcheck_example.ctst`](examples/healthcheck_example.ctst) | Health checks and restart policies |
-| [`templates/`](examples/templates/) | Reusable templates (PostgreSQL, Redis, nginx) |
-| [`sdk_lifecycle.rs`](examples/sdk_lifecycle.rs) | Container lifecycle via Rust SDK |
-| [`sdk_composition.rs`](examples/sdk_composition.rs) | Loading `.ctst` files via SDK |
-| [`sdk_monitoring.rs`](examples/sdk_monitoring.rs) | Event monitoring via SDK |
-
----
-
-## The `.ctst` Composition Language
-
-Containust uses a **declarative, LLM-friendly composition language** designed for Infrastructure-as-Code:
-
-**Simple container (working demo):**
-
-```
-// hello.ctst — try it: ctst run examples/hello.ctst
-COMPONENT hello {
-    image = "alpine:3.21"
-    port = 6500
-    command = ["sh", "-c", "while true; do echo 'Hello World from Containust!' | nc -l -p 6500; done"]
-    memory = "128MiB"
-}
+```bash
+ctst run examples/hello.ctst --detach
+ctst ps --all
+ctst logs hello
+ctst stop hello
 ```
 
-**Multi-service composition with auto-wiring:**
+The Linux backend accepts local rootfs sources such as `file:///absolute/path` and `tar:///absolute/path/image.tar`. Registry-style image names are not pulled by `ctst build`; convert or prepare a local archive first.
 
-```
-IMPORT "base/postgres.ctst" AS db_template
+## The `.ctst` format
 
+```text
 COMPONENT api {
-    image = "file:///opt/images/myapp"
+    image = "file:///opt/images/api"
+    command = ["/bin/api", "--listen", "0.0.0.0:8080"]
     port = 8080
-    env = {
-        DATABASE_URL = "${db.connection_string}"
-        RUST_LOG = "info"
-    }
+    memory = "256MiB"
+    env = { RUST_LOG = "info" }
 }
 
-COMPONENT db FROM db_template {
+COMPONENT db {
+    image = "tar:///opt/images/postgres.tar"
     port = 5432
-    volume = "/data/postgres:/var/lib/postgresql/data"
-    memory = "512MB"
 }
 
 CONNECT api -> db
 ```
 
-**Language features:**
-- **IMPORT** — Compose from other `.ctst` files or remote sources.
-- **COMPONENT** — Define reusable, parameterized building blocks.
-- **CONNECT** — Declare dependencies with automatic environment variable injection.
-- **Distroless Analysis** — Automatic binary dependency scanning for minimal images.
+`IMPORT`, `COMPONENT`, `CONNECT`, environment maps, ports, volumes, health checks, and resource declarations are documented in [docs/CTST_LANG.md](docs/CTST_LANG.md). The parser rejects undefined connections and duplicate component names before deployment.
 
-See [docs/CTST_LANG.md](docs/CTST_LANG.md) for the full language specification.
+## CLI commands
 
----
+| Command | Purpose |
+| --- | --- |
+| `ctst plan [FILE]` | Parse a composition and print deployment order. |
+| `ctst build [FILE]` | Validate the composition and resolve declared image sources. |
+| `ctst run [FILE]` | Create and start components through the selected backend. |
+| `ctst ps [--all]` | List tracked containers. |
+| `ctst exec CONTAINER COMMAND...` | Execute in a running container (Linux uses `nsenter`). |
+| `ctst logs CONTAINER` | Read persisted logs. |
+| `ctst stop [CONTAINER...]` | Stop named/identified containers, or all containers. |
+| `ctst images` | List or remove catalog entries. |
+| `ctst convert COMPOSE.yml` | Convert the supported Docker Compose subset to `.ctst`. |
+| `ctst vm start/stop` | Manage the QEMU backend on non-Linux hosts. |
 
-## Rust SDK
+Run `ctst <command> --help` for command-specific options.
 
-Use Containust as an embeddable Rust library:
+## Architecture
 
-```rust
-use containust_sdk::builder::ContainerBuilder;
+The workspace is split into nine crates with a downward dependency flow:
 
-fn main() -> anyhow::Result<()> {
-    let container = ContainerBuilder::new("my-service")
-        .image("file:///opt/images/alpine")
-        .command(vec!["./server".into()])
-        .env("PORT", "8080")
-        .memory_limit(128 * 1024 * 1024)  // 128 MiB
-        .cpu_shares(1024)
-        .build()?;
-
-    // container.start()?;
-    Ok(())
-}
+```text
+containust-cli / containust-tui
+          |
+     containust-sdk
+          |
+containust-compose  containust-runtime  containust-image
+          |                 |                 |
+       containust-core   containust-ebpf       |
+                    \     |                  /
+                     containust-common
 ```
 
-See [docs/SDK_GUIDE.md](docs/SDK_GUIDE.md) for the full SDK documentation.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the dependency rules and backend design.
 
----
+## Storage and security
 
-## Security Model
+- Immutable VM assets are cached under `~/.containust/cache/`.
+- The runtime currently uses the resolved user data directory (`$HOME/.containust`, or `/var/lib/containust` when no writable home is available) for state, logs, rootfs data, and the image catalog.
+- Read-only rootfs, capability dropping, cgroups, and namespace setup are implemented in the Linux path but must be validated on the target host.
+- Remote HTTP(S) sources are recognized by the image layer; download policy, digest enforcement, and the global `--offline` flag are not yet complete.
+- `--state-file` is accepted by the CLI parser but is not yet wired through every command.
 
-Security is not an afterthought — it is the foundation:
+## Development and audit
 
-| Feature | Default | Description |
-|---|---|---|
-| Root filesystem | **Read-only** | Only declared volumes are writable |
-| Linux capabilities | **All dropped** | Allowlist-only model |
-| Network (offline) | **All egress blocked** | `--offline` flag for air-gapped builds and runs |
-| Image sources | **Local-first** | `file://`, `tar://` protocols with SHA-256 verification |
-| State file | **No secrets** | Credentials never stored in state index |
-| Unsafe code | **Audited** | Every `unsafe` block requires `// SAFETY:` justification |
+The repository uses `cargo test --workspace --lib --tests` for the deterministic default suite. Run the full `cargo test --workspace` command as well when your environment has a working `rustdoc`; on some macOS Rustup installations, the `rustdoc` shim can fail before doctests start.
 
----
-
-## Observability
-
-### TUI Dashboard
+Before opening a change, run:
 
 ```bash
-ctst ps --tui
-```
-
-Interactive terminal dashboard powered by **ratatui** showing:
-- Container status and uptime
-- Real-time CPU, memory, and I/O metrics
-- eBPF trace logs (syscalls, file access, network events)
-
-### eBPF Tracing
-
-When built with the `ebpf` feature and running on a supported kernel:
-- Syscall tracing per container
-- File open monitoring
-- Network socket/connection tracking
-
----
-
-## Tech Stack
-
-| Component | Technology |
-|---|---|
-| Language | Rust (Edition 2024) |
-| CLI | clap 4.5 |
-| TUI | ratatui 0.30 |
-| Parsing | nom 8 |
-| Dependency Graph | petgraph 0.8 |
-| Linux Syscalls | nix 0.31, libc |
-| eBPF | aya 0.13 |
-| Serialization | serde, serde_json |
-| Hashing | sha2 (SHA-256) |
-| Logging | tracing |
-
----
-
-## Development
-
-```bash
-# Run all tests
-cargo test --workspace
-
-# Check lints (zero warnings policy)
-cargo clippy --workspace -- -D warnings
-
-# Format code
-cargo fmt --all
-
-# Audit dependencies
-cargo deny check
-
-# Verify workspace compiles
 cargo check --workspace
+cargo test --workspace --lib --tests
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo deny check
 ```
 
----
+Privileged namespace, mount, cgroup, and eBPF tests are marked `ignored` and should be run explicitly on a suitable Linux host. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for coding standards and review expectations.
 
-## Project Structure
+## Documentation
 
-```
-Containust/
-├── Cargo.toml                  # Workspace manifest
-├── crates/                     # All library and binary crates
-│   ├── containust-common/      # Shared types, errors, constants
-│   ├── containust-core/        # Linux isolation primitives
-│   ├── containust-image/       # Image/layer management
-│   ├── containust-runtime/     # Container lifecycle
-│   │   └── src/
-│   │       ├── backend/        # Platform-agnostic backends
-│   │       │   ├── mod.rs      # ContainerBackend trait + platform detection
-│   │       │   ├── linux.rs    # LinuxNativeBackend (direct syscalls)
-│   │       │   └── vm/         # VMBackend (QEMU + JSON-RPC)
-│   │       │       ├── mod.rs      # VM lifecycle + RPC client
-│   │       │       └── initramfs.rs # Custom initramfs builder + agent
-│   │       ├── engine.rs       # Runtime engine (orchestrates deployments)
-│   │       └── logs.rs         # Container log management
-│   ├── containust-compose/     # .ctst parser + dependency graph
-│   ├── containust-ebpf/        # eBPF observability
-│   ├── containust-sdk/         # Public Rust SDK
-│   ├── containust-tui/         # Terminal dashboard
-│   └── containust-cli/         # ctst binary
-│       └── src/commands/
-│           ├── logs.rs         # ctst logs command
-│           └── converter.rs    # Docker Compose converter
-├── docs/                       # Documentation
-│   ├── CTST_LANG.md            # .ctst language reference
-│   ├── CLI_REFERENCE.md        # CLI manual
-│   ├── SDK_GUIDE.md            # Rust SDK guide
-│   ├── TUTORIALS.md            # Step-by-step tutorials
-│   ├── ERRORS.md               # Error code reference
-│   ├── CONTRIBUTING.md         # Contributor guide
-│   ├── MIGRATION_FROM_DOCKER.md # Docker Compose migration
-│   └── SPEC.md                 # Technical specification
-├── examples/                   # Example files
-│   ├── templates/              # Reusable .ctst templates
-│   ├── node-hello.ctst         # Working Hello World HTTP server demo
-│   ├── *.ctst                  # Composition examples
-│   └── *.rs                    # Rust SDK examples
-├── tests/integration/          # Integration tests
-└── ARCHITECTURE.md             # Crate architecture
-```
-
----
-
-## Contributing
-
-Contributions are welcome. Please read the [Contributing Guide](docs/CONTRIBUTING.md) before submitting code.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feat/my-feature`)
-3. Ensure `cargo test --workspace`, `cargo clippy --workspace -- -D warnings`, and `cargo fmt --all --check` pass
-4. Submit a pull request
-
-See also: [ARCHITECTURE.md](ARCHITECTURE.md) | [Error Reference](docs/ERRORS.md) | [Cursor rules](.cursor/rules/)
-
----
+- [CLI reference](docs/CLI_REFERENCE.md)
+- [.ctst language reference](docs/CTST_LANG.md)
+- [SDK guide](docs/SDK_GUIDE.md)
+- [Tutorials](docs/TUTORIALS.md)
+- [Error reference](docs/ERRORS.md)
+- [Docker migration](docs/MIGRATION_FROM_DOCKER.md)
+- [Architecture](ARCHITECTURE.md)
+- [Technical specification](docs/SPEC.md)
 
 ## License
 
-Licensed under either of:
-
-- [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0)
-- [MIT License](http://opensource.org/licenses/MIT)
-
-at your option.
-
----
-
-<p align="center">
-  Built with Rust. Designed for sovereignty.
-</p>
+Containust is available under either the [MIT License](LICENSE-MIT) or the [Apache License 2.0](LICENSE-APACHE), at your option.

@@ -385,9 +385,7 @@ fn lock_vm_process(
 
 /// Checks if a kernel file exists but is empty (a placeholder).
 fn kernel_is_empty(kernel: &Path) -> bool {
-    std::fs::metadata(kernel)
-        .map(|m| m.len() == 0)
-        .unwrap_or(true)
+    std::fs::metadata(kernel).map_or(true, |m| m.len() == 0)
 }
 
 /// Spawns the QEMU process with all required arguments including dynamic port forwarding.

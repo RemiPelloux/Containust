@@ -80,7 +80,7 @@ mod tests {
         };
         let debug = format!("{event:?}");
         assert!(debug.contains("SyscallEvent"));
-        assert!(debug.contains("1"));
+        assert!(debug.contains('1'));
     }
 
     #[test]

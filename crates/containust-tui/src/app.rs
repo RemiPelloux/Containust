@@ -63,7 +63,7 @@ mod tests {
     fn app_default_equals_new() {
         let a = App::new();
         let b = App::default();
-        assert!(a.running == b.running);
+        assert_eq!(a.running, b.running);
         assert_eq!(a.current_view, b.current_view);
         assert_eq!(a.selected_index, b.selected_index);
     }

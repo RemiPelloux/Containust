@@ -47,6 +47,7 @@ impl Default for EventListener {
 }
 
 #[cfg(test)]
+#[allow(clippy::panic, clippy::match_wildcard_for_single_variants)]
 mod tests {
     use containust_common::types::{ContainerId, ContainerState};
 

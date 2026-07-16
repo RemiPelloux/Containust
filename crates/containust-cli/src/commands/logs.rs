@@ -24,7 +24,7 @@ pub struct LogsArgs {
 /// Returns an error if the container is not found or logs are unavailable.
 pub fn execute(args: LogsArgs) -> anyhow::Result<()> {
     let engine = Engine::new();
-    let id = ContainerId::new(&args.container);
+    let id = resolve_target(&engine, &args.container)?;
     let logs = engine.logs(&id).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if logs.is_empty() {
@@ -34,4 +34,15 @@ pub fn execute(args: LogsArgs) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn resolve_target(engine: &Engine, target: &str) -> anyhow::Result<ContainerId> {
+    let containers = engine.list().map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok(containers
+        .iter()
+        .find(|container| container.id.as_str() == target || container.name == target)
+        .map_or_else(
+            || ContainerId::new(target),
+            |container| container.id.clone(),
+        ))
 }

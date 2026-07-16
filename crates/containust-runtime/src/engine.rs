@@ -62,8 +62,11 @@ impl Engine {
     /// container creation, or start fails.
     pub fn deploy(&self, ctst_path: &Path) -> Result<Vec<DeployedComponent>> {
         let project_dir = containust_common::constants::project_dir(ctst_path);
-        let _ = std::fs::create_dir_all(project_dir.join("logs"));
-        let _ = std::fs::create_dir_all(project_dir.join("state"));
+        for subdir in ["logs", "state"] {
+            let path = project_dir.join(subdir);
+            std::fs::create_dir_all(&path)
+                .map_err(|source| ContainustError::Io { path, source })?;
+        }
         tracing::info!(project_dir = %project_dir.display(), "project directory");
 
         let content = std::fs::read_to_string(ctst_path).map_err(|e| ContainustError::Io {

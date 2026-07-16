@@ -22,6 +22,18 @@ pub struct StateEntry {
     pub pid: Option<u32>,
     /// Image source URI.
     pub image: String,
+    /// Command used to start the container.
+    #[serde(default)]
+    pub command: Vec<String>,
+    /// Environment variables passed to the container process.
+    #[serde(default)]
+    pub env: Vec<(String, String)>,
+    /// Configured memory limit in bytes.
+    #[serde(default)]
+    pub memory_bytes: Option<u64>,
+    /// Configured CPU weight.
+    #[serde(default)]
+    pub cpu_shares: Option<u64>,
     /// Rootfs path on disk.
     pub rootfs_path: Option<String>,
     /// Log file path.
@@ -103,6 +115,10 @@ mod tests {
                 state: ContainerState::Running,
                 pid: Some(1234),
                 image: "myapp:latest".into(),
+                command: vec!["sh".into()],
+                env: vec![("KEY".into(), "value".into())],
+                memory_bytes: Some(128),
+                cpu_shares: Some(512),
                 rootfs_path: Some("/var/lib/containust/rootfs/test-1".into()),
                 log_path: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
@@ -118,6 +134,13 @@ mod tests {
         assert_eq!(loaded.containers[0].state, ContainerState::Running);
         assert_eq!(loaded.containers[0].pid, Some(1234));
         assert_eq!(loaded.containers[0].image, "myapp:latest");
+        assert_eq!(loaded.containers[0].command, vec!["sh"]);
+        assert_eq!(
+            loaded.containers[0].env,
+            vec![("KEY".into(), "value".into())]
+        );
+        assert_eq!(loaded.containers[0].memory_bytes, Some(128));
+        assert_eq!(loaded.containers[0].cpu_shares, Some(512));
     }
 
     #[test]
@@ -154,6 +177,10 @@ mod tests {
                     state: ContainerState::Running,
                     pid: Some(100),
                     image: "web:1.0".into(),
+                    command: Vec::new(),
+                    env: Vec::new(),
+                    memory_bytes: None,
+                    cpu_shares: None,
                     rootfs_path: None,
                     log_path: None,
                     created_at: "2026-01-01T00:00:00Z".into(),
@@ -164,6 +191,10 @@ mod tests {
                     state: ContainerState::Stopped,
                     pid: None,
                     image: "postgres:15".into(),
+                    command: Vec::new(),
+                    env: Vec::new(),
+                    memory_bytes: None,
+                    cpu_shares: None,
                     rootfs_path: None,
                     log_path: None,
                     created_at: "2026-01-01T00:00:00Z".into(),

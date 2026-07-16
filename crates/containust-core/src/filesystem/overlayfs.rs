@@ -205,7 +205,7 @@ mod tests {
             merged_dir: temp.join("merged"),
         };
         let _ = std::fs::create_dir_all(&temp);
-        mount_overlay(&config).ok();
+        let _ = mount_overlay(&config);
         let _ = std::fs::remove_dir_all(&temp);
     }
 
@@ -213,6 +213,6 @@ mod tests {
     #[test]
     #[ignore = "requires root privileges"]
     fn unmount_overlay_removes_mount() {
-        unmount_overlay(Path::new("/tmp/containust_test_merged")).ok();
+        let _ = unmount_overlay(Path::new("/tmp/containust_test_merged"));
     }
 }

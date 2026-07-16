@@ -51,6 +51,10 @@ impl ContainerBackend for LinuxNativeBackend {
             state: containust_common::types::ContainerState::Created,
             pid: None,
             image: config.image.clone(),
+            command: config.command.clone(),
+            env: config.env.clone(),
+            memory_bytes: config.memory_bytes,
+            cpu_shares: config.cpu_shares,
             rootfs_path: Some(rootfs.to_string_lossy().to_string()),
             log_path: Some(
                 self.data_dir
@@ -91,7 +95,12 @@ impl ContainerBackend for LinuxNativeBackend {
 
         // Clone out the data we need so we can release the borrow
         let image = entry.image.clone();
-        let rootfs = match &entry.rootfs_path {
+        let existing_rootfs = entry.rootfs_path.clone();
+        let stored_command = entry.command.clone();
+        let env = entry.env.clone();
+        let memory_bytes = entry.memory_bytes;
+        let cpu_shares = entry.cpu_shares;
+        let rootfs = match existing_rootfs {
             Some(p) => PathBuf::from(p),
             None => prepare_rootfs(&image, id)?,
         };
@@ -102,12 +111,16 @@ impl ContainerBackend for LinuxNativeBackend {
             crate::state::save_state(&state_path, &state)?;
         }
 
-        let command = derive_command_from_image(&image);
+        let command = if stored_command.is_empty() {
+            derive_command_from_image(&image)
+        } else {
+            stored_command
+        };
 
         // Spawn the container process with full namespace isolation
-        let pid = crate::process::spawn_container_process(&command, &[], &rootfs)?;
+        let pid = crate::process::spawn_container_process(&command, &env, &rootfs)?;
 
-        apply_cgroup_limits(id, pid);
+        apply_cgroup_limits(id, pid, memory_bytes, cpu_shares);
 
         // Update state to Running
         let entry = &mut state.containers[idx];
@@ -126,14 +139,20 @@ impl ContainerBackend for LinuxNativeBackend {
         let mut state = crate::state::load_state(&state_path)?;
 
         // If running, send SIGTERM then SIGKILL
-        if let Some(entry) = state.containers.iter_mut().find(|e| e.id == *id) {
-            let is_running = entry.state == containust_common::types::ContainerState::Running;
-            if let Some(pid) = entry.pid.filter(|_| is_running) {
-                terminate_process(pid);
-            }
-            entry.state = containust_common::types::ContainerState::Stopped;
-            entry.pid = None;
+        let entry = state
+            .containers
+            .iter_mut()
+            .find(|e| e.id == *id)
+            .ok_or_else(|| ContainustError::NotFound {
+                kind: "container",
+                id: id.to_string(),
+            })?;
+        let is_running = entry.state == containust_common::types::ContainerState::Running;
+        if let Some(pid) = entry.pid.filter(|_| is_running) {
+            terminate_process(pid);
         }
+        entry.state = containust_common::types::ContainerState::Stopped;
+        entry.pid = None;
         crate::state::save_state(&state_path, &state)?;
         cleanup_cgroup(id);
 
@@ -164,7 +183,14 @@ impl ContainerBackend for LinuxNativeBackend {
         // Clean up cgroup
         cleanup_cgroup(id);
 
+        let before = state.containers.len();
         state.containers.retain(|e| e.id != *id);
+        if state.containers.len() == before {
+            return Err(ContainustError::NotFound {
+                kind: "container",
+                id: id.to_string(),
+            });
+        }
         crate::state::save_state(&state_path, &state)?;
         Ok(())
     }
@@ -314,7 +340,7 @@ fn extract_tar(archive: &std::path::Path, dst: &std::path::Path) -> Result<()> {
     })?;
 
     // Try gzip first, fall back to plain tar
-    let size = tar_gz.metadata().map(|m| m.len()).unwrap_or(0);
+    let size = tar_gz.metadata().map_or(0, |m| m.len());
     if size > 0 {
         // Peek first bytes to detect gzip magic (1f 8b)
         use std::io::Read;
@@ -355,7 +381,12 @@ fn derive_command_from_image(_image_uri: &str) -> Vec<String> {
 /// Attempt to apply cgroup resource limits for a container.
 /// Non-fatal on failure — containers still run without limits.
 #[allow(clippy::missing_const_for_fn)]
-fn apply_cgroup_limits(container_id: &ContainerId, pid: u32) {
+fn apply_cgroup_limits(
+    container_id: &ContainerId,
+    pid: u32,
+    memory_bytes: Option<u64>,
+    cpu_shares: Option<u64>,
+) {
     #[cfg(target_os = "linux")]
     {
         use containust_common::types::ResourceLimits;
@@ -363,7 +394,11 @@ fn apply_cgroup_limits(container_id: &ContainerId, pid: u32) {
 
         match CgroupManager::create(container_id.as_str()) {
             Ok(mgr) => {
-                let limits = ResourceLimits::default();
+                let limits = ResourceLimits {
+                    memory_bytes,
+                    cpu_shares,
+                    io_weight: None,
+                };
                 let _ = mgr.apply_limits(&limits).map_err(|e| {
                     tracing::warn!(%e, "failed to apply cgroup limits");
                 });
@@ -378,8 +413,7 @@ fn apply_cgroup_limits(container_id: &ContainerId, pid: u32) {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = container_id;
-        let _ = pid;
+        let _ = (container_id, pid, memory_bytes, cpu_shares);
     }
 }
 
@@ -458,7 +492,7 @@ mod tests {
         );
 
         // Cleanup
-        std::fs::remove_dir_all(&temp_dir).ok();
+        let _ = std::fs::remove_dir_all(&temp_dir);
         Ok(())
     }
 
@@ -472,7 +506,7 @@ mod tests {
         copy_dir_recursive(&src, &dst)?;
 
         assert!(dst.exists());
-        std::fs::remove_dir_all(&temp_dir).ok();
+        let _ = std::fs::remove_dir_all(&temp_dir);
         Ok(())
     }
 

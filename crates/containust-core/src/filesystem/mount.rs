@@ -188,7 +188,7 @@ mod tests {
         let source = temp.join("source");
         let target = temp.join("target");
         let _ = std::fs::create_dir_all(&source);
-        bind_mount(&source, &target, false).ok();
+        let _ = bind_mount(&source, &target, false);
         let _ = std::fs::remove_dir_all(&temp);
     }
 }

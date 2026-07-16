@@ -90,7 +90,14 @@ pub fn execute(cli: Cli) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
+#[allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::needless_borrows_for_generic_args,
+    clippy::match_wildcard_for_single_variants,
+    clippy::semicolon_if_nothing_returned
+)]
 mod tests {
     use super::*;
 

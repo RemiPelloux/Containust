@@ -3,7 +3,7 @@
 //! Automatically generates connection environment variables when
 //! components are linked via `CONNECT` declarations.
 
-use containust_common::error::Result;
+use containust_common::error::{ContainustError, Result};
 
 use crate::parser::ast::CompositionFile;
 
@@ -36,10 +36,21 @@ pub fn resolve_connections(file: &CompositionFile) -> Result<Vec<ResolvedCompone
         .collect();
 
     for conn in &file.connections {
-        let target = file.components.iter().find(|c| c.name == conn.to);
-        if let Some(target_comp) = target {
-            inject_connection_env(&mut resolved, conn, target_comp);
+        let target = file
+            .components
+            .iter()
+            .find(|c| c.name == conn.to)
+            .ok_or_else(|| ContainustError::NotFound {
+                kind: "component",
+                id: conn.to.clone(),
+            })?;
+        if !file.components.iter().any(|c| c.name == conn.from) {
+            return Err(ContainustError::NotFound {
+                kind: "component",
+                id: conn.from.clone(),
+            });
         }
+        inject_connection_env(&mut resolved, conn, target);
     }
 
     Ok(resolved)
@@ -207,5 +218,45 @@ mod tests {
         assert!(api.env.iter().any(|(k, _)| k == "DB_PORT"));
         assert!(api.env.iter().any(|(k, _)| k == "CACHE_HOST"));
         assert!(api.env.iter().any(|(k, _)| k == "CACHE_PORT"));
+    }
+
+    #[test]
+    fn resolve_undefined_target_returns_error() {
+        let file = CompositionFile {
+            imports: Vec::new(),
+            components: vec![ComponentDecl {
+                name: "api".into(),
+                image: Some("api".into()),
+                ..ComponentDecl::default()
+            }],
+            connections: vec![ConnectionDecl {
+                from: "api".into(),
+                to: "missing".into(),
+            }],
+        };
+
+        let result = resolve_connections(&file);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("missing"));
+    }
+
+    #[test]
+    fn resolve_undefined_source_returns_error() {
+        let file = CompositionFile {
+            imports: Vec::new(),
+            components: vec![ComponentDecl {
+                name: "db".into(),
+                image: Some("db".into()),
+                ..ComponentDecl::default()
+            }],
+            connections: vec![ConnectionDecl {
+                from: "missing".into(),
+                to: "db".into(),
+            }],
+        };
+
+        let result = resolve_connections(&file);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("missing"));
     }
 }

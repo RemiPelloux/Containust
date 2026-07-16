@@ -92,7 +92,7 @@ mod tests {
         let new_root = temp.join("new_root");
         let put_old = new_root.join(".old_root");
         let _ = std::fs::create_dir_all(&new_root);
-        pivot_root(&new_root, &put_old).ok();
+        let _ = pivot_root(&new_root, &put_old);
         let _ = std::fs::remove_dir_all(&temp);
     }
 }
