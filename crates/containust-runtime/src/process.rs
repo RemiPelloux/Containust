@@ -23,7 +23,7 @@ pub struct ProcessConfig {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg(target_os = "linux")]
 struct VolumeMount {
     source: std::path::PathBuf,
     target: std::path::PathBuf,
@@ -188,7 +188,7 @@ fn bind_volume(spec: &str, rootfs: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg(target_os = "linux")]
 fn parse_volume_spec(spec: &str) -> std::io::Result<VolumeMount> {
     let mut parts = spec.split(':');
     let source = parts.next().unwrap_or_default();
@@ -336,7 +336,7 @@ pub fn spawn_container_process(_config: &ProcessConfig) -> Result<u32> {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
 

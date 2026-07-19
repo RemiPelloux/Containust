@@ -277,6 +277,7 @@ fn save_state_unlocked(path: &Path, state: &StateFile) -> Result<()> {
             path: temp_path.clone(),
             source,
         })?;
+        drop(file);
         atomic_replace(&temp_path, path)?;
         #[cfg(unix)]
         sync_parent(path)?;
@@ -517,6 +518,27 @@ mod tests {
         assert_eq!(loaded.containers.len(), 2);
         assert_eq!(loaded.containers[0].name, "web");
         assert_eq!(loaded.containers[1].name, "db");
+    }
+
+    #[test]
+    fn save_replaces_existing_state() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.json");
+        let first = StateFile {
+            containers: vec![test_entry("first")],
+            ..StateFile::default()
+        };
+        let second = StateFile {
+            containers: vec![test_entry("second")],
+            ..StateFile::default()
+        };
+
+        save_state(&path, &first).expect("save initial state");
+        save_state(&path, &second).expect("replace existing state");
+
+        let loaded = load_state(&path).expect("load replacement");
+        assert_eq!(loaded.containers.len(), 1);
+        assert_eq!(loaded.containers[0].id, ContainerId::new("second"));
     }
 
     #[test]
