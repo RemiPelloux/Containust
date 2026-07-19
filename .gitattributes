@@ -1,0 +1,2 @@
+*.rs text eol=lf
+rustfmt.toml text eol=lf
