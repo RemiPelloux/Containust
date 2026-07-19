@@ -52,46 +52,18 @@ pub struct ProcessOutput {
 ///
 /// # Errors
 ///
-/// Returns an error if namespace creation, mount, pivot_root, or exec fails.
+/// Returns an error if namespace creation, mount, `pivot_root`, or exec fails.
 #[cfg(target_os = "linux")]
 pub fn spawn_container_process(config: &ProcessConfig) -> Result<u32> {
     use std::os::unix::process::CommandExt;
 
-    if config.command.is_empty() {
-        return Err(ContainustError::Config {
-            message: "container command is empty".into(),
-        });
-    }
-
     let container_root = config.rootfs.clone();
-    if !container_root.exists() {
-        return Err(ContainustError::Config {
-            message: format!(
-                "rootfs directory does not exist: {}",
-                container_root.display()
-            ),
-        });
-    }
-
     tracing::info!(
         command = ?config.command,
         rootfs = %container_root.display(),
         "spawning container process"
     );
-
-    let mut child_cmd = std::process::Command::new(&config.command[0]);
-    if config.command.len() > 1 {
-        let _ = child_cmd.args(&config.command[1..]);
-    }
-
-    // Clear host environment and set minimal defaults
-    let _ = child_cmd.env_clear();
-    let _ = child_cmd.env("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin");
-    let _ = child_cmd.env("HOME", "/root");
-    let _ = child_cmd.env("TERM", "xterm");
-    for (key, value) in &config.env {
-        let _ = child_cmd.env(key, value);
-    }
+    let mut child_cmd = prepare_child_command(config)?;
 
     let rootfs_owned = container_root.clone();
     let volumes = config.volumes.clone();
@@ -105,52 +77,8 @@ pub fn spawn_container_process(config: &ProcessConfig) -> Result<u32> {
     // 4. mount proc, sys, dev — pseudo-filesystems
     // 5. drop all capabilities — least-privilege execution
     unsafe {
-        let _ = child_cmd.pre_exec(move || {
-            // 1. Isolate mount namespace
-            nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWNS).map_err(|e| {
-                std::io::Error::other(format!("unshare mount namespace failed (root?): {e}"))
-            })?;
-
-            // 2. Mount private/slave so changes don't propagate to host
-            use nix::mount::{MsFlags, mount};
-            let _ = mount::<str, str, str, str>(
-                None,
-                "/",
-                None,
-                MsFlags::MS_REC | MsFlags::MS_SLAVE,
-                None,
-            );
-
-            for volume in &volumes {
-                bind_volume(volume, &rootfs_owned)?;
-            }
-
-            // 4. Pivot root
-            containust_core::filesystem::pivot_root::pivot_root(
-                &rootfs_owned,
-                &rootfs_owned.join(".old_root"),
-            )
-            .map_err(|e| std::io::Error::other(format!("pivot_root failed: {e}")))?;
-
-            // 5. Mount pseudo-filesystems
-            mount_pseudo_filesystems()?;
-
-            if readonly_rootfs {
-                mount(
-                    None::<&str>,
-                    "/",
-                    None::<&str>,
-                    MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
-                    None::<&str>,
-                )
-                .map_err(|e| std::io::Error::other(format!("read-only rootfs failed: {e}")))?;
-            }
-
-            // 6. Drop all capabilities
-            let _ = containust_core::capability::drop_capabilities(&[]);
-
-            Ok(())
-        });
+        let _ = child_cmd
+            .pre_exec(move || configure_child_isolation(&rootfs_owned, &volumes, readonly_rootfs));
     }
 
     let child = child_cmd.spawn().map_err(|e| ContainustError::Io {
@@ -161,6 +89,66 @@ pub fn spawn_container_process(config: &ProcessConfig) -> Result<u32> {
     let pid = child.id();
     tracing::info!(pid, "container process spawned");
     Ok(pid)
+}
+
+#[cfg(target_os = "linux")]
+fn prepare_child_command(config: &ProcessConfig) -> Result<std::process::Command> {
+    if config.command.is_empty() {
+        return Err(ContainustError::Config {
+            message: "container command is empty".into(),
+        });
+    }
+    if !config.rootfs.exists() {
+        return Err(ContainustError::Config {
+            message: format!(
+                "rootfs directory does not exist: {}",
+                config.rootfs.display()
+            ),
+        });
+    }
+
+    let mut command = std::process::Command::new(&config.command[0]);
+    let _ = command.args(&config.command[1..]);
+    let _ = command.env_clear();
+    let _ = command.env("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin");
+    let _ = command.env("HOME", "/root");
+    let _ = command.env("TERM", "xterm");
+    for (key, value) in &config.env {
+        let _ = command.env(key, value);
+    }
+    Ok(command)
+}
+
+#[cfg(target_os = "linux")]
+fn configure_child_isolation(
+    rootfs: &Path,
+    volumes: &[String],
+    readonly_rootfs: bool,
+) -> std::io::Result<()> {
+    use nix::mount::{MsFlags, mount};
+
+    nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWNS).map_err(|e| {
+        std::io::Error::other(format!("unshare mount namespace failed (root?): {e}"))
+    })?;
+    let _ = mount::<str, str, str, str>(None, "/", None, MsFlags::MS_REC | MsFlags::MS_SLAVE, None);
+    for volume in volumes {
+        bind_volume(volume, rootfs)?;
+    }
+    containust_core::filesystem::pivot_root::pivot_root(rootfs, &rootfs.join(".old_root"))
+        .map_err(|e| std::io::Error::other(format!("pivot_root failed: {e}")))?;
+    mount_pseudo_filesystems()?;
+    if readonly_rootfs {
+        mount(
+            None::<&str>,
+            "/",
+            None::<&str>,
+            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
+            None::<&str>,
+        )
+        .map_err(|e| std::io::Error::other(format!("read-only rootfs failed: {e}")))?;
+    }
+    let _ = containust_core::capability::drop_capabilities(&[]);
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -249,12 +237,20 @@ fn prepare_volume_target(source: &Path, target: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Mounts essential pseudo-filesystems after pivot_root.
 #[cfg(target_os = "linux")]
-fn mount_pseudo_filesystems() -> std::io::Result<()> {
-    use nix::mount::{MsFlags, mount};
+type PseudoMount = (
+    &'static str,
+    &'static str,
+    &'static str,
+    nix::mount::MsFlags,
+    Option<&'static str>,
+);
 
-    let pseudo_mounts: &[(&str, &str, &str, MsFlags, Option<&str>)] = &[
+#[cfg(target_os = "linux")]
+fn pseudo_mounts() -> [PseudoMount; 6] {
+    use nix::mount::MsFlags;
+
+    [
         (
             "/proc",
             "proc",
@@ -297,12 +293,18 @@ fn mount_pseudo_filesystems() -> std::io::Result<()> {
             MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
             Some("mode=1777,size=65536k"),
         ),
-    ];
+    ]
+}
 
-    for (path, src, fstype, flags, opts) in pseudo_mounts {
+/// Mounts essential pseudo-filesystems after `pivot_root`.
+#[cfg(target_os = "linux")]
+fn mount_pseudo_filesystems() -> std::io::Result<()> {
+    use nix::mount::mount;
+
+    for (path, src, fstype, flags, opts) in pseudo_mounts() {
         let _ = std::fs::create_dir_all(path);
-        mount(Some(*src), *path, Some(*fstype), *flags, *opts)
-            .map_err(|e| std::io::Error::other(format!("mount {} failed: {e}", path)))?;
+        mount(Some(src), path, Some(fstype), flags, opts)
+            .map_err(|e| std::io::Error::other(format!("mount {path} failed: {e}")))?;
     }
 
     // Create essential device nodes as empty files (real devices
@@ -315,7 +317,7 @@ fn mount_pseudo_filesystems() -> std::io::Result<()> {
         "/dev/tty",
     ] {
         if !std::path::Path::new(dev).exists() {
-            let _ = std::fs::write(dev, &[]);
+            let _ = std::fs::write(dev, []);
         }
     }
 

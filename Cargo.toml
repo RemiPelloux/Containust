@@ -82,6 +82,7 @@ ctrlc = "3"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tempfile = "3"
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

@@ -392,6 +392,7 @@ impl LinuxNativeBackend {
 }
 
 /// Sends SIGTERM followed by SIGKILL after a 2-second grace period.
+#[cfg(target_os = "linux")]
 fn terminate_process(pid: u32, force: bool) {
     use nix::sys::signal::{Signal, kill};
     use nix::unistd::Pid;
@@ -413,6 +414,9 @@ fn terminate_process(pid: u32, force: bool) {
         tracing::info!(pid, "sent SIGKILL");
     }
 }
+
+#[cfg(not(target_os = "linux"))]
+const fn terminate_process(_pid: u32, _force: bool) {}
 
 // ---------------------------------------------------------------------------
 // Image preparation helpers

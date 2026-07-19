@@ -277,10 +277,7 @@ fn save_state_unlocked(path: &Path, state: &StateFile) -> Result<()> {
             path: temp_path.clone(),
             source,
         })?;
-        std::fs::rename(&temp_path, path).map_err(|source| ContainustError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
+        atomic_replace(&temp_path, path)?;
         sync_parent(path)?;
         Ok(())
     })();
@@ -289,6 +286,50 @@ fn save_state_unlocked(path: &Path, state: &StateFile) -> Result<()> {
     }
     write_result?;
     tracing::debug!(path = %path.display(), "state saved");
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn atomic_replace(temp_path: &Path, path: &Path) -> Result<()> {
+    std::fs::rename(temp_path, path).map_err(|source| ContainustError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn atomic_replace(temp_path: &Path, path: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{REPLACEFILE_WRITE_THROUGH, ReplaceFileW};
+
+    if !path.exists() {
+        return std::fs::rename(temp_path, path).map_err(|source| ContainustError::Io {
+            path: path.to_path_buf(),
+            source,
+        });
+    }
+
+    let destination: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let replacement: Vec<u16> = temp_path.as_os_str().encode_wide().chain(Some(0)).collect();
+    // SAFETY: both paths are NUL-terminated UTF-16 buffers that live through the call;
+    // the optional backup, exclude, and reserved pointers are intentionally null.
+    let replaced = unsafe {
+        ReplaceFileW(
+            destination.as_ptr(),
+            replacement.as_ptr(),
+            std::ptr::null(),
+            REPLACEFILE_WRITE_THROUGH,
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    if replaced == 0 {
+        return Err(ContainustError::Io {
+            path: path.to_path_buf(),
+            source: std::io::Error::last_os_error(),
+        });
+    }
     Ok(())
 }
 
