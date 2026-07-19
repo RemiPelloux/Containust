@@ -1,12 +1,16 @@
 //! Linux native container backend using direct syscalls.
 
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use containust_common::error::{ContainustError, Result};
 use containust_common::types::ContainerId;
 
-use super::{ContainerBackend, ContainerConfig, ContainerInfo};
+use super::{
+    ContainerBackend, ContainerConfig, ContainerInfo, ReconciliationReport, project_identifier,
+};
 use crate::exec::ExecOutput;
+use crate::state::StateStore;
 
 /// Backend that uses Linux kernel features directly.
 ///
@@ -14,24 +18,28 @@ use crate::exec::ExecOutput;
 /// to Linux namespaces, cgroups v2, `OverlayFS`, and `pivot_root`.
 pub struct LinuxNativeBackend {
     data_dir: PathBuf,
-    state_file: PathBuf,
+    state_store: StateStore,
+    project_id: String,
 }
 
 impl LinuxNativeBackend {
     /// Creates a new Linux native backend.
     #[must_use]
     pub fn new() -> Self {
-        let data_dir = containust_common::constants::data_dir().clone();
-        let state_file = data_dir.join("state.json");
+        let data_dir =
+            containust_common::constants::project_dir(std::path::Path::new("containust.ctst"));
+        let state_file = data_dir.join("state").join("state.json");
         Self::with_paths(data_dir, state_file)
     }
 
     /// Creates a backend using explicit data and state paths.
     #[must_use]
-    pub const fn with_paths(data_dir: PathBuf, state_file: PathBuf) -> Self {
+    pub fn with_paths(data_dir: PathBuf, state_file: PathBuf) -> Self {
+        let project_id = project_identifier(&data_dir);
         Self {
             data_dir,
-            state_file,
+            state_store: StateStore::new(state_file),
+            project_id,
         }
     }
 }
@@ -50,67 +58,85 @@ impl ContainerBackend for LinuxNativeBackend {
         let id = ContainerId::generate();
         tracing::info!(id = %id, name = %config.name, "creating container (Linux native)");
 
-        // Prepare rootfs from the image source
-        let rootfs = prepare_rootfs(&self.data_dir, &config.image, &id)?;
-
-        let mut state = crate::state::load_state(&self.state_file)?;
-        state.containers.push(crate::state::StateEntry {
-            id: id.clone(),
-            name: config.name.clone(),
-            state: containust_common::types::ContainerState::Created,
-            pid: None,
-            image: config.image.clone(),
-            command: config.command.clone(),
-            env: config.env.clone(),
-            memory_bytes: config.memory_bytes,
-            cpu_shares: config.cpu_shares,
-            readonly_rootfs: config.readonly_rootfs,
-            volumes: config.volumes.clone(),
-            rootfs_path: Some(rootfs.to_string_lossy().to_string()),
-            log_path: Some(
-                self.data_dir
-                    .join("logs")
-                    .join(format!("{id}.log"))
-                    .to_string_lossy()
-                    .to_string(),
-            ),
-            created_at: chrono::Utc::now().to_rfc3339(),
+        let store_result = self.state_store.update(|state| {
+            if state
+                .containers
+                .iter()
+                .any(|entry| entry.name == config.name)
+            {
+                return Err(ContainustError::Config {
+                    message: format!("container name already exists: {}", config.name),
+                });
+            }
+            let rootfs = prepare_rootfs(&self.data_dir, &config.image, &id)?;
+            state.containers.push(crate::state::StateEntry {
+                id: id.clone(),
+                name: config.name.clone(),
+                state: containust_common::types::ContainerState::Created,
+                pid: None,
+                image: config.image.clone(),
+                command: config.command.clone(),
+                env: config.env.clone(),
+                memory_bytes: config.memory_bytes,
+                cpu_shares: config.cpu_shares,
+                readonly_rootfs: config.readonly_rootfs,
+                volumes: config.volumes.clone(),
+                rootfs_path: Some(rootfs.to_string_lossy().to_string()),
+                log_path: Some(
+                    self.data_dir
+                        .join("logs")
+                        .join(format!("{id}.log"))
+                        .to_string_lossy()
+                        .to_string(),
+                ),
+                created_at: chrono::Utc::now().to_rfc3339(),
+            });
+            Ok(rootfs)
         });
-        crate::state::save_state(&self.state_file, &state)?;
+        let rootfs = match store_result {
+            Ok(rootfs) => rootfs,
+            Err(error) => {
+                let _ = std::fs::remove_dir_all(self.data_dir.join("rootfs").join(id.as_str()));
+                return Err(error);
+            }
+        };
         tracing::info!(rootfs = %rootfs.display(), "rootfs prepared");
         Ok(id)
     }
 
     fn start(&self, id: &ContainerId) -> Result<u32> {
         tracing::info!(id = %id, "starting container (Linux native)");
-        let mut state = crate::state::load_state(&self.state_file)?;
-        let idx = state
-            .containers
-            .iter()
-            .position(|entry| entry.id == *id)
-            .ok_or_else(|| ContainustError::NotFound {
-                kind: "container",
-                id: id.as_str().to_string(),
-            })?;
-        let process_config = self.prepare_process_config(&mut state, idx, id)?;
-        let pid = match crate::process::spawn_container_process(&process_config) {
-            Ok(pid) => pid,
-            Err(error) => {
-                state.containers[idx].state = containust_common::types::ContainerState::Failed;
-                state.containers[idx].pid = None;
-                crate::state::save_state(&self.state_file, &state)?;
-                return Err(error);
-            }
-        };
+        let start_result = self.state_store.update(|state| {
+            let idx = state
+                .containers
+                .iter()
+                .position(|entry| entry.id == *id)
+                .ok_or_else(|| ContainustError::NotFound {
+                    kind: "container",
+                    id: id.as_str().to_string(),
+                })?;
+            let process_config = self.prepare_process_config(state, idx, id)?;
+            let pid = match crate::process::spawn_container_process(&process_config) {
+                Ok(pid) => pid,
+                Err(error) => {
+                    state.containers[idx].state = containust_common::types::ContainerState::Failed;
+                    state.containers[idx].pid = None;
+                    return Ok(Err(error));
+                }
+            };
 
-        let entry = &mut state.containers[idx];
-        apply_cgroup_limits(id, pid, entry.memory_bytes, entry.cpu_shares);
-
-        // Update state to Running
-        let entry = &mut state.containers[idx];
-        entry.state = containust_common::types::ContainerState::Running;
-        entry.pid = Some(pid);
-        crate::state::save_state(&self.state_file, &state)?;
+            let entry = &mut state.containers[idx];
+            let limits = containust_common::types::ResourceLimits {
+                memory_bytes: entry.memory_bytes,
+                cpu_shares: entry.cpu_shares,
+                io_weight: None,
+            };
+            apply_cgroup_limits(&self.project_id, id, pid, &limits);
+            entry.state = containust_common::types::ContainerState::Running;
+            entry.pid = Some(pid);
+            Ok(Ok(pid))
+        })?;
+        let pid = start_result?;
 
         tracing::info!(pid, "container started (Linux native)");
         Ok(pid)
@@ -127,7 +153,7 @@ impl ContainerBackend for LinuxNativeBackend {
     }
 
     fn exec(&self, id: &ContainerId, cmd: &[String]) -> Result<ExecOutput> {
-        let state = crate::state::load_state(&self.state_file)?;
+        let state = self.state_store.read()?;
         let entry = state
             .containers
             .iter()
@@ -143,20 +169,25 @@ impl ContainerBackend for LinuxNativeBackend {
     }
 
     fn remove(&self, id: &ContainerId) -> Result<()> {
-        let mut state = crate::state::load_state(&self.state_file)?;
-
-        // Clean up cgroup
-        cleanup_cgroup(id);
-
-        let before = state.containers.len();
-        state.containers.retain(|e| e.id != *id);
-        if state.containers.len() == before {
-            return Err(ContainustError::NotFound {
-                kind: "container",
-                id: id.to_string(),
-            });
-        }
-        crate::state::save_state(&self.state_file, &state)?;
+        self.state_store.update(|state| {
+            let index = state
+                .containers
+                .iter()
+                .position(|entry| entry.id == *id)
+                .ok_or_else(|| ContainustError::NotFound {
+                    kind: "container",
+                    id: id.to_string(),
+                })?;
+            if state.containers[index].state == containust_common::types::ContainerState::Running {
+                return Err(ContainustError::Config {
+                    message: format!("container {id} must be stopped before removal"),
+                });
+            }
+            cleanup_container_files(&self.data_dir, &state.containers[index])?;
+            cleanup_cgroup(&self.project_id, id)?;
+            let _ = state.containers.remove(index);
+            Ok(())
+        })?;
         Ok(())
     }
 
@@ -165,7 +196,7 @@ impl ContainerBackend for LinuxNativeBackend {
     }
 
     fn list(&self) -> Result<Vec<ContainerInfo>> {
-        let state = crate::state::load_state(&self.state_file)?;
+        let state = self.state_store.read()?;
         Ok(state
             .containers
             .iter()
@@ -180,9 +211,121 @@ impl ContainerBackend for LinuxNativeBackend {
             .collect())
     }
 
+    fn reconcile(&self) -> Result<ReconciliationReport> {
+        let (stale_processes, tracked_rootfs, tracked_ids) =
+            self.state_store.update_if_changed(|state| {
+                let (stale_processes, tracked_rootfs, tracked_ids) = reconcile_state_entries(state);
+                Ok((
+                    (stale_processes, tracked_rootfs, tracked_ids),
+                    stale_processes > 0,
+                ))
+            })?;
+        let orphaned_rootfs = cleanup_orphaned_rootfs(&self.data_dir, &tracked_rootfs)?;
+        let orphaned_cgroups = cleanup_orphaned_cgroups(&self.project_id, &tracked_ids);
+        Ok(ReconciliationReport {
+            stale_processes,
+            orphaned_rootfs,
+            orphaned_cgroups,
+        })
+    }
+
     fn is_available(&self) -> bool {
         cfg!(target_os = "linux")
     }
+}
+
+fn cleanup_container_files(data_dir: &Path, entry: &crate::state::StateEntry) -> Result<()> {
+    let rootfs = data_dir.join("rootfs").join(entry.id.as_str());
+    if rootfs.exists() {
+        std::fs::remove_dir_all(&rootfs).map_err(|source| ContainustError::Io {
+            path: rootfs,
+            source,
+        })?;
+    }
+    let log = data_dir
+        .join("logs")
+        .join(format!("{}.log", entry.id.as_str()));
+    if log.exists() {
+        std::fs::remove_file(&log).map_err(|source| ContainustError::Io { path: log, source })?;
+    }
+    Ok(())
+}
+
+fn cleanup_orphaned_rootfs(data_dir: &Path, tracked: &HashSet<PathBuf>) -> Result<usize> {
+    let root = data_dir.join("rootfs");
+    if !root.exists() {
+        return Ok(0);
+    }
+    let mut removed = 0;
+    for item in std::fs::read_dir(&root).map_err(|source| ContainustError::Io {
+        path: root.clone(),
+        source,
+    })? {
+        let item = item.map_err(|source| ContainustError::Io {
+            path: root.clone(),
+            source,
+        })?;
+        let path = item.path();
+        if item
+            .file_type()
+            .map_err(|source| ContainustError::Io {
+                path: path.clone(),
+                source,
+            })?
+            .is_dir()
+            && !tracked.contains(&path)
+        {
+            std::fs::remove_dir_all(&path)
+                .map_err(|source| ContainustError::Io { path, source })?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
+fn reconcile_state_entries(
+    state: &mut crate::state::StateFile,
+) -> (usize, HashSet<PathBuf>, HashSet<String>) {
+    let mut stale_processes = 0;
+    for entry in &mut state.containers {
+        if entry.state == containust_common::types::ContainerState::Running
+            && entry.pid.is_none_or(|pid| !process_is_alive(pid))
+        {
+            entry.state = containust_common::types::ContainerState::Failed;
+            entry.pid = None;
+            stale_processes += 1;
+        }
+    }
+    let tracked_rootfs = state
+        .containers
+        .iter()
+        .filter_map(|entry| entry.rootfs_path.as_deref())
+        .map(PathBuf::from)
+        .collect();
+    let tracked_ids = state
+        .containers
+        .iter()
+        .map(|entry| entry.id.as_str().to_string())
+        .collect();
+    (stale_processes, tracked_rootfs, tracked_ids)
+}
+
+#[cfg(target_os = "linux")]
+fn process_is_alive(pid: u32) -> bool {
+    use nix::errno::Errno;
+    use nix::sys::signal::kill;
+    use nix::unistd::Pid;
+
+    let pid = Pid::from_raw(i32::try_from(pid).unwrap_or(i32::MAX));
+    match kill(pid, None) {
+        Ok(()) | Err(Errno::EPERM) => true,
+        Err(_) => false,
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+const fn process_is_alive(_pid: u32) -> bool {
+    true
 }
 
 impl LinuxNativeBackend {
@@ -209,7 +352,6 @@ impl LinuxNativeBackend {
         };
         if state.containers[index].rootfs_path.is_none() {
             state.containers[index].rootfs_path = Some(rootfs.to_string_lossy().into_owned());
-            crate::state::save_state(&self.state_file, state)?;
         }
         Ok(crate::process::ProcessConfig {
             command: if command.is_empty() {
@@ -226,25 +368,24 @@ impl LinuxNativeBackend {
 
     fn stop_internal(&self, id: &ContainerId, force: bool) -> Result<()> {
         tracing::info!(id = %id, force, "stopping container (Linux native)");
-        let mut state = crate::state::load_state(&self.state_file)?;
-
-        // If running, send SIGTERM then SIGKILL
-        let entry = state
-            .containers
-            .iter_mut()
-            .find(|e| e.id == *id)
-            .ok_or_else(|| ContainustError::NotFound {
-                kind: "container",
-                id: id.to_string(),
-            })?;
-        let is_running = entry.state == containust_common::types::ContainerState::Running;
-        if let Some(pid) = entry.pid.filter(|_| is_running) {
-            terminate_process(pid, force);
-        }
-        entry.state = containust_common::types::ContainerState::Stopped;
-        entry.pid = None;
-        crate::state::save_state(&self.state_file, &state)?;
-        cleanup_cgroup(id);
+        self.state_store.update(|state| {
+            let entry = state
+                .containers
+                .iter_mut()
+                .find(|entry| entry.id == *id)
+                .ok_or_else(|| ContainustError::NotFound {
+                    kind: "container",
+                    id: id.to_string(),
+                })?;
+            let is_running = entry.state == containust_common::types::ContainerState::Running;
+            if let Some(pid) = entry.pid.filter(|_| is_running) {
+                terminate_process(pid, force);
+            }
+            entry.state = containust_common::types::ContainerState::Stopped;
+            entry.pid = None;
+            Ok(())
+        })?;
+        cleanup_cgroup(&self.project_id, id)?;
 
         Ok(())
     }
@@ -418,24 +559,19 @@ fn derive_command_from_image(_image_uri: &str) -> Vec<String> {
 /// Non-fatal on failure — containers still run without limits.
 #[allow(clippy::missing_const_for_fn)]
 fn apply_cgroup_limits(
+    project_id: &str,
     container_id: &ContainerId,
     pid: u32,
-    memory_bytes: Option<u64>,
-    cpu_shares: Option<u64>,
+    limits: &containust_common::types::ResourceLimits,
 ) {
     #[cfg(target_os = "linux")]
     {
-        use containust_common::types::ResourceLimits;
         use containust_core::cgroup::CgroupManager;
 
-        match CgroupManager::create(container_id.as_str()) {
+        let cgroup_id = format!("{project_id}/{}", container_id.as_str());
+        match CgroupManager::create(&cgroup_id) {
             Ok(mgr) => {
-                let limits = ResourceLimits {
-                    memory_bytes,
-                    cpu_shares,
-                    io_weight: None,
-                };
-                let _ = mgr.apply_limits(&limits).map_err(|e| {
+                let _ = mgr.apply_limits(limits).map_err(|e| {
                     tracing::warn!(%e, "failed to apply cgroup limits");
                 });
                 let _ = mgr.add_process(pid).map_err(|e| {
@@ -449,19 +585,48 @@ fn apply_cgroup_limits(
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (container_id, pid, memory_bytes, cpu_shares);
+        let _ = (project_id, container_id, pid, limits);
     }
 }
 
-/// Best-effort cgroup cleanup during container stop.
-fn cleanup_cgroup(container_id: &ContainerId) {
+/// Cgroup cleanup during container stop or removal.
+fn cleanup_cgroup(project_id: &str, container_id: &ContainerId) -> Result<()> {
     let path = PathBuf::from(containust_common::constants::CGROUP_V2_PATH)
         .join("containust")
+        .join(project_id)
         .join(container_id.as_str());
     if path.exists() {
-        let _ = std::fs::remove_dir_all(&path);
+        std::fs::remove_dir(&path).map_err(|source| ContainustError::Io {
+            path: path.clone(),
+            source,
+        })?;
         tracing::debug!(path = %path.display(), "cgroup cleaned up");
     }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn cleanup_orphaned_cgroups(project_id: &str, tracked_ids: &HashSet<String>) -> usize {
+    let root = PathBuf::from(containust_common::constants::CGROUP_V2_PATH)
+        .join("containust")
+        .join(project_id);
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let id = entry.file_name().to_string_lossy().into_owned();
+        if !tracked_ids.contains(&id) && cleanup_cgroup(project_id, &ContainerId::new(&id)).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    removed
+}
+
+#[cfg(not(target_os = "linux"))]
+const fn cleanup_orphaned_cgroups(_project_id: &str, _tracked_ids: &HashSet<String>) -> usize {
+    0
 }
 
 #[cfg(test)]
@@ -469,6 +634,42 @@ mod tests {
     #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
     use super::*;
+
+    fn test_state_entry(
+        id: &str,
+        state: containust_common::types::ContainerState,
+        pid: Option<u32>,
+        data_dir: &Path,
+    ) -> crate::state::StateEntry {
+        crate::state::StateEntry {
+            id: ContainerId::new(id),
+            name: id.into(),
+            state,
+            pid,
+            image: "file:///image".into(),
+            command: vec!["sh".into()],
+            env: Vec::new(),
+            memory_bytes: None,
+            cpu_shares: None,
+            readonly_rootfs: true,
+            volumes: Vec::new(),
+            rootfs_path: Some(
+                data_dir
+                    .join("rootfs")
+                    .join(id)
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            log_path: Some(
+                data_dir
+                    .join("logs")
+                    .join(format!("{id}.log"))
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            created_at: "2026-01-01T00:00:00Z".into(),
+        }
+    }
 
     #[test]
     fn derive_command_returns_default_sh() {
@@ -549,13 +750,236 @@ mod tests {
     #[test]
     fn cleanup_cgroup_does_not_panic_on_missing_dir() {
         let id = ContainerId::new("nonexistent-cgroup");
-        // Should not panic even if cgroup path does not exist
-        cleanup_cgroup(&id);
+        assert!(cleanup_cgroup("nonexistent-project", &id).is_ok());
     }
 
     #[test]
     fn terminate_process_does_not_panic_on_invalid_pid() {
         // Use a PID that almost certainly does not exist
         terminate_process(999_999_999, true);
+    }
+
+    #[test]
+    fn stop_retains_rootfs_logs_and_state() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data_dir = dir.path().join("project");
+        let state_file = data_dir.join("state").join("state.json");
+        let backend = LinuxNativeBackend::with_paths(data_dir.clone(), state_file);
+        let entry = test_state_entry(
+            "retained",
+            containust_common::types::ContainerState::Created,
+            None,
+            &data_dir,
+        );
+        let rootfs = data_dir.join("rootfs").join("retained");
+        let log = data_dir.join("logs").join("retained.log");
+        std::fs::create_dir_all(&rootfs).expect("rootfs");
+        std::fs::create_dir_all(log.parent().expect("log parent")).expect("logs");
+        std::fs::write(&log, "logs").expect("log");
+        backend
+            .state_store
+            .write(&crate::state::StateFile {
+                containers: vec![entry],
+                ..crate::state::StateFile::default()
+            })
+            .expect("state");
+
+        backend.stop(&ContainerId::new("retained")).expect("stop");
+
+        assert!(rootfs.exists());
+        assert!(log.exists());
+        let state = backend.state_store.read().expect("read state");
+        assert_eq!(
+            state.containers[0].state,
+            containust_common::types::ContainerState::Stopped
+        );
+    }
+
+    #[test]
+    fn remove_deletes_project_owned_resources() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data_dir = dir.path().join("project");
+        let state_file = data_dir.join("state").join("state.json");
+        let backend = LinuxNativeBackend::with_paths(data_dir.clone(), state_file);
+        let entry = test_state_entry(
+            "removed",
+            containust_common::types::ContainerState::Stopped,
+            None,
+            &data_dir,
+        );
+        let rootfs = data_dir.join("rootfs").join("removed");
+        let log = data_dir.join("logs").join("removed.log");
+        std::fs::create_dir_all(&rootfs).expect("rootfs");
+        std::fs::create_dir_all(log.parent().expect("log parent")).expect("logs");
+        std::fs::write(&log, "logs").expect("log");
+        backend
+            .state_store
+            .write(&crate::state::StateFile {
+                containers: vec![entry],
+                ..crate::state::StateFile::default()
+            })
+            .expect("state");
+
+        backend
+            .remove(&ContainerId::new("removed"))
+            .expect("remove");
+
+        assert!(!rootfs.exists());
+        assert!(!log.exists());
+        assert!(
+            backend
+                .state_store
+                .read()
+                .expect("read state")
+                .containers
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn remove_rejects_running_container() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data_dir = dir.path().join("project");
+        let backend = LinuxNativeBackend::with_paths(
+            data_dir.clone(),
+            data_dir.join("state").join("state.json"),
+        );
+        backend
+            .state_store
+            .write(&crate::state::StateFile {
+                containers: vec![test_state_entry(
+                    "running",
+                    containust_common::types::ContainerState::Running,
+                    Some(1),
+                    &data_dir,
+                )],
+                ..crate::state::StateFile::default()
+            })
+            .expect("state");
+
+        let error = backend
+            .remove(&ContainerId::new("running"))
+            .expect_err("running remove");
+        assert!(error.to_string().contains("must be stopped"));
+    }
+
+    #[test]
+    fn reconcile_removes_orphaned_rootfs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data_dir = dir.path().join("project");
+        let orphan = data_dir.join("rootfs").join("orphan");
+        std::fs::create_dir_all(&orphan).expect("orphan");
+        let backend = LinuxNativeBackend::with_paths(
+            data_dir.clone(),
+            data_dir.join("state").join("state.json"),
+        );
+
+        let report = backend.reconcile().expect("reconcile");
+        assert_eq!(report.orphaned_rootfs, 1);
+        assert!(!orphan.exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reconcile_marks_dead_running_process_failed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data_dir = dir.path().join("project");
+        let backend = LinuxNativeBackend::with_paths(
+            data_dir.clone(),
+            data_dir.join("state").join("state.json"),
+        );
+        backend
+            .state_store
+            .write(&crate::state::StateFile {
+                containers: vec![test_state_entry(
+                    "dead",
+                    containust_common::types::ContainerState::Running,
+                    Some(999_999_999),
+                    &data_dir,
+                )],
+                ..crate::state::StateFile::default()
+            })
+            .expect("state");
+
+        let report = backend.reconcile().expect("reconcile");
+        assert_eq!(report.stale_processes, 1);
+        let state = backend.state_store.read().expect("state");
+        assert_eq!(
+            state.containers[0].state,
+            containust_common::types::ContainerState::Failed
+        );
+        assert!(state.containers[0].pid.is_none());
+    }
+
+    #[test]
+    fn state_stores_are_project_scoped() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let first_dir = dir.path().join("first");
+        let second_dir = dir.path().join("second");
+        let first = LinuxNativeBackend::with_paths(
+            first_dir.clone(),
+            first_dir.join("state").join("state.json"),
+        );
+        let second = LinuxNativeBackend::with_paths(
+            second_dir.clone(),
+            second_dir.join("state").join("state.json"),
+        );
+        first
+            .state_store
+            .write(&crate::state::StateFile {
+                containers: vec![test_state_entry(
+                    "first-only",
+                    containust_common::types::ContainerState::Stopped,
+                    None,
+                    &first_dir,
+                )],
+                ..crate::state::StateFile::default()
+            })
+            .expect("first state");
+
+        assert_eq!(first.list().expect("first list").len(), 1);
+        assert!(second.list().expect("second list").is_empty());
+    }
+
+    #[test]
+    fn two_projects_create_and_cleanup_independently() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let image = dir.path().join("image");
+        std::fs::create_dir_all(image.join("bin")).expect("image");
+        std::fs::write(image.join("bin/app"), "binary").expect("image file");
+        let first_dir = dir.path().join("first/.containust");
+        let second_dir = dir.path().join("second/.containust");
+        let first =
+            LinuxNativeBackend::with_paths(first_dir.clone(), first_dir.join("state/state.json"));
+        let second =
+            LinuxNativeBackend::with_paths(second_dir.clone(), second_dir.join("state/state.json"));
+        let config = ContainerConfig {
+            name: "app".into(),
+            image: format!("file://{}", image.display()),
+            command: vec!["/bin/app".into()],
+            env: Vec::new(),
+            memory_bytes: None,
+            cpu_shares: None,
+            readonly_rootfs: true,
+            volumes: Vec::new(),
+            port: None,
+        };
+
+        let first_id = first.create(&config).expect("first create");
+        let second_id = second.create(&config).expect("second create");
+        crate::logs::append_log(&first_dir, first_id.as_str(), "first").expect("first log");
+        crate::logs::append_log(&second_dir, second_id.as_str(), "second").expect("second log");
+
+        assert_eq!(first.list().expect("first list").len(), 1);
+        assert_eq!(second.list().expect("second list").len(), 1);
+        first.remove(&first_id).expect("first remove");
+        assert!(first.list().expect("first empty").is_empty());
+        assert_eq!(second.list().expect("second retained").len(), 1);
+        assert!(second_dir.join("rootfs").join(second_id.as_str()).exists());
+        assert!(
+            crate::logs::read_logs(&second_dir, second_id.as_str())
+                .expect("second logs")
+                .contains("second")
+        );
     }
 }

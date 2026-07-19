@@ -370,6 +370,7 @@ fn pipeline_state_persistence_roundtrip() {
             log_path: None,
             created_at: "2026-01-01T00:00:00Z".into(),
         }],
+        ..containust_runtime::state::StateFile::default()
     };
 
     containust_runtime::state::save_state(&state_path, &state).expect("save should succeed");
@@ -420,6 +421,7 @@ fn pipeline_state_all_lifecycle_states() {
                 created_at: "2026-01-01T00:00:00Z".into(),
             })
             .collect(),
+        ..StateFile::default()
     };
 
     containust_runtime::state::save_state(&path, &state).expect("save");

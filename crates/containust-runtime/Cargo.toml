@@ -1,6 +1,6 @@
 [package]
 name = "containust-runtime"
-version = "0.1.0"
+version.workspace = true
 description = "Container lifecycle management: creation, execution, state tracking, and metrics."
 edition.workspace = true
 license.workspace = true
@@ -23,7 +23,9 @@ libc = { workspace = true }
 which = { workspace = true }
 reqwest = { workspace = true }
 flate2 = { workspace = true }
+fs2 = { workspace = true }
 tar = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

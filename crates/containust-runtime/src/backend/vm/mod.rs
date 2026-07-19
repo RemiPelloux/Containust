@@ -13,7 +13,7 @@ use std::sync::Mutex;
 use containust_common::error::{ContainustError, Result};
 use containust_common::types::ContainerId;
 
-use super::{ContainerBackend, ContainerConfig, ContainerInfo};
+use super::{ContainerBackend, ContainerConfig, ContainerInfo, project_identifier};
 use crate::exec::ExecOutput;
 
 pub mod initramfs;
@@ -33,6 +33,9 @@ const ALPINE_VERSION: &str = "3.21";
 /// and delegates all container lifecycle operations to it.
 pub struct VMBackend {
     vm_dir: PathBuf,
+    data_dir: PathBuf,
+    state_file: PathBuf,
+    project_id: String,
     vm_process: Mutex<Option<Child>>,
     forwarded_ports: Mutex<Vec<u16>>,
 }
@@ -43,12 +46,36 @@ impl VMBackend {
     /// VM assets are stored in the global cache at `~/.containust/cache/vm/`.
     #[must_use]
     pub fn new() -> Self {
+        let data_dir = containust_common::constants::project_dir(Path::new("containust.ctst"));
+        let state_file = data_dir.join("state").join("state.json");
+        Self::with_paths(data_dir, state_file)
+    }
+
+    /// Creates a VM backend scoped to explicit project storage paths.
+    #[must_use]
+    pub fn with_paths(data_dir: PathBuf, state_file: PathBuf) -> Self {
         let vm_dir = containust_common::constants::global_cache_dir().join("vm");
+        let project_id = project_identifier(&data_dir);
         Self {
             vm_dir,
+            data_dir,
+            state_file,
+            project_id,
             vm_process: Mutex::new(None),
             forwarded_ports: Mutex::new(Vec::new()),
         }
+    }
+
+    /// Returns the project data directory.
+    #[must_use]
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
+    /// Returns the project state file.
+    #[must_use]
+    pub fn state_file(&self) -> &Path {
+        &self.state_file
     }
 
     /// Ensures the VM assets (kernel + custom initramfs) are present on disk.
@@ -122,9 +149,15 @@ impl VMBackend {
     ///
     /// Returns an error if the VM is unreachable, the request cannot be
     /// serialized, or the agent returns an error response.
-    #[allow(clippy::unused_self)]
     fn send_command(&self, method: &str, params: &serde_json::Value) -> Result<serde_json::Value> {
-        send_rpc(method, params)
+        let mut scoped = params.clone();
+        let object = scoped
+            .as_object_mut()
+            .ok_or_else(|| ContainustError::Config {
+                message: "VM RPC parameters must be an object".into(),
+            })?;
+        let _ = object.insert("project".into(), self.project_id.clone().into());
+        send_rpc(method, &scoped)
     }
 
     /// Stops the VM process if it is running.
@@ -754,6 +787,25 @@ mod tests {
     fn vm_backend_default_creates_instance() {
         let backend = VMBackend::default();
         let _ = backend.is_available();
+    }
+
+    #[test]
+    fn vm_backends_use_distinct_project_namespaces() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let first_dir = dir.path().join("first");
+        let second_dir = dir.path().join("second");
+        let first = VMBackend::with_paths(
+            first_dir.clone(),
+            first_dir.join("state").join("state.json"),
+        );
+        let second = VMBackend::with_paths(
+            second_dir.clone(),
+            second_dir.join("state").join("state.json"),
+        );
+
+        assert_ne!(first.project_id, second.project_id);
+        assert_eq!(first.data_dir(), first_dir);
+        assert_eq!(second.state_file(), second_dir.join("state/state.json"));
     }
 
     #[test]

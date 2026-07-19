@@ -169,12 +169,20 @@ h_list() {
 
 h_remove() {
     local id=$(echo "$1"|sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
-    h_stop "$1" >/dev/null 2>&1
+    [ ! -d "$SD/$id" ] && echo "{\"error\":\"not found: $id\"}" && return
+    [ -f "$SD/$id/pid" ] && echo "{\"error\":\"container $id must be stopped before removal\"}" && return
     rm -rf "$SD/$id" "$RD/$id" "$LD/$id.log"
     echo '{"result":"ok"}'
 }
 
 read -r line
+project=$(echo "$line" | sed -n 's/.*"project" *: *"\([0-9a-f][0-9a-f]*\)".*/\1/p')
+[ -z "$project" ] && project="default"
+BASE="/tmp/containust/projects/$project"
+SD="$BASE/containers"
+LD="$BASE/logs"
+RD="$BASE/rootfs"
+mkdir -p "$SD" "$LD" "$RD"
 m=$(echo "$line" | sed -n 's/.*"method" *: *"\([^"]*\)".*/\1/p')
 case "$m" in
     ping) echo '{"result":"pong"}';;
@@ -533,6 +541,18 @@ mod tests {
         assert!(AGENT_SCRIPT.contains("h_stop"));
         assert!(AGENT_SCRIPT.contains("h_list"));
         assert!(AGENT_SCRIPT.contains("h_remove"));
+    }
+
+    #[test]
+    fn agent_script_scopes_runtime_directories_by_project() {
+        assert!(AGENT_SCRIPT.contains("/tmp/containust/projects/$project"));
+        assert!(AGENT_SCRIPT.contains("\"project\""));
+    }
+
+    #[test]
+    fn agent_script_rejects_removal_of_running_containers() {
+        assert!(AGENT_SCRIPT.contains("container $id must be stopped before removal"));
+        assert!(!AGENT_SCRIPT.contains("h_stop \"$1\" >/dev/null"));
     }
 
     #[test]

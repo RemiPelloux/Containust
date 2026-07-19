@@ -4,9 +4,9 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at alpha `0.1.0`.
+Containust is at alpha `0.3.0` after completion of Sprint 2.
 
-- The deterministic workspace suite passes 404 tests from 427 collected tests; 23 privileged tests are intentionally ignored.
+- The deterministic macOS workspace suite passes 414 tests from 437 collected tests; 23 privileged tests are intentionally ignored. The Rust 1.88 Linux suite passes 431 from 456 with 25 privileged tests ignored.
 - Formatting and strict Clippy pass locally when invoked with the installed toolchain binaries.
 - The workspace compiles and its deterministic tests pass on Linux with the declared Rust 1.88 minimum toolchain.
 - `cargo audit` and `cargo deny check` pass for the locked dependency graph.
@@ -14,6 +14,7 @@ Containust is at alpha `0.1.0`.
 - Linux isolation, cgroups, mounts, QEMU, and eBPF remain platform-dependent and are not release-validated.
 - A privileged Docker Linux run passes 20 of 25 privileged fixtures; five cgroup/user-namespace fixtures remain blocked by Docker Desktop host delegation and still require a supported Linux host.
 - Sprint 1 wires `--offline`, `CONTAINUST_OFFLINE`, and `--state-file` through the CLI and engine; actual privileged-host validation and port forwarding remain deferred.
+- Sprint 2 adds project-scoped storage, atomic schema-versioned state, cross-process locking, lifecycle reconciliation, and explicit `stop`/`rm` cleanup semantics.
 
 ## Release train
 
@@ -43,7 +44,7 @@ Every feature must include:
 
 Release work cannot be marked complete when a feature is only parser-supported. The runtime, persistence, error behavior, and CLI contract must all agree.
 
-## Next sprint: Runtime correctness and usable CLI
+## Sprint 1: Runtime correctness and usable CLI
 
 **Goal:** make one local-rootfs composition reliable from parse through start, inspect, exec, logs, and stop on a supported Linux host.
 
@@ -70,16 +71,16 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Goal:** make storage behavior match the documented project model and survive crashes/restarts.
 
-- [ ] **P2.1 Project-scoped backend.** Pass the project data directory into Linux and VM backends instead of using a process-global data directory for all projects.
-- [ ] **P2.2 Atomic state writes.** Write state to a temporary file, fsync where supported, then rename; recover cleanly from an interrupted write.
-- [ ] **P2.3 State schema versioning.** Add a schema version and migration path for existing state files, including the command/env fields added in the current stabilization pass.
-- [ ] **P2.4 Reconciliation.** On `ps`, detect dead PIDs, stale `Running` entries, orphaned rootfs directories, and abandoned cgroups.
-- [ ] **P2.5 Cleanup guarantees.** Remove rootfs, volumes, logs, and cgroups according to explicit `stop` versus `remove` semantics.
-- [ ] **P2.6 Concurrency control.** Add a project lock so two CLI processes cannot corrupt the same state index.
+- [x] **P2.1 Project-scoped backend.** Linux and VM backends derive stable project identities and isolate state, logs, rootfs, and cgroups under the selected composition's `.containust/` directory.
+- [x] **P2.2 Atomic state writes.** State writes use same-directory temporary files, file synchronization, atomic rename, and parent-directory synchronization where supported; interrupted temporary writes are ignored.
+- [x] **P2.3 State schema versioning.** State schema version 2 migrates legacy unversioned/version-1 files and rejects unsupported future schemas.
+- [x] **P2.4 Reconciliation.** `ctst ps` detects dead PIDs, marks stale `Running` entries failed, and removes orphaned project rootfs directories and cgroups.
+- [x] **P2.5 Cleanup guarantees.** `stop` retains rootfs/logs for inspection and removes the cgroup; `ctst rm` removes project-owned rootfs, logs, cgroups, and state. Host volume sources remain untouched.
+- [x] **P2.6 Concurrency control.** Shared/exclusive filesystem locks and transactional updates prevent competing CLI processes from corrupting a project state index.
 
-**Exit gate:** two independent project directories can run and clean up containers without sharing state, image entries, logs, or rootfs paths; crash/restart tests pass.
+**Exit gate: complete for deterministic coverage.** Two independent project fixtures create and clean up without sharing state, logs, rootfs paths, or cgroups. Legacy migration, interrupted writes, thread contention, and real subprocess contention are covered. Privileged native-Linux behavior remains part of the Sprint 4 host-validation gate.
 
-## Sprint 3: Image pipeline and offline operation
+## Next sprint: Image pipeline and offline operation (Sprint 3)
 
 **Goal:** make local and remote image handling explicit, reproducible, and safe for air-gapped use.
 

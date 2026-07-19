@@ -45,7 +45,7 @@ pub fn execute(args: RunArgs, options: &super::RuntimeOptions) -> anyhow::Result
         ));
     }
 
-    let engine = options.engine();
+    let engine = options.engine_for_project(path);
     if !engine.is_available() {
         print_vm_notice();
     }

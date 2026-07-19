@@ -24,7 +24,20 @@ pub struct PsArgs {
 /// Returns an error if state loading or TUI initialization fails.
 pub fn execute(args: PsArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
     let engine = options.engine();
-    let containers = engine.list().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let (containers, reconciliation) = engine
+        .list_reconciled()
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    if reconciliation.stale_processes > 0
+        || reconciliation.orphaned_rootfs > 0
+        || reconciliation.orphaned_cgroups > 0
+    {
+        eprintln!(
+            "Reconciled: {} stale process(es), {} orphaned rootfs, {} orphaned cgroup(s)",
+            reconciliation.stale_processes,
+            reconciliation.orphaned_rootfs,
+            reconciliation.orphaned_cgroups
+        );
+    }
 
     let filtered: Vec<_> = if args.all {
         containers

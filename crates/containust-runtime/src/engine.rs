@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use containust_common::error::{ContainustError, Result};
 use containust_common::types::ContainerId;
 
-use crate::backend::{self, ContainerBackend, ContainerConfig, ContainerInfo};
+use crate::backend::{
+    self, ContainerBackend, ContainerConfig, ContainerInfo, ReconciliationReport,
+};
 use crate::exec::ExecOutput;
 
 /// Immutable storage and network policy for an engine instance.
@@ -22,9 +24,9 @@ pub struct EngineOptions {
 
 impl Default for EngineOptions {
     fn default() -> Self {
-        let data_dir = containust_common::constants::data_dir().clone();
+        let data_dir = containust_common::constants::project_dir(Path::new("containust.ctst"));
         Self {
-            state_file: data_dir.join("state.json"),
+            state_file: data_dir.join("state").join("state.json"),
             data_dir,
             offline: false,
         }
@@ -65,7 +67,7 @@ impl Engine {
     /// Creates a new engine with a custom data directory.
     #[must_use]
     pub fn with_data_dir(data_dir: PathBuf) -> Self {
-        let state_file = data_dir.join("state.json");
+        let state_file = data_dir.join("state").join("state.json");
         Self::with_options(EngineOptions {
             data_dir,
             state_file,
@@ -196,7 +198,29 @@ impl Engine {
     ///
     /// Returns an error if the backend cannot retrieve state.
     pub fn list(&self) -> Result<Vec<ContainerInfo>> {
-        self.backend.list()
+        self.list_reconciled().map(|(containers, _)| containers)
+    }
+
+    /// Lists containers and returns the reconciliation work performed first.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reconciliation or state loading fails.
+    pub fn list_reconciled(&self) -> Result<(Vec<ContainerInfo>, ReconciliationReport)> {
+        let report = self.backend.reconcile()?;
+        if report != ReconciliationReport::default() {
+            tracing::info!(?report, "runtime state reconciled");
+        }
+        Ok((self.backend.list()?, report))
+    }
+
+    /// Reconciles persisted state with live backend resources.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisted state cannot be inspected or repaired.
+    pub fn reconcile(&self) -> Result<ReconciliationReport> {
+        self.backend.reconcile()
     }
 
     /// Stops a container by ID.
@@ -219,6 +243,15 @@ impl Engine {
         } else {
             self.backend.stop(id)
         }
+    }
+
+    /// Removes a stopped container and all project-owned resources.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the container is running, missing, or cleanup fails.
+    pub fn remove(&self, id: &ContainerId) -> Result<()> {
+        self.backend.remove(id)
     }
 
     /// Stops all running containers.
