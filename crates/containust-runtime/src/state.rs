@@ -278,6 +278,7 @@ fn save_state_unlocked(path: &Path, state: &StateFile) -> Result<()> {
             source,
         })?;
         atomic_replace(&temp_path, path)?;
+        #[cfg(unix)]
         sync_parent(path)?;
         Ok(())
     })();
@@ -355,11 +356,6 @@ fn sync_parent(path: &Path) -> Result<()> {
         path: parent.to_path_buf(),
         source,
     })
-}
-
-#[cfg(not(unix))]
-const fn sync_parent(_path: &Path) -> Result<()> {
-    Ok(())
 }
 
 #[cfg(test)]
