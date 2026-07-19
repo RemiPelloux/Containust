@@ -12,7 +12,7 @@ This guide covers everything you need to go from zero to merged pull request. We
 
 | Tool | Minimum Version | Purpose |
 |---|---|---|
-| **Rust** | 1.85+ (Edition 2024, stable channel) | Build and test |
+| **Rust** | 1.88+ (Edition 2024, stable channel) | Build and test |
 | **Git** | 2.x | Version control |
 | **Linux** | Kernel 5.10+ | Native runtime (namespaces, cgroups v2, OverlayFS) |
 | **macOS** | 13+ | Development + runtime via VM backend |

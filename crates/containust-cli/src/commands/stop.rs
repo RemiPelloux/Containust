@@ -1,8 +1,6 @@
 //! `ctst stop` — Stop containers and clean up resources.
 
 use clap::Args;
-use containust_common::types::ContainerId;
-use containust_runtime::engine::Engine;
 
 /// Arguments for the `stop` command.
 #[derive(Args, Debug)]
@@ -23,20 +21,21 @@ pub struct StopArgs {
 /// # Errors
 ///
 /// Returns an error if container stopping or cleanup fails.
-pub fn execute(args: StopArgs) -> anyhow::Result<()> {
-    let engine = Engine::new();
+pub fn execute(args: StopArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
+    let engine = options.engine();
 
     if args.containers.is_empty() {
-        engine.stop_all().map_err(|e| anyhow::anyhow!("{e}"))?;
+        engine
+            .stop_all_with_force(args.force)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
         println!("All containers stopped.");
     } else {
         let containers = engine.list().map_err(|e| anyhow::anyhow!("{e}"))?;
         for name in &args.containers {
-            let id = containers
-                .iter()
-                .find(|container| container.id.as_str() == name || container.name == *name)
-                .map_or_else(|| ContainerId::new(name), |container| container.id.clone());
-            engine.stop(&id).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let id = super::resolve_container_id_from(&containers, name)?;
+            engine
+                .stop_with_force(&id, args.force)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
             println!("Stopped: {name}");
         }
     }
@@ -46,7 +45,9 @@ pub fn execute(args: StopArgs) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #![allow(clippy::expect_used)]
+
+    use containust_common::types::ContainerId;
     use containust_runtime::backend::ContainerInfo;
 
     #[test]
@@ -61,21 +62,14 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".into(),
         }];
 
-        assert_eq!(resolve_target("web", &containers), id);
-        assert_eq!(resolve_target("id-1", &containers), id);
         assert_eq!(
-            resolve_target("missing", &containers),
-            ContainerId::new("missing")
+            super::super::resolve_container_id_from(&containers, "web").expect("web"),
+            id
         );
-    }
-
-    fn resolve_target(target: &str, containers: &[ContainerInfo]) -> ContainerId {
-        containers
-            .iter()
-            .find(|container| container.id.as_str() == target || container.name == target)
-            .map_or_else(
-                || ContainerId::new(target),
-                |container| container.id.clone(),
-            )
+        assert_eq!(
+            super::super::resolve_container_id_from(&containers, "id-1").expect("id"),
+            id
+        );
+        assert!(super::super::resolve_container_id_from(&containers, "missing").is_err());
     }
 }

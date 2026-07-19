@@ -18,3 +18,100 @@ pub mod graph;
 pub mod import;
 pub mod parser;
 pub mod resolver;
+
+use containust_common::error::{ContainustError, Result};
+
+/// Rejects network-backed imports and images for offline execution.
+///
+/// # Errors
+///
+/// Returns an error when the composition contains an HTTP(S) source.
+pub fn validate_offline(file: &parser::ast::CompositionFile) -> Result<()> {
+    let remote_import = file
+        .imports
+        .iter()
+        .map(|import| import.source.as_str())
+        .find(|source| is_remote_source(source));
+    if let Some(source) = remote_import {
+        return Err(ContainustError::Config {
+            message: format!("offline mode rejects remote source: {source}"),
+        });
+    }
+    if let Some(source) = file
+        .components
+        .iter()
+        .filter_map(|component| component.image.as_deref())
+        .find(|source| !is_local_image(source))
+    {
+        return Err(ContainustError::Config {
+            message: format!("offline mode requires a file:// or tar:// image: {source}"),
+        });
+    }
+    Ok(())
+}
+
+fn is_remote_source(source: &str) -> bool {
+    source.starts_with("http://") || source.starts_with("https://")
+}
+
+fn is_local_image(source: &str) -> bool {
+    source.starts_with("file://") || source.starts_with("tar://")
+}
+
+#[cfg(test)]
+mod offline_tests {
+    use super::*;
+    use crate::parser::ast::{ComponentDecl, CompositionFile, ImportDecl};
+
+    #[test]
+    fn offline_accepts_local_sources() {
+        let file = CompositionFile {
+            imports: vec![ImportDecl {
+                source: "templates/base.ctst".into(),
+                alias: None,
+            }],
+            components: vec![ComponentDecl {
+                image: Some("file:///images/app".into()),
+                ..ComponentDecl::default()
+            }],
+            connections: Vec::new(),
+        };
+        assert!(validate_offline(&file).is_ok());
+    }
+
+    #[test]
+    fn offline_rejects_remote_image() {
+        let file = CompositionFile {
+            components: vec![ComponentDecl {
+                image: Some("https://example.test/app.tar".into()),
+                ..ComponentDecl::default()
+            }],
+            ..CompositionFile::default()
+        };
+        assert!(validate_offline(&file).is_err());
+    }
+
+    #[test]
+    fn offline_rejects_remote_import() {
+        let file = CompositionFile {
+            imports: vec![ImportDecl {
+                source: "http://example.test/base.ctst".into(),
+                alias: None,
+            }],
+            ..CompositionFile::default()
+        };
+        assert!(validate_offline(&file).is_err());
+    }
+
+    #[test]
+    fn offline_rejects_registry_style_image() {
+        let file = CompositionFile {
+            components: vec![ComponentDecl {
+                image: Some("alpine:3.21".into()),
+                ..ComponentDecl::default()
+            }],
+            ..CompositionFile::default()
+        };
+        assert!(validate_offline(&file).is_err());
+    }
+}

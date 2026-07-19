@@ -448,12 +448,12 @@ fn wait_for_vm_ready() -> Result<()> {
     let timeout = std::time::Duration::from_secs(VM_BOOT_TIMEOUT_SECS);
 
     while start.elapsed() < timeout {
-        if let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{VM_PORT}")) {
-            if check_agent_ping(&mut stream) {
-                eprintln!("  VM is ready.");
-                tracing::info!("VM is ready");
-                return Ok(());
-            }
+        if let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{VM_PORT}"))
+            && check_agent_ping(&mut stream)
+        {
+            eprintln!("  VM is ready.");
+            tracing::info!("VM is ready");
+            return Ok(());
         }
         std::thread::sleep(std::time::Duration::from_millis(VM_POLL_INTERVAL_MS));
     }

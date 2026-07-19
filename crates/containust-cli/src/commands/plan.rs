@@ -18,10 +18,13 @@ pub struct PlanArgs {
 /// # Errors
 ///
 /// Returns an error if parsing, validation, or graph resolution fails.
-pub fn execute(args: PlanArgs) -> anyhow::Result<()> {
+pub fn execute(args: PlanArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
     let content = std::fs::read_to_string(&args.file)?;
     let composition =
         containust_compose::parser::parse_ctst(&content).map_err(|e| anyhow::anyhow!("{e}"))?;
+    if options.offline {
+        containust_compose::validate_offline(&composition).map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
 
     let mut graph = containust_compose::graph::DependencyGraph::new();
     let mut node_map = std::collections::HashMap::new();

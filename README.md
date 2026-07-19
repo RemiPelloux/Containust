@@ -2,7 +2,7 @@
 
 Containust is a daemon-less container runtime and declarative composition tool written in Rust. It is designed for local, sovereign, and air-gapped workflows where a long-running privileged daemon is undesirable.
 
-> **Project status: alpha (0.1.0).** The parser, dependency graph, local image primitives, state/log persistence, CLI parsing, and unit/integration test suite are working. Native Linux process isolation and the QEMU VM backend are implemented but require privileged, platform-specific validation before production use.
+> **Project status: alpha (0.2.0 target).** Sprint 1 runtime correctness is implemented and covered by deterministic tests. Native Linux process isolation and the QEMU VM backend remain experimental until privileged, platform-specific validation is complete.
 
 [![CI](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml)
 [![Security audit](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml)
@@ -26,11 +26,11 @@ Containust is a daemon-less container runtime and declarative composition tool w
 | Image hashing and catalog | Working | SHA-256 validation and JSON catalog CRUD are covered. |
 | State and logs | Working | JSON state and per-container logs round-trip on disk. |
 | CLI parsing and Compose conversion | Working | `ctst` subcommands and the supported Compose subset have tests. |
-| Linux isolation backend | Experimental | Requires Linux namespaces, a usable cgroups v2 hierarchy, mount permissions, and a valid rootfs. |
+| Linux isolation backend | Experimental | Linux compilation and non-privileged tests pass at the Rust 1.88 MSRV. Full release validation still requires a delegated cgroups v2 hierarchy, user namespaces, mount permissions, and a valid rootfs. |
 | QEMU backend | Experimental | Requires QEMU and network access for first-run Alpine assets; no cross-platform runtime test runs in this repository. |
 | eBPF observability | Experimental | The API and feature-gated code compile; kernel attachment is not covered by the default test run. |
 
-The default test run executes **410 tests**. **23 tests are intentionally ignored** because they require root privileges or a host cgroups/mount configuration; additional feature/platform-gated tests are listed only when their target is enabled.
+The default test run passes **404 tests** from **427 collected tests**. **23 tests are intentionally ignored** because they require root privileges or a host cgroups/mount configuration; additional feature/platform-gated tests are listed only when their target is enabled. The suite includes a 2,000-component graph regression test to protect planning performance.
 
 ## Platform requirements
 
@@ -40,7 +40,7 @@ The default test run executes **410 tests**. **23 tests are intentionally ignore
 | macOS | QEMU VM | QEMU 7+ (`brew install qemu`) and a Linux VM asset download on first use. |
 | Windows | QEMU VM | QEMU 7+ and a Linux VM asset download on first use. |
 
-Rust 1.86 or newer is required by the workspace manifest. The checked-in toolchain file selects the stable channel.
+Rust 1.88 or newer is required by the workspace manifest. The checked-in toolchain file selects the stable channel.
 
 ## Quick start
 
@@ -79,7 +79,7 @@ ctst logs hello
 ctst stop hello
 ```
 
-The Linux backend accepts local rootfs sources such as `file:///absolute/path` and `tar:///absolute/path/image.tar`. Registry-style image names are not pulled by `ctst build`; convert or prepare a local archive first.
+The Linux backend accepts local rootfs sources such as `file:///absolute/path` and `tar:///absolute/path/image.tar`. Registry-style image names are not pulled by `ctst build`; convert or prepare a local archive first. Use `--offline` (or `CONTAINUST_OFFLINE=1`) to reject remote image/import sources before backend or network access, and `--state-file /path/state.json` (or `CONTAINUST_STATE_FILE`) to select an isolated state, log, image, and runtime-data root.
 
 ## The `.ctst` format
 
@@ -142,8 +142,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the dependency rules and backend desi
 - Immutable VM assets are cached under `~/.containust/cache/`.
 - The runtime currently uses the resolved user data directory (`$HOME/.containust`, or `/var/lib/containust` when no writable home is available) for state, logs, rootfs data, and the image catalog.
 - Read-only rootfs, capability dropping, cgroups, and namespace setup are implemented in the Linux path but must be validated on the target host.
-- Remote HTTP(S) sources are recognized by the image layer; download policy, digest enforcement, and the global `--offline` flag are not yet complete.
-- `--state-file` is accepted by the CLI parser but is not yet wired through every command.
+- Remote HTTP(S) sources are recognized by the image layer, but authenticated downloads, digest policy, and resumable caching are planned for Sprint 3.
+- `--offline` and `--state-file` are wired through all stateful CLI commands; invalid or inaccessible state paths fail explicitly.
+- Port forwarding and network isolation are intentionally deferred to the cross-platform networking milestone.
 
 ## Development and audit
 
@@ -157,7 +158,10 @@ cargo test --workspace --lib --tests
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check
+cargo audit
 ```
+
+`cargo audit` reports no known vulnerability or unsoundness advisories for the locked dependency graph. `cargo deny check` passes the advisory, dependency, license, and source policies. Keep the lockfile committed and rerun both checks when dependencies change.
 
 Privileged namespace, mount, cgroup, and eBPF tests are marked `ignored` and should be run explicitly on a suitable Linux host. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for coding standards and review expectations.
 

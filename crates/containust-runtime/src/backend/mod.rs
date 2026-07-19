@@ -77,6 +77,15 @@ pub trait ContainerBackend: Send + Sync {
     /// Returns an error if the container cannot be stopped.
     fn stop(&self, id: &ContainerId) -> Result<()>;
 
+    /// Force-stops a running container without a grace period.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the container cannot be stopped.
+    fn force_stop(&self, id: &ContainerId) -> Result<()> {
+        self.stop(id)
+    }
+
     /// Executes a command inside a running container.
     ///
     /// # Errors
@@ -112,12 +121,24 @@ pub trait ContainerBackend: Send + Sync {
 /// Auto-detect and create the appropriate backend for the current platform.
 #[must_use]
 pub fn detect_backend() -> Box<dyn ContainerBackend> {
+    let data_dir = containust_common::constants::data_dir().clone();
+    let state_file = data_dir.join("state.json");
+    detect_backend_with_paths(data_dir, state_file)
+}
+
+/// Creates the platform backend with explicit runtime storage paths.
+#[must_use]
+pub fn detect_backend_with_paths(
+    data_dir: std::path::PathBuf,
+    state_file: std::path::PathBuf,
+) -> Box<dyn ContainerBackend> {
     #[cfg(target_os = "linux")]
     {
-        Box::new(linux::LinuxNativeBackend::new())
+        Box::new(linux::LinuxNativeBackend::with_paths(data_dir, state_file))
     }
     #[cfg(not(target_os = "linux"))]
     {
+        let _ = (data_dir, state_file);
         Box::new(vm::VMBackend::new())
     }
 }

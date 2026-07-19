@@ -12,6 +12,10 @@ pub mod stop;
 pub mod vm;
 
 use clap::{Parser, Subcommand};
+use containust_common::types::ContainerId;
+use containust_runtime::backend::ContainerInfo;
+use containust_runtime::engine::{Engine, EngineOptions};
+use std::path::{Path, PathBuf};
 
 /// Containust — Daemon-less sovereign container runtime.
 #[derive(Parser, Debug)]
@@ -28,6 +32,65 @@ pub struct Cli {
     /// Path to the state file.
     #[arg(long, global = true)]
     pub state_file: Option<String>,
+}
+
+/// Runtime settings shared by every CLI command.
+#[derive(Debug, Clone, Default)]
+pub struct RuntimeOptions {
+    /// Reject remote imports and images.
+    pub offline: bool,
+    /// Optional explicit state index path.
+    pub state_file: Option<PathBuf>,
+}
+
+impl RuntimeOptions {
+    fn from_cli(cli: &Cli) -> Self {
+        let env_offline = std::env::var("CONTAINUST_OFFLINE").is_ok_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        });
+        Self {
+            offline: cli.offline || env_offline,
+            state_file: cli.state_file.clone().map(PathBuf::from),
+        }
+    }
+
+    /// Creates an engine using this command's storage and policy.
+    #[must_use]
+    pub fn engine(&self) -> Engine {
+        let default_data_dir = containust_common::constants::data_dir().clone();
+        let state_file = self
+            .state_file
+            .clone()
+            .unwrap_or_else(|| default_data_dir.join("state.json"));
+        let data_dir = state_file
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .map_or(default_data_dir, Path::to_path_buf);
+        Engine::with_options(EngineOptions {
+            data_dir,
+            state_file,
+            offline: self.offline,
+        })
+    }
+}
+
+fn resolve_container_id(engine: &Engine, target: &str) -> anyhow::Result<ContainerId> {
+    let containers = engine.list().map_err(|e| anyhow::anyhow!("{e}"))?;
+    resolve_container_id_from(&containers, target)
+}
+
+fn resolve_container_id_from(
+    containers: &[ContainerInfo],
+    target: &str,
+) -> anyhow::Result<ContainerId> {
+    containers
+        .iter()
+        .find(|container| container.id.as_str() == target || container.name == target)
+        .map(|container| container.id.clone())
+        .ok_or_else(|| anyhow::anyhow!("container not found: {target}"))
 }
 
 /// Available CLI subcommands.
@@ -72,19 +135,20 @@ pub enum VmCommand {
 ///
 /// Returns an error if the command execution fails.
 pub fn execute(cli: Cli) -> anyhow::Result<()> {
+    let options = RuntimeOptions::from_cli(&cli);
     match cli.command {
-        Command::Build(args) => build::execute(args),
-        Command::Plan(args) => plan::execute(args),
-        Command::Run(args) => run::execute(args),
-        Command::Ps(args) => ps::execute(args),
-        Command::Exec(args) => exec::execute(args),
-        Command::Stop(args) => stop::execute(args),
-        Command::Images(args) => images::execute(args),
-        Command::Convert(args) => convert::execute(args),
-        Command::Logs(args) => logs::execute(args),
+        Command::Build(args) => build::execute(args, &options),
+        Command::Plan(args) => plan::execute(args, &options),
+        Command::Run(args) => run::execute(args, &options),
+        Command::Ps(args) => ps::execute(args, &options),
+        Command::Exec(args) => exec::execute(args, &options),
+        Command::Stop(args) => stop::execute(args, &options),
+        Command::Images(args) => images::execute(args, &options),
+        Command::Convert(args) => convert::execute(args, &options),
+        Command::Logs(args) => logs::execute(args, &options),
         Command::Vm(subcommand) => match subcommand {
-            VmCommand::Start(args) => vm::vm_start(args),
-            VmCommand::Stop(args) => vm::vm_stop(args),
+            VmCommand::Start(args) => vm::vm_start(args, &options),
+            VmCommand::Stop(args) => vm::vm_stop(args, &options),
         },
     }
 }

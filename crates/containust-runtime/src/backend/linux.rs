@@ -14,14 +14,24 @@ use crate::exec::ExecOutput;
 /// to Linux namespaces, cgroups v2, `OverlayFS`, and `pivot_root`.
 pub struct LinuxNativeBackend {
     data_dir: PathBuf,
+    state_file: PathBuf,
 }
 
 impl LinuxNativeBackend {
     /// Creates a new Linux native backend.
     #[must_use]
     pub fn new() -> Self {
+        let data_dir = containust_common::constants::data_dir().clone();
+        let state_file = data_dir.join("state.json");
+        Self::with_paths(data_dir, state_file)
+    }
+
+    /// Creates a backend using explicit data and state paths.
+    #[must_use]
+    pub const fn with_paths(data_dir: PathBuf, state_file: PathBuf) -> Self {
         Self {
-            data_dir: containust_common::constants::data_dir().clone(),
+            data_dir,
+            state_file,
         }
     }
 }
@@ -41,10 +51,9 @@ impl ContainerBackend for LinuxNativeBackend {
         tracing::info!(id = %id, name = %config.name, "creating container (Linux native)");
 
         // Prepare rootfs from the image source
-        let rootfs = prepare_rootfs(&config.image, &id)?;
+        let rootfs = prepare_rootfs(&self.data_dir, &config.image, &id)?;
 
-        let state_path = self.data_dir.join("state.json");
-        let mut state = crate::state::load_state(&state_path)?;
+        let mut state = crate::state::load_state(&self.state_file)?;
         state.containers.push(crate::state::StateEntry {
             id: id.clone(),
             name: config.name.clone(),
@@ -55,6 +64,8 @@ impl ContainerBackend for LinuxNativeBackend {
             env: config.env.clone(),
             memory_bytes: config.memory_bytes,
             cpu_shares: config.cpu_shares,
+            readonly_rootfs: config.readonly_rootfs,
+            volumes: config.volumes.clone(),
             rootfs_path: Some(rootfs.to_string_lossy().to_string()),
             log_path: Some(
                 self.data_dir
@@ -65,68 +76,41 @@ impl ContainerBackend for LinuxNativeBackend {
             ),
             created_at: chrono::Utc::now().to_rfc3339(),
         });
-        crate::state::save_state(&state_path, &state)?;
+        crate::state::save_state(&self.state_file, &state)?;
         tracing::info!(rootfs = %rootfs.display(), "rootfs prepared");
         Ok(id)
     }
 
     fn start(&self, id: &ContainerId) -> Result<u32> {
         tracing::info!(id = %id, "starting container (Linux native)");
-
-        let state_path = self.data_dir.join("state.json");
-
-        // Load state and look up the container entry
-        let mut state = crate::state::load_state(&state_path)?;
+        let mut state = crate::state::load_state(&self.state_file)?;
         let idx = state
             .containers
             .iter()
-            .position(|e| e.id == *id)
+            .position(|entry| entry.id == *id)
             .ok_or_else(|| ContainustError::NotFound {
                 kind: "container",
                 id: id.as_str().to_string(),
             })?;
-
-        let entry = &state.containers[idx];
-        if entry.state == containust_common::types::ContainerState::Running {
-            return Err(ContainustError::Config {
-                message: format!("container {id} is already running"),
-            });
-        }
-
-        // Clone out the data we need so we can release the borrow
-        let image = entry.image.clone();
-        let existing_rootfs = entry.rootfs_path.clone();
-        let stored_command = entry.command.clone();
-        let env = entry.env.clone();
-        let memory_bytes = entry.memory_bytes;
-        let cpu_shares = entry.cpu_shares;
-        let rootfs = match existing_rootfs {
-            Some(p) => PathBuf::from(p),
-            None => prepare_rootfs(&image, id)?,
+        let process_config = self.prepare_process_config(&mut state, idx, id)?;
+        let pid = match crate::process::spawn_container_process(&process_config) {
+            Ok(pid) => pid,
+            Err(error) => {
+                state.containers[idx].state = containust_common::types::ContainerState::Failed;
+                state.containers[idx].pid = None;
+                crate::state::save_state(&self.state_file, &state)?;
+                return Err(error);
+            }
         };
 
-        // If we created a new rootfs, record it in state
-        if state.containers[idx].rootfs_path.is_none() {
-            state.containers[idx].rootfs_path = Some(rootfs.to_string_lossy().to_string());
-            crate::state::save_state(&state_path, &state)?;
-        }
-
-        let command = if stored_command.is_empty() {
-            derive_command_from_image(&image)
-        } else {
-            stored_command
-        };
-
-        // Spawn the container process with full namespace isolation
-        let pid = crate::process::spawn_container_process(&command, &env, &rootfs)?;
-
-        apply_cgroup_limits(id, pid, memory_bytes, cpu_shares);
+        let entry = &mut state.containers[idx];
+        apply_cgroup_limits(id, pid, entry.memory_bytes, entry.cpu_shares);
 
         // Update state to Running
         let entry = &mut state.containers[idx];
         entry.state = containust_common::types::ContainerState::Running;
         entry.pid = Some(pid);
-        crate::state::save_state(&state_path, &state)?;
+        crate::state::save_state(&self.state_file, &state)?;
 
         tracing::info!(pid, "container started (Linux native)");
         Ok(pid)
@@ -135,33 +119,15 @@ impl ContainerBackend for LinuxNativeBackend {
     fn stop(&self, id: &ContainerId) -> Result<()> {
         tracing::info!(id = %id, "stopping container (Linux native)");
 
-        let state_path = self.data_dir.join("state.json");
-        let mut state = crate::state::load_state(&state_path)?;
+        self.stop_internal(id, false)
+    }
 
-        // If running, send SIGTERM then SIGKILL
-        let entry = state
-            .containers
-            .iter_mut()
-            .find(|e| e.id == *id)
-            .ok_or_else(|| ContainustError::NotFound {
-                kind: "container",
-                id: id.to_string(),
-            })?;
-        let is_running = entry.state == containust_common::types::ContainerState::Running;
-        if let Some(pid) = entry.pid.filter(|_| is_running) {
-            terminate_process(pid);
-        }
-        entry.state = containust_common::types::ContainerState::Stopped;
-        entry.pid = None;
-        crate::state::save_state(&state_path, &state)?;
-        cleanup_cgroup(id);
-
-        Ok(())
+    fn force_stop(&self, id: &ContainerId) -> Result<()> {
+        self.stop_internal(id, true)
     }
 
     fn exec(&self, id: &ContainerId, cmd: &[String]) -> Result<ExecOutput> {
-        let state_path = self.data_dir.join("state.json");
-        let state = crate::state::load_state(&state_path)?;
+        let state = crate::state::load_state(&self.state_file)?;
         let entry = state
             .containers
             .iter()
@@ -177,8 +143,7 @@ impl ContainerBackend for LinuxNativeBackend {
     }
 
     fn remove(&self, id: &ContainerId) -> Result<()> {
-        let state_path = self.data_dir.join("state.json");
-        let mut state = crate::state::load_state(&state_path)?;
+        let mut state = crate::state::load_state(&self.state_file)?;
 
         // Clean up cgroup
         cleanup_cgroup(id);
@@ -191,7 +156,7 @@ impl ContainerBackend for LinuxNativeBackend {
                 id: id.to_string(),
             });
         }
-        crate::state::save_state(&state_path, &state)?;
+        crate::state::save_state(&self.state_file, &state)?;
         Ok(())
     }
 
@@ -200,8 +165,7 @@ impl ContainerBackend for LinuxNativeBackend {
     }
 
     fn list(&self) -> Result<Vec<ContainerInfo>> {
-        let state_path = self.data_dir.join("state.json");
-        let state = crate::state::load_state(&state_path)?;
+        let state = crate::state::load_state(&self.state_file)?;
         Ok(state
             .containers
             .iter()
@@ -221,13 +185,82 @@ impl ContainerBackend for LinuxNativeBackend {
     }
 }
 
+impl LinuxNativeBackend {
+    fn prepare_process_config(
+        &self,
+        state: &mut crate::state::StateFile,
+        index: usize,
+        id: &ContainerId,
+    ) -> Result<crate::process::ProcessConfig> {
+        let entry = &state.containers[index];
+        if entry.state == containust_common::types::ContainerState::Running {
+            return Err(ContainustError::Config {
+                message: format!("container {id} is already running"),
+            });
+        }
+        let image = entry.image.clone();
+        let command = entry.command.clone();
+        let env = entry.env.clone();
+        let readonly_rootfs = entry.readonly_rootfs;
+        let volumes = entry.volumes.clone();
+        let rootfs = match &entry.rootfs_path {
+            Some(path) => PathBuf::from(path),
+            None => prepare_rootfs(&self.data_dir, &image, id)?,
+        };
+        if state.containers[index].rootfs_path.is_none() {
+            state.containers[index].rootfs_path = Some(rootfs.to_string_lossy().into_owned());
+            crate::state::save_state(&self.state_file, state)?;
+        }
+        Ok(crate::process::ProcessConfig {
+            command: if command.is_empty() {
+                derive_command_from_image(&image)
+            } else {
+                command
+            },
+            env,
+            rootfs,
+            readonly_rootfs,
+            volumes,
+        })
+    }
+
+    fn stop_internal(&self, id: &ContainerId, force: bool) -> Result<()> {
+        tracing::info!(id = %id, force, "stopping container (Linux native)");
+        let mut state = crate::state::load_state(&self.state_file)?;
+
+        // If running, send SIGTERM then SIGKILL
+        let entry = state
+            .containers
+            .iter_mut()
+            .find(|e| e.id == *id)
+            .ok_or_else(|| ContainustError::NotFound {
+                kind: "container",
+                id: id.to_string(),
+            })?;
+        let is_running = entry.state == containust_common::types::ContainerState::Running;
+        if let Some(pid) = entry.pid.filter(|_| is_running) {
+            terminate_process(pid, force);
+        }
+        entry.state = containust_common::types::ContainerState::Stopped;
+        entry.pid = None;
+        crate::state::save_state(&self.state_file, &state)?;
+        cleanup_cgroup(id);
+
+        Ok(())
+    }
+}
+
 /// Sends SIGTERM followed by SIGKILL after a 2-second grace period.
-fn terminate_process(pid: u32) {
+fn terminate_process(pid: u32, force: bool) {
     use nix::sys::signal::{Signal, kill};
     use nix::unistd::Pid;
 
     let nix_pid = Pid::from_raw(i32::try_from(pid).unwrap_or(i32::MAX));
 
+    if force {
+        let _ = kill(nix_pid, Signal::SIGKILL);
+        return;
+    }
     if kill(nix_pid, Signal::SIGTERM).is_err() {
         return;
     }
@@ -254,8 +287,11 @@ fn terminate_process(pid: u32) {
 /// # Errors
 ///
 /// Returns an error if the image source is unsupported or extraction fails.
-fn prepare_rootfs(image_uri: &str, container_id: &ContainerId) -> Result<PathBuf> {
-    let data_dir = containust_common::constants::data_dir();
+fn prepare_rootfs(
+    data_dir: &std::path::Path,
+    image_uri: &str,
+    container_id: &ContainerId,
+) -> Result<PathBuf> {
     let rootfs_dir = data_dir.join("rootfs").join(container_id.as_str());
 
     // If rootfs already exists from a previous create, reuse it
@@ -520,6 +556,6 @@ mod tests {
     #[test]
     fn terminate_process_does_not_panic_on_invalid_pid() {
         // Use a PID that almost certainly does not exist
-        terminate_process(999_999_999);
+        terminate_process(999_999_999, true);
     }
 }

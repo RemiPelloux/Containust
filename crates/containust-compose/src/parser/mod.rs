@@ -177,6 +177,7 @@ fn parse_property(cursor: &mut TokenCursor<'_>, comp: &mut ComponentDecl) -> Res
         "volume" => comp.volume = Some(cursor.expect_string()?),
         "volumes" => comp.volumes = parse_string_list(cursor)?,
         "command" => comp.command = parse_string_list(cursor)?,
+        "entrypoint" => comp.entrypoint = Some(parse_string_list(cursor)?),
         "readonly" => comp.readonly = Some(parse_bool(cursor)?),
         "workdir" => comp.workdir = Some(cursor.expect_string()?),
         "user" => comp.user = Some(cursor.expect_string()?),
@@ -354,6 +355,18 @@ COMPONENT db FROM pg {
         let file = parse_ctst(input).expect("should parse");
         assert_eq!(file.components[0].from_template.as_deref(), Some("pg"));
         assert_eq!(file.components[0].port, Some(5432));
+    }
+
+    #[test]
+    fn parse_entrypoint_and_command() {
+        let input = r#"COMPONENT api {
+    image = "file:///api"
+    entrypoint = ["/bin/api"]
+    command = ["--port", "8080"]
+}"#;
+        let file = parse_ctst(input).expect("should parse");
+        assert_eq!(file.components[0].entrypoint, Some(vec!["/bin/api".into()]));
+        assert_eq!(file.components[0].command, vec!["--port", "8080"]);
     }
 
     #[test]

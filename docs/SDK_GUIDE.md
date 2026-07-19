@@ -1,7 +1,7 @@
 # Containust SDK Reference
 
 **Crate:** `containust-sdk` v0.1.0
-**Rust Edition:** 2024 | **MSRV:** 1.85.0
+**Rust Edition:** 2024 | **MSRV:** 1.88.0
 **License:** MIT / Apache-2.0
 
 The Containust SDK provides programmatic container management for Rust applications. It exposes three primary entry points — `ContainerBuilder`, `GraphResolver`, and `EventListener` — that wrap the engine-layer crates (`containust-runtime`, `containust-image`, `containust-compose`) behind a stable, ergonomic API surface.

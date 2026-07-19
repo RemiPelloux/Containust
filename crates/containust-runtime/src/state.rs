@@ -34,12 +34,22 @@ pub struct StateEntry {
     /// Configured CPU weight.
     #[serde(default)]
     pub cpu_shares: Option<u64>,
+    /// Whether the root filesystem is read-only.
+    #[serde(default = "default_readonly_rootfs")]
+    pub readonly_rootfs: bool,
+    /// Host-to-container bind mounts.
+    #[serde(default)]
+    pub volumes: Vec<String>,
     /// Rootfs path on disk.
     pub rootfs_path: Option<String>,
     /// Log file path.
     pub log_path: Option<String>,
     /// ISO-8601 timestamp of creation.
     pub created_at: String,
+}
+
+const fn default_readonly_rootfs() -> bool {
+    true
 }
 
 /// Serializable collection of all container state entries.
@@ -119,6 +129,8 @@ mod tests {
                 env: vec![("KEY".into(), "value".into())],
                 memory_bytes: Some(128),
                 cpu_shares: Some(512),
+                readonly_rootfs: true,
+                volumes: Vec::new(),
                 rootfs_path: Some("/var/lib/containust/rootfs/test-1".into()),
                 log_path: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
@@ -181,6 +193,8 @@ mod tests {
                     env: Vec::new(),
                     memory_bytes: None,
                     cpu_shares: None,
+                    readonly_rootfs: true,
+                    volumes: Vec::new(),
                     rootfs_path: None,
                     log_path: None,
                     created_at: "2026-01-01T00:00:00Z".into(),
@@ -195,6 +209,8 @@ mod tests {
                     env: Vec::new(),
                     memory_bytes: None,
                     cpu_shares: None,
+                    readonly_rootfs: true,
+                    volumes: Vec::new(),
                     rootfs_path: None,
                     log_path: None,
                     created_at: "2026-01-01T00:00:00Z".into(),

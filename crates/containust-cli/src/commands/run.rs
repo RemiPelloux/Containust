@@ -32,7 +32,7 @@ const RESET: &str = "\x1b[0m";
 /// # Errors
 ///
 /// Returns an error if deployment fails.
-pub fn execute(args: RunArgs) -> anyhow::Result<()> {
+pub fn execute(args: RunArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
     let total_start = Instant::now();
     print_header();
 
@@ -45,7 +45,7 @@ pub fn execute(args: RunArgs) -> anyhow::Result<()> {
         ));
     }
 
-    let engine = Engine::new();
+    let engine = options.engine();
     if !engine.is_available() {
         print_vm_notice();
     }
