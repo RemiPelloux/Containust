@@ -41,6 +41,9 @@ skip = [
     { name = "hashbrown", version = "0.16.1" },
     # hashbrown 0.15 retains the earlier foldhash API.
     { name = "foldhash", version = "0.1.5" },
+    # aya still uses thiserror 1.x while the workspace has migrated to 2.x.
+    { name = "thiserror", version = "1.0.69" },
+    { name = "thiserror-impl", version = "1.0.69" },
 ]
 skip-tree = []
 
