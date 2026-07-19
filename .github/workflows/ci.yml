@@ -43,7 +43,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --workspace -- --check
+      - run: cargo fmt --all -- --check
 
   clippy:
     name: Clippy
@@ -97,7 +97,7 @@ jobs:
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --locked
-      - run: cargo fmt --workspace -- --check
+      - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
 
@@ -114,6 +114,6 @@ jobs:
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --locked
-      - run: cargo fmt --workspace -- --check
+      - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
