@@ -1,8 +1,6 @@
 //! `ctst exec` — Execute a command inside a running container.
 
 use clap::Args;
-use containust_common::types::ContainerId;
-use containust_runtime::engine::Engine;
 
 /// Arguments for the `exec` command.
 #[derive(Args, Debug)]
@@ -23,9 +21,9 @@ pub struct ExecArgs {
 /// # Errors
 ///
 /// Returns an error if the container is not running or namespace joining fails.
-pub fn execute(args: ExecArgs) -> anyhow::Result<()> {
-    let engine = Engine::new();
-    let id = resolve_target(&engine, &args.container)?;
+pub fn execute(args: ExecArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
+    let engine = options.engine();
+    let id = super::resolve_container_id(&engine, &args.container)?;
     let output = engine
         .exec(&id, &args.command)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -41,15 +39,4 @@ pub fn execute(args: ExecArgs) -> anyhow::Result<()> {
     }
 
     std::process::exit(output.exit_code);
-}
-
-fn resolve_target(engine: &Engine, target: &str) -> anyhow::Result<ContainerId> {
-    let containers = engine.list().map_err(|e| anyhow::anyhow!("{e}"))?;
-    Ok(containers
-        .iter()
-        .find(|container| container.id.as_str() == target || container.name == target)
-        .map_or_else(
-            || ContainerId::new(target),
-            |container| container.id.clone(),
-        ))
 }

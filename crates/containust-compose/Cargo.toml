@@ -1,6 +1,6 @@
 [package]
 name = "containust-compose"
-version = "0.1.0"
+version.workspace = true
 description = "Parser for the .ctst composition language and dependency graph resolver."
 edition.workspace = true
 license.workspace = true

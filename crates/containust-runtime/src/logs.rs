@@ -1,6 +1,6 @@
 //! Container log management.
 
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use containust_common::error::{ContainustError, Result};
@@ -51,6 +51,48 @@ pub fn append_log(data_dir: &Path, container_id: &str, line: &str) -> Result<()>
         })?;
     writeln!(file, "{line}").map_err(|e| ContainustError::Io { path, source: e })?;
     Ok(())
+}
+
+/// Reads log bytes from an offset and returns the next offset.
+///
+/// This is intended for efficient tailing: callers do not need to reread
+/// the complete log file on every poll.
+///
+/// # Errors
+///
+/// Returns an error if the log file cannot be opened, read, or positioned.
+pub fn read_logs_from(data_dir: &Path, container_id: &str, offset: u64) -> Result<(String, u64)> {
+    let path = log_path(data_dir, container_id);
+    if !path.exists() {
+        return Ok((String::new(), offset));
+    }
+    let mut file = std::fs::File::open(&path).map_err(|e| ContainustError::Io {
+        path: path.clone(),
+        source: e,
+    })?;
+    let length = file
+        .metadata()
+        .map_err(|e| ContainustError::Io {
+            path: path.clone(),
+            source: e,
+        })?
+        .len();
+    let start = offset.min(length);
+    let _ = file
+        .seek(SeekFrom::Start(start))
+        .map_err(|e| ContainustError::Io {
+            path: path.clone(),
+            source: e,
+        })?;
+    let mut bytes = Vec::new();
+    let _ = file
+        .read_to_end(&mut bytes)
+        .map_err(|e| ContainustError::Io {
+            path: path.clone(),
+            source: e,
+        })?;
+    let next = start.saturating_add(bytes.len() as u64);
+    Ok((String::from_utf8_lossy(&bytes).into_owned(), next))
 }
 
 #[cfg(test)]
@@ -105,5 +147,19 @@ mod tests {
         assert!(!a_logs.contains("from b"));
         assert!(b_logs.contains("from b"));
         assert!(!b_logs.contains("from a"));
+    }
+
+    #[test]
+    fn read_logs_from_returns_incremental_content() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        append_log(dir.path(), "c1", "first").expect("append first");
+        let (first, offset) = read_logs_from(dir.path(), "c1", 0).expect("read first");
+        append_log(dir.path(), "c1", "second").expect("append second");
+        let (second, next) = read_logs_from(dir.path(), "c1", offset).expect("read second");
+
+        assert!(first.contains("first"));
+        assert!(!first.contains("second"));
+        assert!(second.contains("second"));
+        assert!(next > offset);
     }
 }

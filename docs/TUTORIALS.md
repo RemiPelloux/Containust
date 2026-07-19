@@ -1248,7 +1248,7 @@ The offline workflow is: pre-cache images as tar archives, transfer to the disco
 
 ### Prerequisites
 
-- Rust 1.85+ installed
+- Rust 1.88+ installed
 - **Linux**: kernel 5.10+ (native backend)
 - **macOS/Windows**: QEMU installed (VM backend)
 - Basic familiarity with Cargo and Rust projects

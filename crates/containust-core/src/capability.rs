@@ -188,6 +188,6 @@ mod tests {
     fn drop_capabilities_keep_none_succeeds() {
         let result = drop_capabilities(&[]);
         // May fail if not root, but shouldn't panic
-        result.ok();
+        let _ = result;
     }
 }

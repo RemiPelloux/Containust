@@ -47,6 +47,8 @@ pub struct ComponentDecl {
     pub volumes: Vec<String>,
     /// Command to run.
     pub command: Vec<String>,
+    /// Entrypoint prepended to the command.
+    pub entrypoint: Option<Vec<String>>,
     /// Read-only root filesystem.
     pub readonly: Option<bool>,
     /// Working directory.
@@ -110,6 +112,7 @@ mod tests {
         assert!(comp.env.is_empty());
         assert!(comp.volumes.is_empty());
         assert!(comp.command.is_empty());
+        assert!(comp.entrypoint.is_none());
         assert!(comp.readonly.is_none());
         assert!(comp.healthcheck.is_none());
     }

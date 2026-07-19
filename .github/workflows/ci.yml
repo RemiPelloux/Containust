@@ -21,7 +21,18 @@ jobs:
           components: clippy, rustfmt
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace
+      - run: cargo check --workspace --locked
+
+  msrv:
+    name: Minimum Rust 1.88
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install minimum Rust toolchain
+        uses: dtolnay/rust-toolchain@1.88.0
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --locked
 
   fmt:
     name: Format
@@ -45,7 +56,7 @@ jobs:
           components: clippy, rustfmt
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace -- -D warnings
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   test:
     name: Test
@@ -56,7 +67,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace
+      - run: cargo test --workspace --locked
 
   deny:
     name: Deny
@@ -85,10 +96,10 @@ jobs:
           components: clippy, rustfmt
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace
+      - run: cargo check --workspace --locked
       - run: cargo fmt --workspace -- --check
-      - run: cargo clippy --workspace -- -D warnings
-      - run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
 
   # Cross-platform: Windows
   windows-ci:
@@ -102,7 +113,7 @@ jobs:
           components: clippy, rustfmt
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace
+      - run: cargo check --workspace --locked
       - run: cargo fmt --workspace -- --check
-      - run: cargo clippy --workspace -- -D warnings
-      - run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked

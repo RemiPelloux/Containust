@@ -13,22 +13,23 @@ members = [
 ]
 
 [workspace.package]
+version = "0.3.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/containust/containust"
-rust-version = "1.86.0"
+rust-version = "1.88.0"
 
 [workspace.dependencies]
 # Internal crates
-containust-common = { path = "crates/containust-common" }
-containust-core = { path = "crates/containust-core" }
-containust-image = { path = "crates/containust-image" }
-containust-runtime = { path = "crates/containust-runtime" }
-containust-compose = { path = "crates/containust-compose" }
-containust-ebpf = { path = "crates/containust-ebpf" }
-containust-sdk = { path = "crates/containust-sdk" }
-containust-tui = { path = "crates/containust-tui" }
-containust-cli = { path = "crates/containust-cli" }
+containust-common = { version = "0.3.0", path = "crates/containust-common" }
+containust-core = { version = "0.3.0", path = "crates/containust-core" }
+containust-image = { version = "0.3.0", path = "crates/containust-image" }
+containust-runtime = { version = "0.3.0", path = "crates/containust-runtime" }
+containust-compose = { version = "0.3.0", path = "crates/containust-compose" }
+containust-ebpf = { version = "0.3.0", path = "crates/containust-ebpf" }
+containust-sdk = { version = "0.3.0", path = "crates/containust-sdk" }
+containust-tui = { version = "0.3.0", path = "crates/containust-tui" }
+containust-cli = { version = "0.3.0", path = "crates/containust-cli" }
 
 # CLI & TUI
 clap = { version = "4.5", features = ["derive", "env", "unicode"] }
@@ -52,7 +53,7 @@ serde_json = "1"
 
 # Error handling
 thiserror = "2"
-anyhow = "1"
+anyhow = "1.0.104"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -68,11 +69,12 @@ sha2 = "0.10"
 serde_yaml = "0.9"
 
 # Archive & compression
-tar = "0.4"
+tar = "0.4.46"
 flate2 = "1"
+fs2 = "0.4"
 
 # HTTP client
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 
 # Utilities
 which = "7"

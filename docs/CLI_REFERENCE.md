@@ -1,7 +1,7 @@
 # ctst — Containust CLI Reference
 
 **Binary**: `ctst`
-**Version**: 0.1.0
+**Version**: 0.3.0
 **Platform**: Linux (native), macOS (VM backend), Windows (VM backend)
 
 ```
@@ -26,7 +26,7 @@ cargo install --path crates/containust-cli
 
 ```bash
 ctst --version
-# ctst 0.1.0
+# ctst 0.3.0
 ```
 
 ---
@@ -38,7 +38,7 @@ These flags apply to every subcommand.
 | Flag | Description | Default | Env Override |
 |---|---|---|---|
 | `--offline` | Block all outbound network access during build and run | `false` | `CONTAINUST_OFFLINE=1` |
-| `--state-file <PATH>` | Path to the state index file | `.containust/state.json` (project-local) | `CONTAINUST_STATE_FILE` |
+| `--state-file <PATH>` | Path to the state index file | `.containust/state/state.json` (project-local) | `CONTAINUST_STATE_FILE` |
 | `--help` | Print help information and exit | — | — |
 | `--version` | Print version information and exit | — | — |
 
@@ -261,7 +261,7 @@ Containust Deploy — production.ctst
   ✓ api          started  pid=48230  port=8080  mem_limit=256MB
 
 All 3 containers running (detached).
-State saved to .containust/state.json
+State saved to .containust/state/state.json
 ```
 
 ### Exit Codes
@@ -448,8 +448,8 @@ ctst exec cache -- ls -la /data
 # Inspect environment variables
 ctst exec api -- env
 
-# Use a container ID prefix instead of name
-ctst exec a1b2c3 -- cat /etc/hostname
+# Use a full container ID instead of name
+ctst exec a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d -- cat /etc/hostname
 ```
 
 ---
@@ -510,15 +510,15 @@ ctst logs api
 # Follow logs in real time
 ctst logs --follow api
 
-# View logs by container ID prefix
-ctst logs a1b2c3d4
+# View logs by full container ID
+ctst logs a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
 ```
 
 ---
 
 ## ctst stop
 
-Stop one or more containers and clean up their associated resources.
+Stop one or more containers while retaining their inspectable project data.
 
 ### Synopsis
 
@@ -542,19 +542,19 @@ Inherits all [global options](#global-options).
 ### Graceful Shutdown Process
 
 1. **SIGTERM** — Send `SIGTERM` to the container's init process.
-2. **Grace period** — Wait up to **10 seconds** for the process to exit.
+2. **Grace period** — Wait up to **2 seconds** for the process to exit.
 3. **SIGKILL** — If the process has not exited, send `SIGKILL`.
 
 With `--force`, step 1 is skipped and `SIGKILL` is sent immediately.
 
 ### Resource Cleanup
 
-After the process exits, `ctst stop` performs cleanup:
+After the process exits, `ctst stop` updates the runtime lifecycle state:
 
-- **Cgroup removal** — Delete the container's cgroup directory from `/sys/fs/cgroup`.
-- **Mount teardown** — Unmount OverlayFS layers and any bound volumes.
+- **Cgroup removal** — Delete the project-namespaced container cgroup directory.
+- **Mount teardown** — Container namespace teardown releases runtime mounts without deleting host volume sources.
 - **State file update** — Mark the container as `stopped` in the state index.
-- **Network cleanup** — Remove virtual network interfaces.
+- **Data retention** — Keep the rootfs and logs available until `ctst rm` is run.
 
 ### Exit Codes
 
@@ -577,8 +577,36 @@ ctst stop api db
 # Force kill a stuck container
 ctst stop --force legacy-worker
 
-# Stop a container by ID prefix
-ctst stop a1b2c3
+# Stop a container by full ID
+ctst stop a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+```
+
+---
+
+## ctst rm
+
+Remove one or more stopped containers and their project-owned runtime data.
+
+### Synopsis
+
+```
+ctst rm [OPTIONS] <CONTAINERS>...
+```
+
+### Arguments and Options
+
+| Argument / Flag | Description | Default |
+|---|---|---|
+| `CONTAINERS...` | Container IDs or exact names to remove | Required |
+| `-f, --force` | Force-stop running containers before removal | `false` |
+
+Inherits all [global options](#global-options).
+
+`ctst rm` removes the container's project-owned rootfs, log, cgroup, and state entry. A running container is rejected unless `--force` is supplied. Bind-mounted host source paths are never deleted.
+
+```bash
+ctst rm api worker
+ctst rm --force api
 ```
 
 ---
@@ -657,14 +685,14 @@ Containust manages container lifecycle through a local JSON state file instead o
 
 ### Location
 
-Default: `.containust/state.json` (project-local, next to the `.ctst` file)
+Default: `.containust/state/state.json` (project-local, next to the `.ctst` file)
 Override: `--state-file <PATH>` or `CONTAINUST_STATE_FILE` environment variable.
 
 ### Format
 
 ```json
 {
-  "version": 1,
+  "schema_version": 2,
   "containers": [
     {
       "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
@@ -698,16 +726,15 @@ Override: `--state-file <PATH>` or `CONTAINUST_STATE_FILE` environment variable.
 
 - **`ctst run`** — Entries added when containers are created.
 - **`ctst stop`** — Entries updated to `stopped` state; PID cleared.
+- **`ctst rm`** — Entries and project-owned container resources removed.
 - **`ctst build`** — No state file changes (build is stateless).
 - **Container exit** — On next `ctst ps` invocation, stale PIDs are detected and states corrected.
 
 ### Corruption Recovery
 
-If the state file is corrupted or missing:
+If the state file is missing, `ctst` starts with empty state and creates it on the first write. Corrupt JSON and schemas newer than the runtime supports return an explicit error instead of silently discarding state. Back up the state file before manual edits: `cp state.json state.json.bak`.
 
-1. `ctst` creates a new empty state file on next invocation.
-2. Orphaned containers (running processes with no state entry) can be discovered via `/sys/fs/cgroup` and re-registered.
-3. Back up the state file before manual edits: `cp state.json state.json.bak`.
+Writes are protected by a project lock and committed with a same-directory temporary file plus atomic rename. On `ctst ps`, reconciliation marks dead tracked processes failed and removes orphaned project-owned rootfs directories and cgroups.
 
 ---
 
@@ -723,13 +750,12 @@ The container name is derived from the `COMPONENT` name in the `.ctst` file (e.g
 
 ### Referencing Containers
 
-All commands that accept a container reference (`exec`, `stop`) resolve in the following order:
+All commands that accept a container reference (`exec`, `logs`, `stop`, `rm`) resolve in the following order:
 
 1. **Exact name match** — `api`
-2. **UUID prefix match** — `a1b2c3d4` (minimum 8 characters, must be unambiguous)
-3. **Full UUID match** — `a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d`
+2. **Full UUID match** — `a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d`
 
-If a prefix is ambiguous, the command fails with an error listing the matching containers.
+ID-prefix matching is not currently supported.
 
 ---
 
@@ -742,7 +768,7 @@ Summary of all exit codes used across `ctst` commands.
 | `0` | Success | All |
 | `1` | General error | All |
 | `2` | Usage / argument error | All |
-| `3` | Permission denied (namespace/cgroup creation) | `run`, `exec`, `stop` |
+| `3` | Permission denied (namespace/cgroup creation) | `run`, `exec`, `stop`, `rm` |
 | `4` | Resource not found (file, image, container) | All |
 | `126` | Command cannot execute (permission denied inside container) | `exec` |
 | `127` | Command not found inside container | `exec` |
@@ -753,7 +779,7 @@ Summary of all exit codes used across `ctst` commands.
 
 | Variable | Description | Default |
 |---|---|---|
-| `CONTAINUST_STATE_FILE` | Path to the state index file | `.containust/state.json` (project-local) |
+| `CONTAINUST_STATE_FILE` | Path to the state index file | `.containust/state/state.json` (project-local) |
 | `CONTAINUST_LOG` | Tracing filter directive (e.g., `info`, `debug`, `containust_runtime=trace`) | `warn` |
 | `CONTAINUST_OFFLINE` | Set to `1` to enable offline mode (equivalent to `--offline`) | unset |
 | `CONTAINUST_CACHE_DIR` | Global cache directory for immutable VM assets | `~/.containust/cache` |
@@ -793,18 +819,11 @@ mount | grep cgroup2
 # Then reboot.
 ```
 
-### "state file locked"
+### State operation waits for another command
 
-**Cause**: Another `ctst` process is holding a lock on the state file, or a previous invocation crashed without releasing the lock.
+**Cause**: Another `ctst` process is updating the same project state. Filesystem locks serialize writes and are released automatically when a process exits.
 
-**Fix**:
-```bash
-# Check for running ctst processes
-ps aux | grep ctst
-
-# If no processes are running, remove the stale lock
-rm .containust/state.json.lock
-```
+**Fix**: Allow the active command to finish. If it is stuck, inspect the running `ctst` process; do not delete the lock file while a command is active.
 
 ### "image not found"
 

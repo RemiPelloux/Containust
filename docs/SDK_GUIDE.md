@@ -1,7 +1,7 @@
 # Containust SDK Reference
 
-**Crate:** `containust-sdk` v0.1.0
-**Rust Edition:** 2024 | **MSRV:** 1.85.0
+**Crate:** `containust-sdk` v0.3.0
+**Rust Edition:** 2024 | **MSRV:** 1.88.0
 **License:** MIT / Apache-2.0
 
 The Containust SDK provides programmatic container management for Rust applications. It exposes three primary entry points — `ContainerBuilder`, `GraphResolver`, and `EventListener` — that wrap the engine-layer crates (`containust-runtime`, `containust-image`, `containust-compose`) behind a stable, ergonomic API surface.
@@ -620,7 +620,7 @@ Invalid transitions (these never occur):
 | Field            | Type              | Default                               | Description                              |
 |------------------|-------------------|---------------------------------------|------------------------------------------|
 | `data_dir`       | `PathBuf`         | `.containust/` (project-local)        | Base directory for state and data        |
-| `state_file`     | `PathBuf`         | `.containust/state.json`              | Path to the state index file             |
+| `state_file`     | `PathBuf`         | `.containust/state/state.json`        | Path to the state index file             |
 | `offline`        | `bool`            | `false`                               | Block all outbound network access        |
 | `default_limits` | `ResourceLimits`  | All `None`                            | Default resource limits for containers   |
 

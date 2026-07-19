@@ -1,6 +1,6 @@
 [package]
 name = "containust-core"
-version = "0.1.0"
+version.workspace = true
 description = "Linux isolation primitives: namespaces, cgroups v2, OverlayFS, and capability management."
 edition.workspace = true
 license.workspace = true

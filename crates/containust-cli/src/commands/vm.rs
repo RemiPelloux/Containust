@@ -1,7 +1,6 @@
 //! `ctst vm` — Virtual machine management commands.
 
 use clap::Args;
-use containust_runtime::engine::Engine;
 
 /// Arguments for the `vm start` command.
 #[derive(Args, Debug)]
@@ -30,8 +29,8 @@ pub struct VmStopArgs {
 /// # Errors
 ///
 /// Returns an error if QEMU is not installed or the VM fails to start.
-pub fn vm_start(args: VmStartArgs) -> anyhow::Result<()> {
-    let engine = Engine::new();
+pub fn vm_start(args: VmStartArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
+    let engine = options.engine();
 
     let kernel = args.kernel.as_deref();
     let initramfs = args.initramfs.as_deref();
@@ -58,8 +57,8 @@ pub fn vm_start(args: VmStartArgs) -> anyhow::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the VM cannot be stopped.
-pub fn vm_stop(args: VmStopArgs) -> anyhow::Result<()> {
-    let engine = Engine::new();
+pub fn vm_stop(args: VmStopArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
+    let engine = options.engine();
     engine
         .vm_stop(args.force)
         .map_err(|e| anyhow::anyhow!("{e}"))?;

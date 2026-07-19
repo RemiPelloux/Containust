@@ -1,7 +1,6 @@
 //! `ctst ps` — List running containers with real-time metrics.
 
 use clap::Args;
-use containust_runtime::engine::Engine;
 
 /// Arguments for the `ps` command.
 #[derive(Args, Debug)]
@@ -23,9 +22,22 @@ pub struct PsArgs {
 /// # Errors
 ///
 /// Returns an error if state loading or TUI initialization fails.
-pub fn execute(args: PsArgs) -> anyhow::Result<()> {
-    let engine = Engine::new();
-    let containers = engine.list().map_err(|e| anyhow::anyhow!("{e}"))?;
+pub fn execute(args: PsArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
+    let engine = options.engine();
+    let (containers, reconciliation) = engine
+        .list_reconciled()
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    if reconciliation.stale_processes > 0
+        || reconciliation.orphaned_rootfs > 0
+        || reconciliation.orphaned_cgroups > 0
+    {
+        eprintln!(
+            "Reconciled: {} stale process(es), {} orphaned rootfs, {} orphaned cgroup(s)",
+            reconciliation.stale_processes,
+            reconciliation.orphaned_rootfs,
+            reconciliation.orphaned_cgroups
+        );
+    }
 
     let filtered: Vec<_> = if args.all {
         containers

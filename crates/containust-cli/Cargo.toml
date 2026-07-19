@@ -1,6 +1,6 @@
 [package]
 name = "containust-cli"
-version = "0.1.0"
+version.workspace = true
 description = "CLI binary (ctst) for the Containust container runtime."
 edition.workspace = true
 license.workspace = true
@@ -27,6 +27,9 @@ serde = { workspace = true }
 serde_yaml = { workspace = true }
 serde_json = { workspace = true }
 ctrlc = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

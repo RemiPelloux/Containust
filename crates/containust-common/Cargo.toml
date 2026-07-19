@@ -1,6 +1,6 @@
 [package]
 name = "containust-common"
-version = "0.1.0"
+version.workspace = true
 description = "Shared types, error definitions, and constants for the Containust workspace."
 edition.workspace = true
 license.workspace = true

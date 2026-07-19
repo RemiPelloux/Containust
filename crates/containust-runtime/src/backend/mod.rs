@@ -8,6 +8,25 @@ use containust_common::types::ContainerId;
 
 use crate::exec::ExecOutput;
 
+pub(crate) fn project_identifier(data_dir: &std::path::Path) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+
+    let path = if data_dir.is_absolute() {
+        data_dir.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join(data_dir)
+    };
+    let digest = Sha256::digest(path.to_string_lossy().as_bytes());
+    let mut identifier = String::with_capacity(32);
+    for byte in &digest[..16] {
+        let _ = write!(identifier, "{byte:02x}");
+    }
+    identifier
+}
+
 /// Configuration for creating a container.
 #[derive(Debug, Clone)]
 pub struct ContainerConfig {
@@ -48,6 +67,17 @@ pub struct ContainerInfo {
     pub created_at: String,
 }
 
+/// Resources repaired or discovered during backend reconciliation.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReconciliationReport {
+    /// Running entries whose process no longer exists.
+    pub stale_processes: usize,
+    /// Root filesystem directories with no state entry.
+    pub orphaned_rootfs: usize,
+    /// Cgroup directories with no state entry.
+    pub orphaned_cgroups: usize,
+}
+
 /// Platform-agnostic container backend.
 ///
 /// Implementors handle the platform-specific details of container
@@ -77,6 +107,15 @@ pub trait ContainerBackend: Send + Sync {
     /// Returns an error if the container cannot be stopped.
     fn stop(&self, id: &ContainerId) -> Result<()>;
 
+    /// Force-stops a running container without a grace period.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the container cannot be stopped.
+    fn force_stop(&self, id: &ContainerId) -> Result<()> {
+        self.stop(id)
+    }
+
     /// Executes a command inside a running container.
     ///
     /// # Errors
@@ -105,6 +144,15 @@ pub trait ContainerBackend: Send + Sync {
     /// Returns an error if the backend cannot retrieve state.
     fn list(&self) -> Result<Vec<ContainerInfo>>;
 
+    /// Reconciles persisted state with live backend resources.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisted state cannot be inspected or repaired.
+    fn reconcile(&self) -> Result<ReconciliationReport> {
+        Ok(ReconciliationReport::default())
+    }
+
     /// Returns whether this backend is operational on the current platform.
     fn is_available(&self) -> bool;
 }
@@ -112,13 +160,25 @@ pub trait ContainerBackend: Send + Sync {
 /// Auto-detect and create the appropriate backend for the current platform.
 #[must_use]
 pub fn detect_backend() -> Box<dyn ContainerBackend> {
+    let data_dir =
+        containust_common::constants::project_dir(std::path::Path::new("containust.ctst"));
+    let state_file = data_dir.join("state").join("state.json");
+    detect_backend_with_paths(data_dir, state_file)
+}
+
+/// Creates the platform backend with explicit runtime storage paths.
+#[must_use]
+pub fn detect_backend_with_paths(
+    data_dir: std::path::PathBuf,
+    state_file: std::path::PathBuf,
+) -> Box<dyn ContainerBackend> {
     #[cfg(target_os = "linux")]
     {
-        Box::new(linux::LinuxNativeBackend::new())
+        Box::new(linux::LinuxNativeBackend::with_paths(data_dir, state_file))
     }
     #[cfg(not(target_os = "linux"))]
     {
-        Box::new(vm::VMBackend::new())
+        Box::new(vm::VMBackend::with_paths(data_dir, state_file))
     }
 }
 

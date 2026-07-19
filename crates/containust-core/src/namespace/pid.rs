@@ -46,6 +46,12 @@ pub fn join_pid_namespace(ns_fd: i32) -> Result<()> {
     use nix::sched::{CloneFlags, setns};
     use std::os::fd::BorrowedFd;
 
+    if ns_fd < 0 {
+        return Err(ContainustError::PermissionDenied {
+            message: format!("setns PID failed: invalid file descriptor {ns_fd}"),
+        });
+    }
+
     // SAFETY: ns_fd is a valid open file descriptor to a /proc/[pid]/ns/pid file,
     // guaranteed by the caller.
     let fd = unsafe { BorrowedFd::borrow_raw(ns_fd) };

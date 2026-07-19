@@ -18,12 +18,15 @@ pub struct BuildArgs {
 /// # Errors
 ///
 /// Returns an error if parsing, validation, or image resolution fails.
-pub fn execute(args: BuildArgs) -> anyhow::Result<()> {
+pub fn execute(args: BuildArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
     tracing::info!(file = %args.file, "building from .ctst file");
 
     let content = std::fs::read_to_string(&args.file)?;
     let composition =
         containust_compose::parser::parse_ctst(&content).map_err(|e| anyhow::anyhow!("{e}"))?;
+    if options.offline {
+        containust_compose::validate_offline(&composition).map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
 
     println!(
         "Parsed {} components, {} connections",

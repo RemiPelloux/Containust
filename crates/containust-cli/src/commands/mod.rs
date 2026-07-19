@@ -7,11 +7,16 @@ pub mod images;
 pub mod logs;
 pub mod plan;
 pub mod ps;
+pub mod remove;
 pub mod run;
 pub mod stop;
 pub mod vm;
 
 use clap::{Parser, Subcommand};
+use containust_common::types::ContainerId;
+use containust_runtime::backend::ContainerInfo;
+use containust_runtime::engine::{Engine, EngineOptions};
+use std::path::{Path, PathBuf};
 
 /// Containust — Daemon-less sovereign container runtime.
 #[derive(Parser, Debug)]
@@ -30,6 +35,83 @@ pub struct Cli {
     pub state_file: Option<String>,
 }
 
+/// Runtime settings shared by every CLI command.
+#[derive(Debug, Clone, Default)]
+pub struct RuntimeOptions {
+    /// Reject remote imports and images.
+    pub offline: bool,
+    /// Optional explicit state index path.
+    pub state_file: Option<PathBuf>,
+}
+
+impl RuntimeOptions {
+    fn from_cli(cli: &Cli) -> Self {
+        let env_offline = std::env::var("CONTAINUST_OFFLINE").is_ok_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        });
+        Self {
+            offline: cli.offline || env_offline,
+            state_file: cli
+                .state_file
+                .clone()
+                .map(PathBuf::from)
+                .or_else(|| std::env::var_os("CONTAINUST_STATE_FILE").map(PathBuf::from)),
+        }
+    }
+
+    /// Creates an engine using this command's storage and policy.
+    #[must_use]
+    pub fn engine(&self) -> Engine {
+        self.engine_for_project(Path::new("containust.ctst"))
+    }
+
+    /// Creates an engine scoped to the composition's project directory.
+    #[must_use]
+    pub fn engine_for_project(&self, composition: &Path) -> Engine {
+        let (data_dir, state_file) = self.state_file.as_ref().map_or_else(
+            || {
+                let data_dir = containust_common::constants::project_dir(composition);
+                let state_file = data_dir.join("state").join("state.json");
+                (data_dir, state_file)
+            },
+            |state_file| {
+                let data_dir = state_file
+                    .parent()
+                    .filter(|path| !path.as_os_str().is_empty())
+                    .map_or_else(
+                        || containust_common::constants::project_dir(composition),
+                        Path::to_path_buf,
+                    );
+                (data_dir, state_file.clone())
+            },
+        );
+        Engine::with_options(EngineOptions {
+            data_dir,
+            state_file,
+            offline: self.offline,
+        })
+    }
+}
+
+fn resolve_container_id(engine: &Engine, target: &str) -> anyhow::Result<ContainerId> {
+    let containers = engine.list().map_err(|e| anyhow::anyhow!("{e}"))?;
+    resolve_container_id_from(&containers, target)
+}
+
+fn resolve_container_id_from(
+    containers: &[ContainerInfo],
+    target: &str,
+) -> anyhow::Result<ContainerId> {
+    containers
+        .iter()
+        .find(|container| container.id.as_str() == target || container.name == target)
+        .map(|container| container.id.clone())
+        .ok_or_else(|| anyhow::anyhow!("container not found: {target}"))
+}
+
 /// Available CLI subcommands.
 #[derive(Subcommand, Debug)]
 pub enum Command {
@@ -45,6 +127,9 @@ pub enum Command {
     Exec(exec::ExecArgs),
     /// Stop containers and clean up resources.
     Stop(stop::StopArgs),
+    /// Remove stopped containers and their project-owned resources.
+    #[command(name = "rm")]
+    Remove(remove::RemoveArgs),
     /// Manage the local image catalog.
     Images(images::ImagesArgs),
     /// Convert a docker-compose.yml to .ctst format.
@@ -72,19 +157,21 @@ pub enum VmCommand {
 ///
 /// Returns an error if the command execution fails.
 pub fn execute(cli: Cli) -> anyhow::Result<()> {
+    let options = RuntimeOptions::from_cli(&cli);
     match cli.command {
-        Command::Build(args) => build::execute(args),
-        Command::Plan(args) => plan::execute(args),
-        Command::Run(args) => run::execute(args),
-        Command::Ps(args) => ps::execute(args),
-        Command::Exec(args) => exec::execute(args),
-        Command::Stop(args) => stop::execute(args),
-        Command::Images(args) => images::execute(args),
-        Command::Convert(args) => convert::execute(args),
-        Command::Logs(args) => logs::execute(args),
+        Command::Build(args) => build::execute(args, &options),
+        Command::Plan(args) => plan::execute(args, &options),
+        Command::Run(args) => run::execute(args, &options),
+        Command::Ps(args) => ps::execute(args, &options),
+        Command::Exec(args) => exec::execute(args, &options),
+        Command::Stop(args) => stop::execute(args, &options),
+        Command::Remove(args) => remove::execute(args, &options),
+        Command::Images(args) => images::execute(args, &options),
+        Command::Convert(args) => convert::execute(args, &options),
+        Command::Logs(args) => logs::execute(args, &options),
         Command::Vm(subcommand) => match subcommand {
-            VmCommand::Start(args) => vm::vm_start(args),
-            VmCommand::Stop(args) => vm::vm_stop(args),
+            VmCommand::Start(args) => vm::vm_start(args, &options),
+            VmCommand::Stop(args) => vm::vm_stop(args, &options),
         },
     }
 }
@@ -227,6 +314,24 @@ mod tests {
     }
 
     #[test]
+    fn cli_remove_subcommand_parses_targets_and_force() {
+        let cli =
+            Cli::try_parse_from(&["ctst", "rm", "web", "db", "--force"]).expect("should parse");
+        match cli.command {
+            Command::Remove(args) => {
+                assert_eq!(args.containers, vec!["web", "db"]);
+                assert!(args.force);
+            }
+            other => panic!("expected Remove, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_remove_subcommand_requires_target() {
+        assert!(Cli::try_parse_from(&["ctst", "rm"]).is_err());
+    }
+
+    #[test]
     fn cli_images_subcommand_parses_list_flag() {
         let cli = Cli::try_parse_from(&["ctst", "images", "--list"]).expect("should parse");
         match cli.command {
@@ -333,6 +438,56 @@ mod tests {
         let cli = Cli::try_parse_from(&["ctst", "run"]).expect("should parse");
         assert!(!cli.offline);
         assert!(cli.state_file.is_none());
+    }
+
+    #[test]
+    fn project_engines_use_independent_storage_roots() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let first_file = dir.path().join("first").join("app.ctst");
+        let second_file = dir.path().join("second").join("app.ctst");
+        std::fs::create_dir_all(first_file.parent().expect("first parent")).expect("first project");
+        std::fs::create_dir_all(second_file.parent().expect("second parent"))
+            .expect("second project");
+        std::fs::write(&first_file, "").expect("first file");
+        std::fs::write(&second_file, "").expect("second file");
+        let options = RuntimeOptions::default();
+
+        let first = options.engine_for_project(&first_file);
+        let second = options.engine_for_project(&second_file);
+
+        assert_ne!(first.data_dir(), second.data_dir());
+        assert_eq!(
+            first.state_file(),
+            first_file
+                .canonicalize()
+                .expect("canonical first file")
+                .parent()
+                .expect("canonical first parent")
+                .join(".containust/state/state.json")
+        );
+        assert_eq!(
+            second.state_file(),
+            second_file
+                .canonicalize()
+                .expect("canonical second file")
+                .parent()
+                .expect("canonical second parent")
+                .join(".containust/state/state.json")
+        );
+    }
+
+    #[test]
+    fn explicit_state_file_overrides_project_storage() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state_file = dir.path().join("custom").join("state.json");
+        let options = RuntimeOptions {
+            offline: false,
+            state_file: Some(state_file.clone()),
+        };
+
+        let engine = options.engine_for_project(&dir.path().join("app.ctst"));
+        assert_eq!(engine.state_file(), state_file);
+        assert_eq!(engine.data_dir(), dir.path().join("custom"));
     }
 
     // --- Error cases ---

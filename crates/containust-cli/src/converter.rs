@@ -155,6 +155,8 @@ pub fn convert_string(yaml: &str) -> anyhow::Result<String> {
     write_header(&mut output, &compose);
     write_components(&mut output, &compose)?;
     write_connections(&mut output, &compose);
+    let _ = containust_compose::parser::parse_ctst(&output)
+        .map_err(|error| anyhow::anyhow!("generated .ctst failed validation: {error}"))?;
 
     Ok(output)
 }
@@ -324,12 +326,12 @@ fn write_cpu(out: &mut String, svc: &Service) {
         .and_then(|r| r.limits.as_ref())
         .and_then(|l| l.cpus.as_deref());
 
-    if let Some(c) = cpus {
-        if let Ok(val) = c.parse::<f64>() {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let shares = (val * 1024.0) as u64;
-            let _ = writeln!(out, "    cpu = \"{shares}\"");
-        }
+    if let Some(c) = cpus
+        && let Ok(val) = c.parse::<f64>()
+    {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let shares = (val * 1024.0) as u64;
+        let _ = writeln!(out, "    cpu = \"{shares}\"");
     }
 }
 

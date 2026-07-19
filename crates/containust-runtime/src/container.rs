@@ -64,7 +64,13 @@ impl Container {
             });
         }
 
-        let pid = crate::process::spawn_container_process(&self.command, &self.env, rootfs)?;
+        let pid = crate::process::spawn_container_process(&crate::process::ProcessConfig {
+            command: self.command.clone(),
+            env: self.env.clone(),
+            rootfs: rootfs.to_path_buf(),
+            readonly_rootfs: true,
+            volumes: Vec::new(),
+        })?;
         self.pid = Some(pid);
         self.rootfs_path = Some(rootfs.to_path_buf());
         self.state = ContainerState::Running;

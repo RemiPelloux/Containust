@@ -21,7 +21,7 @@ pub struct ConvertArgs {
 /// # Errors
 ///
 /// Returns an error if the file cannot be read, parsed, or written.
-pub fn execute(args: ConvertArgs) -> anyhow::Result<()> {
+pub fn execute(args: ConvertArgs, _options: &super::RuntimeOptions) -> anyhow::Result<()> {
     let input = &args.file;
     tracing::info!(path = %input.display(), "converting docker-compose file");
 

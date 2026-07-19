@@ -1,8 +1,10 @@
 //! `ctst logs` — View container logs.
 
 use clap::Args;
-use containust_common::types::ContainerId;
-use containust_runtime::engine::Engine;
+use std::io::Write;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 /// Arguments for the `logs` command.
 #[derive(Args, Debug)]
@@ -22,9 +24,12 @@ pub struct LogsArgs {
 /// # Errors
 ///
 /// Returns an error if the container is not found or logs are unavailable.
-pub fn execute(args: LogsArgs) -> anyhow::Result<()> {
-    let engine = Engine::new();
-    let id = resolve_target(&engine, &args.container)?;
+pub fn execute(args: LogsArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
+    let engine = options.engine();
+    let id = super::resolve_container_id(&engine, &args.container)?;
+    if args.follow {
+        return follow(&engine, &id);
+    }
     let logs = engine.logs(&id).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if logs.is_empty() {
@@ -36,13 +41,26 @@ pub fn execute(args: LogsArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn resolve_target(engine: &Engine, target: &str) -> anyhow::Result<ContainerId> {
-    let containers = engine.list().map_err(|e| anyhow::anyhow!("{e}"))?;
-    Ok(containers
-        .iter()
-        .find(|container| container.id.as_str() == target || container.name == target)
-        .map_or_else(
-            || ContainerId::new(target),
-            |container| container.id.clone(),
-        ))
+fn follow(
+    engine: &containust_runtime::engine::Engine,
+    id: &containust_common::types::ContainerId,
+) -> anyhow::Result<()> {
+    let running = Arc::new(AtomicBool::new(true));
+    let signal = Arc::clone(&running);
+    ctrlc::set_handler(move || signal.store(false, Ordering::Release))
+        .map_err(|error| anyhow::anyhow!("failed to install Ctrl+C handler: {error}"))?;
+
+    let mut offset = 0;
+    while running.load(Ordering::Acquire) {
+        let (content, next) =
+            containust_runtime::logs::read_logs_from(engine.data_dir(), id.as_str(), offset)
+                .map_err(|error| anyhow::anyhow!("{error}"))?;
+        if !content.is_empty() {
+            print!("{content}");
+            std::io::stdout().flush()?;
+        }
+        offset = next;
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Ok(())
 }
