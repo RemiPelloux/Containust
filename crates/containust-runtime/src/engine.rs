@@ -164,9 +164,10 @@ impl Engine {
         let memory_bytes = parse_optional_memory(comp.memory.as_deref())?;
         let cpu_shares = parse_optional_cpu(comp.cpu.as_deref())?;
 
+        let image = resolve_deploy_image(self.data_dir(), self.offline, comp)?;
         let config = ContainerConfig {
             name: comp.name.clone(),
-            image: comp.image.clone().unwrap_or_default(),
+            image,
             command: effective_command(comp),
             env: resolved_comp.map_or_else(Vec::new, |r| r.env.clone()),
             memory_bytes,
@@ -394,6 +395,25 @@ fn resolve_deploy_order(
     let order = graph.resolve_order()?;
     tracing::info!(?order, "deployment order resolved");
     Ok(order)
+}
+
+/// Resolves `preset://` images into catalog references before create.
+fn resolve_deploy_image(
+    data_dir: &Path,
+    offline: bool,
+    comp: &containust_compose::parser::ast::ComponentDecl,
+) -> Result<String> {
+    let Some(image) = comp.image.as_deref() else {
+        return Ok(String::new());
+    };
+    let reference = containust_image::reference::ImageReference::parse(image)?;
+    if reference.scheme() != containust_image::reference::ImageScheme::Preset {
+        return Ok(image.to_string());
+    }
+    let request = containust_image::import::ImportRequest::new(&comp.name, offline);
+    let entry = containust_image::import::import_image(data_dir, &reference, &request)?;
+    let digest = entry.digest.as_deref().unwrap_or_default();
+    Ok(format!("image://{}@sha256:{digest}", entry.name))
 }
 
 fn component_volumes(component: &containust_compose::parser::ast::ComponentDecl) -> Vec<String> {

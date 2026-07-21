@@ -25,6 +25,11 @@ pub enum ImageSource {
         /// Pinned SHA-256 digest, if any.
         sha256: Option<String>,
     },
+    /// Curated well-known rootfs (`preset://alpine`).
+    Preset {
+        /// Preset name and optional version (`alpine` or `alpine:3.21`).
+        name: String,
+    },
     /// Remote HTTP(S) source (requires explicit opt-in).
     Remote {
         /// URL of the remote image.
@@ -59,6 +64,9 @@ pub fn resolve_source(uri: &str) -> Result<ImageSource> {
         ImageScheme::Catalog => Ok(ImageSource::Catalog {
             name: reference.location().to_string(),
             sha256: digest_hex,
+        }),
+        ImageScheme::Preset => Ok(ImageSource::Preset {
+            name: reference.location().to_string(),
         }),
         ImageScheme::Https | ImageScheme::Http => Ok(ImageSource::Remote {
             url: reference.canonical_uri(),

@@ -353,6 +353,15 @@ mod tests {
     }
 
     #[test]
+    fn cli_images_subcommand_parses_presets_flag() {
+        let cli = Cli::try_parse_from(&["ctst", "images", "--presets"]).expect("should parse");
+        match cli.command {
+            Command::Images(args) => assert!(args.presets),
+            other => panic!("expected Images, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn cli_images_subcommand_parses_remove_option() {
         let cli = Cli::try_parse_from(&["ctst", "images", "--remove", "sha256:abcdef"])
             .expect("should parse");

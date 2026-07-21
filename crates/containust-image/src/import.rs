@@ -14,6 +14,7 @@ use containust_common::types::ImageId;
 
 use crate::fetch::{FetchPolicy, fetch_remote};
 use crate::pack::pack_directory;
+use crate::preset::{preset_fetch_reference, resolve_preset};
 use crate::reference::{ImageReference, ImageScheme};
 use crate::registry::{ImageCatalog, ImageEntry};
 use crate::storage::StorageBackend;
@@ -147,7 +148,7 @@ fn stage_source(
     reference: &ImageReference,
     request: &ImportRequest,
 ) -> Result<std::path::PathBuf> {
-    if request.offline && reference.is_remote() {
+    if request.offline && reference.is_remote() && reference.scheme() != ImageScheme::Preset {
         return Err(ContainustError::Network {
             url: reference.canonical_uri(),
             message: "offline mode blocks remote image import".into(),
@@ -169,6 +170,7 @@ fn stage_source(
         ImageScheme::Https | ImageScheme::Http => {
             let _ = fetch_remote(reference, &request.fetch_policy, &staged)?;
         }
+        ImageScheme::Preset => stage_preset(store, reference, request, &staged)?,
         ImageScheme::Catalog => {
             return Err(ContainustError::Config {
                 message: format!(
@@ -179,6 +181,52 @@ fn stage_source(
         }
     }
     Ok(staged)
+}
+
+/// Stages a curated preset from the local layer cache, or downloads it.
+fn stage_preset(
+    store: &StorageBackend,
+    reference: &ImageReference,
+    request: &ImportRequest,
+    staged: &Path,
+) -> Result<()> {
+    let preset = resolve_preset(reference)?;
+    if store.has_layer(preset.sha256) {
+        let blob = store.layer_blob_path(preset.sha256);
+        crate::hash::validate_hash(
+            &blob,
+            &containust_common::types::Sha256Hash::from_hex(preset.sha256)?,
+        )?;
+        let _ = std::fs::copy(&blob, staged)
+            .map_err(|source| ContainustError::Io { path: blob, source })?;
+        tracing::info!(
+            name = preset.name,
+            version = preset.version,
+            "preset satisfied from local layer cache"
+        );
+        return Ok(());
+    }
+    if request.offline {
+        return Err(ContainustError::Network {
+            url: reference.canonical_uri(),
+            message: format!(
+                "offline mode: preset '{}:{}' is not cached. Import it once online \
+                 with `ctst build`, then reuse the project store air-gapped",
+                preset.name, preset.version
+            ),
+        });
+    }
+    let fetch_ref = preset_fetch_reference(&preset)?;
+    let mut policy = request.fetch_policy.clone();
+    policy.offline = false;
+    let _ = fetch_remote(&fetch_ref, &policy, staged)?;
+    tracing::info!(
+        name = preset.name,
+        version = preset.version,
+        digest = preset.sha256,
+        "preset downloaded and verified"
+    );
+    Ok(())
 }
 
 fn require_existing(location: &str, kind: &'static str) -> Result<std::path::PathBuf> {
@@ -391,5 +439,36 @@ mod tests {
         let error = import_image(dir.path(), &reference, &ImportRequest::new("app", false))
             .expect_err("catalog re-import must fail");
         assert!(error.to_string().contains("cannot be re-imported"));
+    }
+
+    #[test]
+    fn import_offline_preset_without_cache_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let reference = ImageReference::parse("preset://alpine").expect("parse");
+        let error = import_image(dir.path(), &reference, &ImportRequest::new("app", true))
+            .expect_err("uncached offline preset must fail");
+        assert!(error.to_string().contains("offline"));
+        assert!(error.to_string().contains("not cached"));
+    }
+
+    #[test]
+    fn import_offline_preset_reuses_verified_layer_cache() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data_dir = dir.path().join("data");
+        let reference = ImageReference::parse("preset://alpine").expect("parse");
+        let preset = crate::preset::resolve_preset(&reference).expect("resolve");
+
+        // Plant a decoy blob under the curated digest name; integrity check
+        // must reject it before offline import proceeds.
+        let store = StorageBackend::open(data_dir.clone()).expect("open store");
+        let staged = store.staging_path();
+        std::fs::write(&staged, b"not-the-alpine-rootfs").expect("write decoy");
+        store
+            .commit_layer(&staged, preset.sha256)
+            .expect("commit decoy under curated name");
+
+        let error = import_image(&data_dir, &reference, &ImportRequest::new("app", true))
+            .expect_err("corrupt cache must fail hash validation");
+        assert!(matches!(error, ContainustError::HashMismatch { .. }));
     }
 }

@@ -3,7 +3,8 @@
 //! Container image and layer management for the Containust runtime.
 //!
 //! Handles:
-//! - **References**: structured `file://`, `tar://`, `image://`, and remote URIs.
+//! - **References**: structured `file://`, `tar://`, `image://`, `preset://`, and remote URIs.
+//! - **Presets**: curated Alpine/BusyBox rootfs downloads with pinned digests.
 //! - **Import**: deterministic content-addressed import and materialization.
 //! - **Fetch**: explicit opt-in remote downloads with offline enforcement.
 //! - **Layers**: diff-based filesystem layers with caching.
@@ -20,6 +21,8 @@ pub mod hash;
 pub mod import;
 pub mod layer;
 pub mod pack;
+pub mod preset;
+pub(crate) mod preset_catalog;
 pub mod reference;
 pub mod registry;
 pub mod source;

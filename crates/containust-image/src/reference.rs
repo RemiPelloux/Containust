@@ -24,6 +24,8 @@ pub enum ImageScheme {
     Http,
     /// Image imported into the local content-addressed catalog (`image://`).
     Catalog,
+    /// Curated well-known rootfs (`preset://alpine`), resolved to a pinned download.
+    Preset,
 }
 
 impl ImageScheme {
@@ -36,13 +38,18 @@ impl ImageScheme {
             Self::Https => "https://",
             Self::Http => "http://",
             Self::Catalog => "image://",
+            Self::Preset => "preset://",
         }
     }
 
     /// Returns whether resolving this scheme requires network access.
+    ///
+    /// Presets download on first use, but are satisfied from the local
+    /// layer store once imported — callers should treat them as
+    /// "remote unless cached".
     #[must_use]
     pub const fn is_remote(self) -> bool {
-        matches!(self, Self::Https | Self::Http)
+        matches!(self, Self::Https | Self::Http | Self::Preset)
     }
 }
 
@@ -137,12 +144,13 @@ impl fmt::Display for ImageReference {
 }
 
 fn split_scheme(uri: &str) -> Result<(ImageScheme, &str)> {
-    const SCHEMES: [ImageScheme; 5] = [
+    const SCHEMES: [ImageScheme; 6] = [
         ImageScheme::File,
         ImageScheme::Tar,
         ImageScheme::Https,
         ImageScheme::Http,
         ImageScheme::Catalog,
+        ImageScheme::Preset,
     ];
     SCHEMES
         .into_iter()
@@ -150,7 +158,7 @@ fn split_scheme(uri: &str) -> Result<(ImageScheme, &str)> {
         .ok_or_else(|| ContainustError::Config {
             message: format!(
                 "unsupported image source URI scheme: {uri} \
-                 (expected file://, tar://, image://, https://, or http://)"
+                 (expected file://, tar://, image://, preset://, https://, or http://)"
             ),
         })
 }
@@ -194,6 +202,14 @@ mod tests {
         assert_eq!(reference.scheme(), ImageScheme::Catalog);
         assert_eq!(reference.location(), "web");
         assert!(!reference.is_remote());
+    }
+
+    #[test]
+    fn parse_preset_reference_extracts_name_and_is_remote() {
+        let reference = ImageReference::parse("preset://alpine:3.22").expect("parse");
+        assert_eq!(reference.scheme(), ImageScheme::Preset);
+        assert_eq!(reference.location(), "alpine:3.22");
+        assert!(reference.is_remote());
     }
 
     #[test]

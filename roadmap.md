@@ -16,6 +16,7 @@ Containust is at alpha `0.4.0` after completion of Sprint 3.
 - Sprint 1 wires `--offline`, `CONTAINUST_OFFLINE`, and `--state-file` through the CLI and engine; actual privileged-host validation and port forwarding remain deferred.
 - Sprint 2 adds project-scoped storage, atomic schema-versioned state, cross-process locking, lifecycle reconciliation, and explicit `stop`/`rm` cleanup semantics.
 - Sprint 3 adds structured image references, deterministic content-addressed import, an opt-in digest-verified remote fetcher, a locked/atomic image catalog with supply-chain metadata, a real `ctst build` with `--dry-run`, and offline-safe `image://` execution. The full exit gate (online import, air-gapped copy, `--offline` run) passes as a privileged Linux fixture.
+- Post–Sprint 3: curated `preset://alpine` / `preset://busybox` downloads (pinned Alpine minirootfs) with `ctst images --presets`; Docker Hub names like `node`/`php` return actionable hints until OCI pull lands.
 
 ## Release train
 
@@ -183,7 +184,8 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 These are intentionally after correctness and release gates:
 
-- [ ] Registry authentication, OCI image/index support, and signed image metadata.
+- [ ] Registry authentication, OCI image/index support, and signed image metadata (enables `preset://node`, `preset://php`, arbitrary Hub names).
+- [x] Curated `preset://` catalog for Alpine/BusyBox minirootfs with pinned digests and offline cache reuse (`ctst images --presets`).
 - [ ] Multi-network networking, DNS/service discovery, and explicit port mappings.
 - [ ] Restart policies and healthcheck enforcement in the runtime state machine.
 - [ ] Declarative update/diff/apply semantics for `ctst plan` and `ctst run`.

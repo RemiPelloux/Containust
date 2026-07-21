@@ -78,7 +78,7 @@ Also inherits all [global options](#global-options).
 
 1. **Parse** the `.ctst` file using the nom-based parser.
 2. **Validate offline policy** — with `--offline`, remote sources are rejected before any I/O.
-3. **Import images** — `file://` directories are packed into a deterministic tar, `tar://` archives are copied, and remote sources are downloaded (opt-in, requires a pinned `@sha256:` digest). Each layer is verified with SHA-256 and stored content-addressed.
+3. **Import images** — `file://` directories are packed into a deterministic tar, `tar://` archives are copied, `preset://` names resolve to curated pinned downloads (Alpine/BusyBox minirootfs), and raw remote sources are downloaded (opt-in, requires a pinned `@sha256:` digest). Each layer is verified with SHA-256 and stored content-addressed.
 4. **Register** each image in the project catalog with its source URI, digest, creation time, and tool version.
 
 Importing the same source twice always produces the same digest and reuses the stored layer. After a build, components can reference `image://<name>@sha256:<digest>` and run without the original source or any network access.
@@ -622,13 +622,16 @@ ctst images [OPTIONS]
 | Flag | Description |
 |---|---|
 | `-l, --list` | List all locally stored images |
+| `--presets` | List curated `preset://` images for this host architecture |
 | `--remove <ID>` | Remove an image by its SHA-256 ID |
 
 Inherits all [global options](#global-options).
 
 ### Description
 
-`ctst images` provides operations on the local image store located at `.containust/images/` (project-local). Images are composed of content-addressable OverlayFS layers identified by their SHA-256 hash.
+`ctst images` provides operations on the local image store located at `.containust/images/` (project-local). Images are composed of content-addressable layers identified by their SHA-256 hash.
+
+Use `--presets` to see curated downloads such as `preset://alpine` and `preset://busybox` (official Alpine minirootfs, ~3–4&nbsp;MiB, pinned by SHA-256). These are not Docker Hub pulls; full OCI registry support for `node` / `php` / etc. is planned later.
 
 ### Output Format (--list)
 

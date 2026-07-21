@@ -44,7 +44,10 @@ pub fn validate_offline(file: &parser::ast::CompositionFile) -> Result<()> {
         .find(|source| !is_local_image(source))
     {
         return Err(ContainustError::Config {
-            message: format!("offline mode requires a file:// or tar:// image: {source}"),
+            message: format!(
+                "offline mode requires a file://, tar://, image://, or cached preset:// image: \
+                 {source}"
+            ),
         });
     }
     Ok(())
@@ -55,7 +58,12 @@ fn is_remote_source(source: &str) -> bool {
 }
 
 fn is_local_image(source: &str) -> bool {
-    source.starts_with("file://") || source.starts_with("tar://") || source.starts_with("image://")
+    // preset:// is allowed offline at composition time; import fails closed
+    // if the curated layer is not already in the local store.
+    source.starts_with("file://")
+        || source.starts_with("tar://")
+        || source.starts_with("image://")
+        || source.starts_with("preset://")
 }
 
 #[cfg(test)]
@@ -83,7 +91,22 @@ mod offline_tests {
     fn offline_accepts_catalog_image() {
         let file = CompositionFile {
             components: vec![ComponentDecl {
-                image: Some("image://web@sha256:0000000000000000000000000000000000000000000000000000000000000000".into()),
+                image: Some(
+                    "image://web@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                        .into(),
+                ),
+                ..ComponentDecl::default()
+            }],
+            ..CompositionFile::default()
+        };
+        assert!(validate_offline(&file).is_ok());
+    }
+
+    #[test]
+    fn offline_accepts_preset_image_at_composition_level() {
+        let file = CompositionFile {
+            components: vec![ComponentDecl {
+                image: Some("preset://alpine".into()),
                 ..ComponentDecl::default()
             }],
             ..CompositionFile::default()

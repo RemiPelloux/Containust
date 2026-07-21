@@ -2,7 +2,7 @@
 
 Containust is a daemon-less container runtime and declarative composition tool written in Rust. It is designed for local, sovereign, and air-gapped workflows where a long-running privileged daemon is undesirable.
 
-> **Project status: alpha (`0.4.0`).** Sprint 3 image pipeline is implemented: structured image references, deterministic content-addressed import, digest-verified opt-in remote fetch, a locked atomic catalog with supply-chain metadata, and offline-safe `image://` execution validated end-to-end on a privileged Linux fixture. Native Linux process isolation and the QEMU VM backend remain experimental until full privileged, platform-specific validation is complete.
+> **Project status: alpha (`0.4.1`).** Sprint 3 image pipeline plus curated `preset://alpine` / `preset://busybox` downloads (pinned official minirootfs). Structured image references, content-addressed import, digest-verified remote fetch, and offline-safe catalog execution are in place. Native Linux process isolation and the QEMU VM backend remain experimental until full privileged validation is complete.
 
 [![CI](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml)
 [![Security audit](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml)
@@ -12,7 +12,7 @@ Containust is a daemon-less container runtime and declarative composition tool w
 
 - **No daemon:** the CLI talks directly to the selected backend and persists state as files.
 - **Declarative composition:** `.ctst` files describe components and `CONNECT` dependencies.
-- **Local-first images:** `file://` directories and `tar://` archives work without a registry.
+- **Local-first images:** `file://` directories, `tar://` archives, and curated `preset://alpine` / `preset://busybox` downloads (~4&nbsp;MiB official rootfs) work without Docker Hub.
 - **Rust SDK:** the parser, graph resolver, runtime types, and event APIs are reusable from Rust.
 - **Platform-aware runtime:** native Linux isolation is selected on Linux; QEMU is used on macOS and Windows.
 
@@ -24,6 +24,7 @@ Containust is a daemon-less container runtime and declarative composition tool w
 | Dependency graph and auto-wiring | Working | Topological ordering, cycle detection, and connection environment variables are covered. |
 | Local image sources | Working | Existing `file://` directories and `tar://` archives can be resolved and extracted. |
 | Content-addressed image import | Working | `ctst build` deterministically imports directories/archives into `layers/<sha256>/`, records supply-chain metadata, and supports `--dry-run`. |
+| Curated presets | Working | `preset://alpine` / `preset://busybox` (and version pins like `alpine:3.21`) download official minirootfs archives with pinned SHA-256; `ctst images --presets` lists them. Node/PHP/etc. need future OCI Hub pull. |
 | Offline / air-gapped execution | Working | Imported images run from `image://name@sha256:<digest>` with `--offline`; copying `images/` + `layers/` between machines is sufficient. Remote fetch is opt-in, digest-pinned, size-capped, and retried. |
 | Image hashing and catalog | Working | SHA-256 validation; the JSON catalog is lock-guarded, atomically written, deduplicated, and layer-validated. |
 | State and logs | Working | Schema-versioned JSON state uses atomic writes and cross-process locks; per-container logs persist until removal. |

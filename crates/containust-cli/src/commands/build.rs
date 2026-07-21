@@ -4,6 +4,7 @@ use std::path::Path;
 
 use clap::Args;
 use containust_image::import::{ImportRequest, import_image};
+use containust_image::preset::resolve_preset;
 use containust_image::reference::{ImageReference, ImageScheme};
 
 /// Arguments for the `build` command.
@@ -95,10 +96,18 @@ fn build_component(
         return Ok(false);
     }
     if context.dry_run {
-        println!(
-            "    Would import as '{name}' (cache key {})",
-            reference.cache_key()
-        );
+        if reference.scheme() == ImageScheme::Preset {
+            let preset = resolve_preset(reference).map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!(
+                "    Would download {} ({}) → sha256:{}",
+                preset.url, preset.description, preset.sha256
+            );
+        } else {
+            println!(
+                "    Would import as '{name}' (cache key {})",
+                reference.cache_key()
+            );
+        }
         return Ok(false);
     }
     let request = ImportRequest::new(name, context.offline);
