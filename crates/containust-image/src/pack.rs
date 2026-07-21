@@ -8,6 +8,9 @@
 use std::path::{Path, PathBuf};
 
 use containust_common::error::{ContainustError, Result};
+use containust_common::types::Sha256Hash;
+
+use crate::hash::HashingWriter;
 
 /// Packs `source` into a deterministic tar archive at `destination`.
 ///
@@ -16,28 +19,42 @@ use containust_common::error::{ContainustError, Result};
 /// Returns an error if the source cannot be read or the archive
 /// cannot be written.
 pub fn pack_directory(source: &Path, destination: &Path) -> Result<()> {
+    let _ = pack_directory_hashed(source, destination)?;
+    Ok(())
+}
+
+/// Packs `source` into a deterministic tar archive at `destination`,
+/// returning the archive's SHA-256 digest computed in the same write
+/// pass (no re-read of the produced file).
+///
+/// # Errors
+///
+/// Returns an error if the source cannot be read or the archive
+/// cannot be written.
+pub fn pack_directory_hashed(source: &Path, destination: &Path) -> Result<Sha256Hash> {
     let file = std::fs::File::create(destination).map_err(|source_err| ContainustError::Io {
         path: destination.to_path_buf(),
         source: source_err,
     })?;
-    let mut builder = tar::Builder::new(file);
+    let mut builder = tar::Builder::new(HashingWriter::new(file));
     builder.follow_symlinks(false);
 
     for relative in collect_sorted_entries(source)? {
         append_entry(&mut builder, source, &relative)?;
     }
 
-    let file = builder
+    let writer = builder
         .into_inner()
         .map_err(|source_err| ContainustError::Io {
             path: destination.to_path_buf(),
             source: source_err,
         })?;
+    let (file, digest) = writer.finish()?;
     file.sync_all().map_err(|source_err| ContainustError::Io {
         path: destination.to_path_buf(),
         source: source_err,
     })?;
-    Ok(())
+    Ok(digest)
 }
 
 /// Collects all entries under `root` as sorted relative paths.
@@ -72,8 +89,8 @@ fn collect_sorted_entries(root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Appends one normalized entry to the archive.
-fn append_entry(
-    builder: &mut tar::Builder<std::fs::File>,
+fn append_entry<W: std::io::Write>(
+    builder: &mut tar::Builder<W>,
     root: &Path,
     relative: &Path,
 ) -> Result<()> {
@@ -168,6 +185,19 @@ mod tests {
         let original_bytes = std::fs::read(&original).expect("read original");
         let mutated_bytes = std::fs::read(&mutated).expect("read mutated");
         assert_ne!(original_bytes, mutated_bytes);
+    }
+
+    #[test]
+    fn pack_hashed_digest_matches_written_archive() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rootfs = dir.path().join("rootfs");
+        build_fixture(&rootfs);
+        let archive_path = dir.path().join("image.tar");
+
+        let digest = pack_directory_hashed(&rootfs, &archive_path).expect("pack");
+
+        let reread = crate::hash::hash_file(&archive_path).expect("hash");
+        assert_eq!(digest.as_hex(), reread.as_hex());
     }
 
     #[test]

@@ -73,13 +73,24 @@ pub fn fetch_remote(
         });
     };
 
-    download_with_retries(&url, policy, destination)?;
-    verify_download(destination, expected)?;
+    let actual = download_with_retries(&url, policy, destination)?;
+    if actual.as_hex() != expected.as_hex() {
+        let _ = std::fs::remove_file(destination);
+        return Err(ContainustError::HashMismatch {
+            resource: destination.display().to_string(),
+            expected: expected.as_hex().to_string(),
+            actual: actual.as_hex().to_string(),
+        });
+    }
     tracing::info!(url = %url, digest = %expected, "remote image fetched and verified");
     Ok(expected.clone())
 }
 
-fn download_with_retries(url: &str, policy: &FetchPolicy, destination: &Path) -> Result<()> {
+fn download_with_retries(
+    url: &str,
+    policy: &FetchPolicy,
+    destination: &Path,
+) -> Result<Sha256Hash> {
     let client = build_client(policy).map_err(|error| ContainustError::Network {
         url: url.to_string(),
         message: format!("failed to construct HTTP client: {error}"),
@@ -87,7 +98,7 @@ fn download_with_retries(url: &str, policy: &FetchPolicy, destination: &Path) ->
     let mut last_error = String::from("no attempt was made");
     for attempt in 0..=policy.retries {
         match download_once(&client, url, policy, destination) {
-            Ok(()) => return Ok(()),
+            Ok(digest) => return Ok(digest),
             Err(error) => {
                 tracing::warn!(url, attempt, %error, "remote fetch attempt failed");
                 last_error = error.to_string();
@@ -115,7 +126,7 @@ fn download_once(
     url: &str,
     policy: &FetchPolicy,
     destination: &Path,
-) -> Result<()> {
+) -> Result<Sha256Hash> {
     let network_error = |message: String| ContainustError::Network {
         url: url.to_string(),
         message,
@@ -140,16 +151,20 @@ fn download_once(
     copy_capped(response, destination, policy.max_bytes, url)
 }
 
+/// Streams the response body to `destination` under the size cap while
+/// hashing it in the same pass, so verification needs no second read.
 fn copy_capped(
     response: reqwest::blocking::Response,
     destination: &Path,
     max_bytes: u64,
     url: &str,
-) -> Result<()> {
-    let mut file = std::fs::File::create(destination).map_err(|source| ContainustError::Io {
+) -> Result<Sha256Hash> {
+    let io_error = |source| ContainustError::Io {
         path: destination.to_path_buf(),
         source,
-    })?;
+    };
+    let file = std::fs::File::create(destination).map_err(io_error)?;
+    let mut writer = crate::hash::HashingWriter::new(file);
     let mut reader = response.take(max_bytes.saturating_add(1));
     let mut written: u64 = 0;
     let mut buffer = vec![0_u8; 64 * 1024];
@@ -171,25 +186,11 @@ fn copy_capped(
                 message: format!("payload exceeds the {max_bytes} byte limit"),
             });
         }
-        file.write_all(&buffer[..read])
-            .map_err(|source| ContainustError::Io {
-                path: destination.to_path_buf(),
-                source,
-            })?;
+        writer.write_all(&buffer[..read]).map_err(io_error)?;
     }
-    file.sync_all().map_err(|source| ContainustError::Io {
-        path: destination.to_path_buf(),
-        source,
-    })?;
-    Ok(())
-}
-
-fn verify_download(destination: &Path, expected: &Sha256Hash) -> Result<()> {
-    if let Err(error) = crate::hash::validate_hash(destination, expected) {
-        let _ = std::fs::remove_file(destination);
-        return Err(error);
-    }
-    Ok(())
+    let (file, digest) = writer.finish()?;
+    file.sync_all().map_err(io_error)?;
+    Ok(digest)
 }
 
 #[cfg(test)]

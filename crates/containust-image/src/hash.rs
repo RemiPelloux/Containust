@@ -1,12 +1,59 @@
-//! SHA-256 content verification.
+//! SHA-256 content verification and single-pass hashing I/O.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
 use containust_common::error::{ContainustError, Result};
 use containust_common::types::Sha256Hash;
+
+/// Chunk size for streaming reads; large enough to keep syscall
+/// overhead negligible on multi-hundred-MiB archives.
+const IO_BUFFER_BYTES: usize = 128 * 1024;
+
+/// A writer that computes the SHA-256 digest of everything written
+/// through it, so callers hash content in the same pass that produces
+/// the file instead of re-reading it afterwards.
+#[derive(Debug)]
+pub struct HashingWriter<W: Write> {
+    inner: W,
+    hasher: Sha256,
+}
+
+impl<W: Write> HashingWriter<W> {
+    /// Wraps `inner` so all written bytes are hashed as they pass through.
+    pub fn new(inner: W) -> Self {
+        Self {
+            inner,
+            hasher: Sha256::new(),
+        }
+    }
+
+    /// Consumes the writer, returning the inner writer and the digest
+    /// of every byte written.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the digest cannot be encoded (never expected
+    /// for a well-formed SHA-256 output).
+    pub fn finish(self) -> Result<(W, Sha256Hash)> {
+        let digest = Sha256Hash::from_hex(format!("{:x}", self.hasher.finalize()))?;
+        Ok((self.inner, digest))
+    }
+}
+
+impl<W: Write> Write for HashingWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let written = self.inner.write(buf)?;
+        self.hasher.update(&buf[..written]);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
 
 /// Computes the SHA-256 hash of a file.
 ///
@@ -19,7 +66,7 @@ pub fn hash_file(path: &Path) -> Result<Sha256Hash> {
         source: e,
     })?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 8192];
+    let mut buffer = vec![0_u8; IO_BUFFER_BYTES];
     loop {
         let n = file.read(&mut buffer).map_err(|e| ContainustError::Io {
             path: path.to_path_buf(),
@@ -101,5 +148,17 @@ mod tests {
     fn hash_file_nonexistent_returns_error() {
         let result = hash_file(Path::new("/nonexistent/path/file.txt"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn hashing_writer_digest_matches_hash_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("streamed.bin");
+        let file = std::fs::File::create(&path).expect("create");
+        let mut writer = HashingWriter::new(file);
+        writer.write_all(b"hello world").expect("write");
+        let (_, streamed) = writer.finish().expect("finish");
+        let reread = hash_file(&path).expect("hash_file");
+        assert_eq!(streamed.as_hex(), reread.as_hex());
     }
 }

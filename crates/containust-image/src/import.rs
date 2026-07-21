@@ -7,13 +7,13 @@
 //! the catalog without touching the original source or the network.
 
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use containust_common::error::{ContainustError, Result};
-use containust_common::types::ImageId;
+use containust_common::types::{ImageId, Sha256Hash};
 
 use crate::fetch::{FetchPolicy, fetch_remote};
-use crate::pack::pack_directory;
+use crate::pack::pack_directory_hashed;
 use crate::preset::{preset_fetch_reference, resolve_preset};
 use crate::reference::{ImageReference, ImageScheme};
 use crate::registry::{ImageCatalog, ImageEntry};
@@ -66,11 +66,11 @@ pub fn import_image(
     let store = StorageBackend::open(data_dir.to_path_buf())?;
     let staged = stage_source(&store, reference, request)?;
 
-    let digest = crate::hash::hash_file(&staged)?;
+    let digest = staged.digest().clone();
     if let Some(pinned) = reference.digest()
         && pinned.as_hex() != digest.as_hex()
     {
-        let _ = std::fs::remove_file(&staged);
+        staged.discard();
         return Err(ContainustError::HashMismatch {
             resource: reference.to_string(),
             expected: pinned.as_hex().to_string(),
@@ -78,8 +78,14 @@ pub fn import_image(
         });
     }
 
-    let size_bytes = file_size(&staged)?;
-    store.commit_layer(&staged, digest.as_hex())?;
+    let size_bytes = match staged {
+        StagedLayer::Staged { ref path, .. } => {
+            let size = file_size(path)?;
+            store.commit_layer(path, digest.as_hex())?;
+            size
+        }
+        StagedLayer::Cached { .. } => file_size(&store.layer_blob_path(digest.as_hex()))?,
+    };
 
     let entry = ImageEntry {
         id: ImageId::new(digest.as_hex()),
@@ -143,11 +149,37 @@ fn verify_pinned_digest(reference: &ImageReference, entry: &ImageEntry) -> Resul
     })
 }
 
+/// A layer produced by staging: either a fresh candidate blob whose
+/// digest was computed while it was written (single pass), or a
+/// verified blob already present in the content-addressed store.
+#[derive(Debug)]
+enum StagedLayer {
+    /// A candidate blob awaiting commit into the store.
+    Staged { path: PathBuf, digest: Sha256Hash },
+    /// The layer already exists in the store; no copy is needed.
+    Cached { digest: Sha256Hash },
+}
+
+impl StagedLayer {
+    const fn digest(&self) -> &Sha256Hash {
+        match self {
+            Self::Staged { digest, .. } | Self::Cached { digest } => digest,
+        }
+    }
+
+    /// Removes the staged file, if any, after a failed import.
+    fn discard(&self) {
+        if let Self::Staged { path, .. } = self {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 fn stage_source(
     store: &StorageBackend,
     reference: &ImageReference,
     request: &ImportRequest,
-) -> Result<std::path::PathBuf> {
+) -> Result<StagedLayer> {
     if request.offline && reference.is_remote() && reference.scheme() != ImageScheme::Preset {
         return Err(ContainustError::Network {
             url: reference.canonical_uri(),
@@ -155,22 +187,26 @@ fn stage_source(
         });
     }
     let staged = store.staging_path();
-    match reference.scheme() {
+    let digest = match reference.scheme() {
         ImageScheme::File => {
             let source = require_existing(reference.location(), "image directory")?;
-            pack_directory(&source, &staged)?;
+            pack_directory_hashed(&source, &staged)?
         }
         ImageScheme::Tar => {
+            // `fs::copy` clones on reflink filesystems (APFS, btrfs) and
+            // uses in-kernel copy elsewhere; hashing the staged copy is
+            // then the only userspace pass over the bytes.
             let source = require_existing(reference.location(), "tar archive")?;
             let _ = std::fs::copy(&source, &staged).map_err(|e| ContainustError::Io {
                 path: source.clone(),
                 source: e,
             })?;
+            crate::hash::hash_file(&staged)?
         }
         ImageScheme::Https | ImageScheme::Http => {
-            let _ = fetch_remote(reference, &request.fetch_policy, &staged)?;
+            fetch_remote(reference, &request.fetch_policy, &staged)?
         }
-        ImageScheme::Preset => stage_preset(store, reference, request, &staged)?,
+        ImageScheme::Preset => return stage_preset(store, reference, request, &staged),
         ImageScheme::Catalog => {
             return Err(ContainustError::Config {
                 message: format!(
@@ -179,32 +215,34 @@ fn stage_source(
                 ),
             });
         }
-    }
-    Ok(staged)
+    };
+    Ok(StagedLayer::Staged {
+        path: staged,
+        digest,
+    })
 }
 
 /// Stages a curated preset from the local layer cache, or downloads it.
+///
+/// A cached blob is integrity-checked against the curated digest and
+/// then reused in place — no staging copy, no re-import of bytes.
 fn stage_preset(
     store: &StorageBackend,
     reference: &ImageReference,
     request: &ImportRequest,
     staged: &Path,
-) -> Result<()> {
+) -> Result<StagedLayer> {
     let preset = resolve_preset(reference)?;
+    let curated = Sha256Hash::from_hex(preset.sha256)?;
     if store.has_layer(preset.sha256) {
         let blob = store.layer_blob_path(preset.sha256);
-        crate::hash::validate_hash(
-            &blob,
-            &containust_common::types::Sha256Hash::from_hex(preset.sha256)?,
-        )?;
-        let _ = std::fs::copy(&blob, staged)
-            .map_err(|source| ContainustError::Io { path: blob, source })?;
+        crate::hash::validate_hash(&blob, &curated)?;
         tracing::info!(
             name = preset.name,
             version = preset.version,
             "preset satisfied from local layer cache"
         );
-        return Ok(());
+        return Ok(StagedLayer::Cached { digest: curated });
     }
     if request.offline {
         return Err(ContainustError::Network {
@@ -219,14 +257,17 @@ fn stage_preset(
     let fetch_ref = preset_fetch_reference(&preset)?;
     let mut policy = request.fetch_policy.clone();
     policy.offline = false;
-    let _ = fetch_remote(&fetch_ref, &policy, staged)?;
+    let digest = fetch_remote(&fetch_ref, &policy, staged)?;
     tracing::info!(
         name = preset.name,
         version = preset.version,
         digest = preset.sha256,
         "preset downloaded and verified"
     );
-    Ok(())
+    Ok(StagedLayer::Staged {
+        path: staged.to_path_buf(),
+        digest,
+    })
 }
 
 fn require_existing(location: &str, kind: &'static str) -> Result<std::path::PathBuf> {
@@ -320,7 +361,7 @@ mod tests {
         let rootfs = dir.path().join("rootfs");
         build_rootfs(&rootfs);
         let archive = dir.path().join("app.tar");
-        pack_directory(&rootfs, &archive).expect("pack");
+        crate::pack::pack_directory(&rootfs, &archive).expect("pack");
         let data_dir = dir.path().join("data");
         let reference =
             ImageReference::parse(&format!("tar://{}", archive.display())).expect("parse");

@@ -4,7 +4,7 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at alpha `0.4.0` after completion of Sprint 3.
+Containust is at alpha `0.4.2` after completion of Sprint 3 and its follow-up passes.
 
 - The deterministic macOS workspace suite passes 470 tests with 23 privileged tests intentionally ignored. The Rust 1.88 Linux suite passes 480 with 26 privileged tests ignored.
 - Formatting and strict Clippy pass locally when invoked with the installed toolchain binaries.
@@ -17,6 +17,7 @@ Containust is at alpha `0.4.0` after completion of Sprint 3.
 - Sprint 2 adds project-scoped storage, atomic schema-versioned state, cross-process locking, lifecycle reconciliation, and explicit `stop`/`rm` cleanup semantics.
 - Sprint 3 adds structured image references, deterministic content-addressed import, an opt-in digest-verified remote fetcher, a locked/atomic image catalog with supply-chain metadata, a real `ctst build` with `--dry-run`, and offline-safe `image://` execution. The full exit gate (online import, air-gapped copy, `--offline` run) passes as a privileged Linux fixture.
 - Post–Sprint 3: curated `preset://alpine` / `preset://busybox` downloads (pinned Alpine minirootfs) with `ctst images --presets`; Docker Hub names like `node`/`php` return actionable hints until OCI pull lands.
+- Post–Sprint 3 performance pass (`0.4.2`): the import pipeline hashes in a single pass (directory packing, remote downloads, and staged archives are digested while written instead of re-read), cached presets are reused in place without a staging copy so repeated `preset://` deploys cost one verification read, and `crates/containust-image/tests/perf_regression.rs` gates 32 MiB imports and staging-file hygiene. Measured on a 256 MiB image: cold `tar://` import 0.87 s → 0.50 s, warm re-import 0.61 s → 0.50 s, `file://` import 0.72 s → 0.65 s.
 
 ## Release train
 
@@ -193,7 +194,7 @@ These are intentionally after correctness and release gates:
 - [ ] Volume drivers, snapshots, backup/restore, and encrypted local storage.
 - [ ] SDK async lifecycle API, typed events, backend injection, and API stability policy.
 - [ ] Remote execution or orchestration only after local security and lifecycle semantics are stable.
-- [ ] Performance work: lazy layers, parallel extraction, startup caching, and syscall overhead benchmarks.
+- [~] Performance work: single-pass import hashing, in-place preset cache reuse, and import perf regression gates shipped in `0.4.2`; lazy layers, parallel extraction, startup caching, and syscall overhead benchmarks remain for Sprint 7.
 
 ## Cross-cutting definition of done
 

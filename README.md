@@ -2,7 +2,7 @@
 
 Containust is a daemon-less container runtime and declarative composition tool written in Rust. It is designed for local, sovereign, and air-gapped workflows where a long-running privileged daemon is undesirable.
 
-> **Project status: alpha (`0.4.1`).** Sprint 3 image pipeline plus curated `preset://alpine` / `preset://busybox` downloads (pinned official minirootfs). Structured image references, content-addressed import, digest-verified remote fetch, and offline-safe catalog execution are in place. Native Linux process isolation and the QEMU VM backend remain experimental until full privileged validation is complete.
+> **Project status: alpha (`0.4.2`).** Sprint 3 image pipeline plus curated `preset://alpine` / `preset://busybox` downloads (pinned official minirootfs), followed by a performance pass: single-pass import hashing, in-place preset cache reuse, and import performance regression gates. Structured image references, content-addressed import, digest-verified remote fetch, and offline-safe catalog execution are in place. Native Linux process isolation and the QEMU VM backend remain experimental until full privileged validation is complete.
 
 [![CI](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml)
 [![Security audit](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml)
