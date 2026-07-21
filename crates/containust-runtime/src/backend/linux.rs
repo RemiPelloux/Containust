@@ -428,6 +428,8 @@ const fn terminate_process(_pid: u32, _force: bool) {}
 /// Supported sources:
 /// - `file://<path>` — bind-mounts or copies the directory as rootfs
 /// - `tar://<path>` — extracts the archive into the rootfs directory
+/// - `image://<name>[@sha256:<hex>]` — materializes an imported image
+///   from the project's content-addressed catalog (offline-safe)
 ///
 /// # Errors
 ///
@@ -465,6 +467,10 @@ fn prepare_rootfs(
         }
         extract_tar(&archive, &rootfs_dir)?;
         tracing::info!(rootfs = %rootfs_dir.display(), "rootfs extracted from tar:// source");
+    } else if image_uri.starts_with("image://") {
+        let reference = containust_image::reference::ImageReference::parse(image_uri)?;
+        containust_image::import::materialize_image(data_dir, &reference, &rootfs_dir)?;
+        tracing::info!(rootfs = %rootfs_dir.display(), "rootfs materialized from image catalog");
     } else {
         return Err(ContainustError::Config {
             message: format!("unsupported image source for Linux native: {image_uri}"),

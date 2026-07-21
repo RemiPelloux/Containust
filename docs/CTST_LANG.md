@@ -313,7 +313,7 @@ COMPONENT <name> [FROM <template>] {
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `image` | uri | *required* | Source image URI (`file://`, `tar://`, `https://`) |
+| `image` | uri | *required* | Source image URI (`file://`, `tar://`, `image://`, `https://`). An optional `@sha256:<hex>` suffix pins the expected content digest. `image://<name>` runs an image previously imported with `ctst build` from the project's content-addressed catalog and works fully offline. |
 | `port` | integer | — | Single exposed port |
 | `ports` | list of integers | `[]` | Multiple exposed ports |
 | `memory` | size | — | Memory limit (e.g., `"256MiB"`) |

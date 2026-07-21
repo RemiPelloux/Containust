@@ -4,9 +4,9 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at alpha `0.3.0` after completion of Sprint 2.
+Containust is at alpha `0.4.0` after completion of Sprint 3.
 
-- The deterministic macOS workspace suite passes 414 tests from 437 collected tests; 23 privileged tests are intentionally ignored. The Rust 1.88 Linux suite passes 431 from 456 with 25 privileged tests ignored.
+- The deterministic macOS workspace suite passes 470 tests with 23 privileged tests intentionally ignored. The Rust 1.88 Linux suite passes 480 with 26 privileged tests ignored.
 - Formatting and strict Clippy pass locally when invoked with the installed toolchain binaries.
 - The workspace compiles and its deterministic tests pass on Linux with the declared Rust 1.88 minimum toolchain.
 - `cargo audit` and `cargo deny check` pass for the locked dependency graph.
@@ -15,6 +15,7 @@ Containust is at alpha `0.3.0` after completion of Sprint 2.
 - A privileged Docker Linux run passes 20 of 25 privileged fixtures; five cgroup/user-namespace fixtures remain blocked by Docker Desktop host delegation and still require a supported Linux host.
 - Sprint 1 wires `--offline`, `CONTAINUST_OFFLINE`, and `--state-file` through the CLI and engine; actual privileged-host validation and port forwarding remain deferred.
 - Sprint 2 adds project-scoped storage, atomic schema-versioned state, cross-process locking, lifecycle reconciliation, and explicit `stop`/`rm` cleanup semantics.
+- Sprint 3 adds structured image references, deterministic content-addressed import, an opt-in digest-verified remote fetcher, a locked/atomic image catalog with supply-chain metadata, a real `ctst build` with `--dry-run`, and offline-safe `image://` execution. The full exit gate (online import, air-gapped copy, `--offline` run) passes as a privileged Linux fixture.
 
 ## Release train
 
@@ -80,21 +81,29 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Exit gate: complete for deterministic coverage.** Two independent project fixtures create and clean up without sharing state, logs, rootfs paths, or cgroups. Legacy migration, interrupted writes, thread contention, and real subprocess contention are covered. Privileged native-Linux behavior remains part of the Sprint 4 host-validation gate.
 
-## Next sprint: Image pipeline and offline operation (Sprint 3)
+## Sprint 3: Image pipeline and offline operation
 
 **Goal:** make local and remote image handling explicit, reproducible, and safe for air-gapped use.
 
-- [ ] **I3.1 Source model.** Define image references with scheme, digest, transport, and local cache key instead of passing unstructured strings through the runtime.
-- [ ] **I3.2 Local import.** Implement deterministic import of directory and tar/tar.gz sources into content-addressed layers.
-- [ ] **I3.3 Remote fetch.** Add an explicit opt-in downloader with timeouts, redirect policy, size limits, retries, and SHA-256 verification.
-- [ ] **I3.4 Offline enforcement.** Reject HTTP(S), remote imports, and uncached layers before opening a network connection when offline mode is enabled.
-- [ ] **I3.5 Catalog integrity.** Deduplicate registrations, validate layer references, and add catalog locking/atomic writes.
-- [ ] **I3.6 Build behavior.** Change `ctst build` from source inspection to a real build/import operation, with a dry-run mode for planning only.
-- [ ] **I3.7 Supply-chain metadata.** Store source URL, digest, creation time, and tool version for each image entry.
+- [x] **I3.1 Source model.** `ImageReference` carries scheme (`file`, `tar`, `image`, `https`, `http`), location, optional pinned `@sha256:` digest, and a deterministic cache key. Parsing is pure (no I/O).
+- [x] **I3.2 Local import.** Directories are packed into a canonical tar (sorted entries, zeroed timestamps, normalized ownership) and archives are copied verbatim; both are stored content-addressed under `layers/<sha256>/`. Importing the same source twice yields the same digest and reuses the layer.
+- [x] **I3.3 Remote fetch.** `FetchPolicy` enforces a total timeout, a bounded redirect policy, a streaming size cap, and bounded retries. Remote references must pin a digest; downloads that fail verification are deleted.
+- [x] **I3.4 Offline enforcement.** Offline mode rejects remote references in the compose validator, the import pipeline, and the fetcher itself — all before any connection is opened. Catalog (`image://`) references remain valid offline.
+- [x] **I3.5 Catalog integrity.** Registrations are deduplicated by name, every referenced layer must exist in the store, and the catalog JSON is guarded by a shared/exclusive file lock with atomic temp-file/rename writes.
+- [x] **I3.6 Build behavior.** `ctst build` now performs the real import into the project catalog and prints the resulting `image://name@sha256:` reference; `--dry-run` plans without writing.
+- [x] **I3.7 Supply-chain metadata.** Each catalog entry records the source URI (with digest suffix), content digest, ISO-8601 creation time, and importing tool version. Legacy catalogs without these fields still load.
 
-**Exit gate:** an image can be imported online once, verified by digest, exported or copied into an air-gapped environment, and run with `--offline` without network access.
+**Exit gate: passed.** An image imported online once is digest-verified, and after copying only `.containust/images/` and `.containust/layers/` into an air-gapped project (original source deleted), `ctst --offline build`/`plan` succeed and a privileged Linux fixture runs the container from `image://` with `--offline` and no network access.
 
-## Sprint 4: Security hardening
+### Sprint 3 definition of done (evidence)
+
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo deny check` pass.
+- Deterministic suites: 470 passed / 0 failed on macOS, 480 passed / 0 failed on Linux (Rust 1.88, Docker).
+- Exit-gate integration tests live in `crates/containust-cli/tests/sprint3_gate.rs`; the privileged `gate_offline_run_starts_container_from_catalog` fixture passed on a privileged Linux (aarch64) container with busybox-static, exercising import → digest verify → air-gap copy → `ctst --offline run` → `ps` shows `running` → forced stop.
+- CLI reference (`docs/CLI_REFERENCE.md`) and `.ctst` language reference (`docs/CTST_LANG.md`) document the new build pipeline and the `image://` scheme.
+- Backward compatibility: schema-less legacy catalog entries deserialize with defaulted metadata fields.
+
+## Next sprint: Security hardening (Sprint 4)
 
 **Goal:** validate and enforce the security model rather than only exposing security-shaped options.
 

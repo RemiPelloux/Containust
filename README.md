@@ -2,7 +2,7 @@
 
 Containust is a daemon-less container runtime and declarative composition tool written in Rust. It is designed for local, sovereign, and air-gapped workflows where a long-running privileged daemon is undesirable.
 
-> **Project status: alpha (`0.3.0`).** Sprint 2 lifecycle durability is implemented: project-scoped storage, atomic/versioned state, cross-process locking, reconciliation, and explicit stop/remove semantics. Native Linux process isolation and the QEMU VM backend remain experimental until privileged, platform-specific validation is complete.
+> **Project status: alpha (`0.4.0`).** Sprint 3 image pipeline is implemented: structured image references, deterministic content-addressed import, digest-verified opt-in remote fetch, a locked atomic catalog with supply-chain metadata, and offline-safe `image://` execution validated end-to-end on a privileged Linux fixture. Native Linux process isolation and the QEMU VM backend remain experimental until full privileged, platform-specific validation is complete.
 
 [![CI](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml)
 [![Security audit](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml)
@@ -23,7 +23,9 @@ Containust is a daemon-less container runtime and declarative composition tool w
 | `.ctst` lexer, parser, and validation | Working | Syntax, properties, imports, health checks, and invalid-input paths are covered. |
 | Dependency graph and auto-wiring | Working | Topological ordering, cycle detection, and connection environment variables are covered. |
 | Local image sources | Working | Existing `file://` directories and `tar://` archives can be resolved and extracted. |
-| Image hashing and catalog | Working | SHA-256 validation and JSON catalog CRUD are covered. |
+| Content-addressed image import | Working | `ctst build` deterministically imports directories/archives into `layers/<sha256>/`, records supply-chain metadata, and supports `--dry-run`. |
+| Offline / air-gapped execution | Working | Imported images run from `image://name@sha256:<digest>` with `--offline`; copying `images/` + `layers/` between machines is sufficient. Remote fetch is opt-in, digest-pinned, size-capped, and retried. |
+| Image hashing and catalog | Working | SHA-256 validation; the JSON catalog is lock-guarded, atomically written, deduplicated, and layer-validated. |
 | State and logs | Working | Schema-versioned JSON state uses atomic writes and cross-process locks; per-container logs persist until removal. |
 | Project isolation and reconciliation | Working | Each composition uses project-local state/data; `ctst ps` repairs stale processes and removes project-owned orphan runtime resources. |
 | CLI parsing and Compose conversion | Working | `ctst` subcommands and the supported Compose subset have tests. |
@@ -31,7 +33,7 @@ Containust is a daemon-less container runtime and declarative composition tool w
 | QEMU backend | Experimental | Requires QEMU and network access for first-run Alpine assets; no cross-platform runtime test runs in this repository. |
 | eBPF observability | Experimental | The API and feature-gated code compile; kernel attachment is not covered by the default test run. |
 
-The default macOS test run passes **414 tests** from **437 collected tests**. **23 tests are intentionally ignored** because they require root privileges or a host cgroups/mount configuration; additional feature/platform-gated tests are listed only when their target is enabled. The suite includes a 2,000-component graph regression test to protect planning performance, plus thread and subprocess contention tests for state durability.
+The default macOS test run passes **470 tests** with **23 tests intentionally ignored** because they require root privileges or a host cgroups/mount configuration; the Linux (Rust 1.88) run passes **480 tests** with 26 ignored. Additional feature/platform-gated tests are listed only when their target is enabled. The suite includes a 2,000-component graph regression test to protect planning performance, plus thread and subprocess contention tests for state durability.
 
 ## Platform requirements
 

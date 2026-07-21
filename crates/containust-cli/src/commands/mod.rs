@@ -203,7 +203,19 @@ mod tests {
     fn cli_build_subcommand_parses_with_custom_file() {
         let cli = Cli::try_parse_from(&["ctst", "build", "custom.ctst"]).expect("should parse");
         match cli.command {
-            Command::Build(args) => assert_eq!(args.file, "custom.ctst"),
+            Command::Build(args) => {
+                assert_eq!(args.file, "custom.ctst");
+                assert!(!args.dry_run);
+            }
+            other => panic!("expected Build, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_build_subcommand_parses_dry_run_flag() {
+        let cli = Cli::try_parse_from(&["ctst", "build", "--dry-run"]).expect("should parse");
+        match cli.command {
+            Command::Build(args) => assert!(args.dry_run),
             other => panic!("expected Build, got {other:?}"),
         }
     }

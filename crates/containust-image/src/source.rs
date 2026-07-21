@@ -1,11 +1,15 @@
 //! Image source protocol handlers.
 //!
-//! Supports `file://` (local directory), `tar://` (archive), and
-//! remote sources with SHA-256 validation. Local-first by design.
+//! Resolves image URIs into filesystem-checked [`ImageSource`] values.
+//! Supports `file://` (local directory), `tar://` (archive), `image://`
+//! (local catalog), and remote sources. Local-first by design; parsing
+//! itself is delegated to [`crate::reference::ImageReference`].
 
 use std::path::PathBuf;
 
 use containust_common::error::{ContainustError, Result};
+
+use crate::reference::{ImageReference, ImageScheme};
 
 /// Supported image source protocols.
 #[derive(Debug, Clone)]
@@ -14,6 +18,13 @@ pub enum ImageSource {
     File(PathBuf),
     /// Local tar archive (`tar:///path/to/image.tar`).
     Tar(PathBuf),
+    /// Image imported into the local catalog (`image://name`).
+    Catalog {
+        /// Catalog name of the image.
+        name: String,
+        /// Pinned SHA-256 digest, if any.
+        sha256: Option<String>,
+    },
     /// Remote HTTP(S) source (requires explicit opt-in).
     Remote {
         /// URL of the remote image.
@@ -25,41 +36,46 @@ pub enum ImageSource {
 
 /// Resolves an image source URI into an `ImageSource`.
 ///
+/// Local `file://` and `tar://` paths are checked for existence.
+///
 /// # Errors
 ///
-/// Returns an error if the URI scheme is unsupported or the path is invalid.
+/// Returns an error if the URI scheme is unsupported or a local path
+/// does not exist.
 pub fn resolve_source(uri: &str) -> Result<ImageSource> {
-    if let Some(path_str) = uri.strip_prefix("file://") {
-        let path = PathBuf::from(path_str);
-        if !path.exists() {
-            return Err(ContainustError::NotFound {
-                kind: "image directory",
-                id: path_str.to_string(),
-            });
+    let reference = ImageReference::parse(uri)?;
+    let digest_hex = reference.digest().map(|digest| digest.as_hex().to_string());
+    match reference.scheme() {
+        ImageScheme::File => {
+            let path = existing_path(reference.location(), "image directory")?;
+            tracing::info!(path = %path.display(), "resolved file:// source");
+            Ok(ImageSource::File(path))
         }
-        tracing::info!(path = %path.display(), "resolved file:// source");
-        Ok(ImageSource::File(path))
-    } else if let Some(path_str) = uri.strip_prefix("tar://") {
-        let path = PathBuf::from(path_str);
-        if !path.exists() {
-            return Err(ContainustError::NotFound {
-                kind: "tar archive",
-                id: path_str.to_string(),
-            });
+        ImageScheme::Tar => {
+            let path = existing_path(reference.location(), "tar archive")?;
+            tracing::info!(path = %path.display(), "resolved tar:// source");
+            Ok(ImageSource::Tar(path))
         }
-        tracing::info!(path = %path.display(), "resolved tar:// source");
-        Ok(ImageSource::Tar(path))
-    } else if uri.starts_with("https://") || uri.starts_with("http://") {
-        tracing::info!(url = uri, "resolved remote source");
-        Ok(ImageSource::Remote {
-            url: uri.to_string(),
-            sha256: String::new(),
-        })
-    } else {
-        Err(ContainustError::Config {
-            message: format!("unsupported image source URI scheme: {uri}"),
-        })
+        ImageScheme::Catalog => Ok(ImageSource::Catalog {
+            name: reference.location().to_string(),
+            sha256: digest_hex,
+        }),
+        ImageScheme::Https | ImageScheme::Http => Ok(ImageSource::Remote {
+            url: reference.canonical_uri(),
+            sha256: digest_hex.unwrap_or_default(),
+        }),
     }
+}
+
+fn existing_path(location: &str, kind: &'static str) -> Result<PathBuf> {
+    let path = PathBuf::from(location);
+    if !path.exists() {
+        return Err(ContainustError::NotFound {
+            kind,
+            id: location.to_string(),
+        });
+    }
+    Ok(path)
 }
 
 #[cfg(test)]
@@ -85,9 +101,32 @@ mod tests {
     }
 
     #[test]
+    fn resolve_catalog_source_returns_name_and_digest() {
+        let digest = "a".repeat(64);
+        let source =
+            resolve_source(&format!("image://web@sha256:{digest}")).expect("resolve failed");
+        let ImageSource::Catalog { name, sha256 } = source else {
+            unreachable!("expected Catalog source");
+        };
+        assert_eq!(name, "web");
+        assert_eq!(sha256, Some(digest));
+    }
+
+    #[test]
     fn resolve_https_source_returns_remote() {
         let source = resolve_source("https://example.com/image.tar").expect("resolve failed");
         assert!(matches!(source, ImageSource::Remote { .. }));
+    }
+
+    #[test]
+    fn resolve_https_source_with_digest_populates_sha256() {
+        let digest = "b".repeat(64);
+        let source = resolve_source(&format!("https://example.com/image.tar@sha256:{digest}"))
+            .expect("resolve failed");
+        let ImageSource::Remote { sha256, .. } = source else {
+            unreachable!("expected Remote source");
+        };
+        assert_eq!(sha256, digest);
     }
 
     #[test]

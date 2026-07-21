@@ -1,5 +1,6 @@
 # Rust build artifacts
 /target/
+/target-linux/
 **/*.rs.bk
 
 # IDE

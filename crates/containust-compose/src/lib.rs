@@ -55,7 +55,7 @@ fn is_remote_source(source: &str) -> bool {
 }
 
 fn is_local_image(source: &str) -> bool {
-    source.starts_with("file://") || source.starts_with("tar://")
+    source.starts_with("file://") || source.starts_with("tar://") || source.starts_with("image://")
 }
 
 #[cfg(test)]
@@ -75,6 +75,18 @@ mod offline_tests {
                 ..ComponentDecl::default()
             }],
             connections: Vec::new(),
+        };
+        assert!(validate_offline(&file).is_ok());
+    }
+
+    #[test]
+    fn offline_accepts_catalog_image() {
+        let file = CompositionFile {
+            components: vec![ComponentDecl {
+                image: Some("image://web@sha256:0000000000000000000000000000000000000000000000000000000000000000".into()),
+                ..ComponentDecl::default()
+            }],
+            ..CompositionFile::default()
         };
         assert!(validate_offline(&file).is_ok());
     }

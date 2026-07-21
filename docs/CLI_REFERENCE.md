@@ -50,7 +50,7 @@ Tracing verbosity is controlled by the `CONTAINUST_LOG` environment variable, wh
 
 ## ctst build
 
-Parse a `.ctst` composition file, resolve imports, download or locate images, and assemble filesystem layers.
+Parse a `.ctst` composition file and import every declared image into the project's content-addressed catalog.
 
 ### Synopsis
 
@@ -66,43 +66,36 @@ ctst build [OPTIONS] [FILE]
 
 ### Options
 
-Inherits all [global options](#global-options).
+| Option | Description |
+|---|---|
+| `--dry-run` | Plan the imports without writing layers or catalog entries |
+
+Also inherits all [global options](#global-options).
 
 ### Description
 
 `ctst build` performs the following steps:
 
 1. **Parse** the `.ctst` file using the nom-based parser.
-2. **Resolve imports** — recursively load any `IMPORT` directives.
-3. **Fetch images** — download or locate images from `file://`, `tar://`, or remote sources. Validates every layer with SHA-256.
-4. **Assemble layers** — build OverlayFS layer stacks and store them in the image store.
-5. **Analyze binaries** — run distroless dependency analysis when enabled.
+2. **Validate offline policy** — with `--offline`, remote sources are rejected before any I/O.
+3. **Import images** — `file://` directories are packed into a deterministic tar, `tar://` archives are copied, and remote sources are downloaded (opt-in, requires a pinned `@sha256:` digest). Each layer is verified with SHA-256 and stored content-addressed.
+4. **Register** each image in the project catalog with its source URI, digest, creation time, and tool version.
 
-Built layers are cached. Subsequent builds skip layers whose content hash has not changed.
+Importing the same source twice always produces the same digest and reuses the stored layer. After a build, components can reference `image://<name>@sha256:<digest>` and run without the original source or any network access.
 
 ### Output Format
 
 ```
 $ ctst build webapp.ctst
-⠋ Parsing webapp.ctst...
-✓ Parsed 3 components, 2 connections
-
-⠋ Resolving images...
-  [1/3] api        file:///opt/images/myapp    sha256:a1b2c3d4...  42.8 MiB
-  [2/3] db         tar:///backups/pg15.tar      sha256:e5f6a7b8...  89.1 MiB
-  [3/3] cache      file:///opt/images/redis     sha256:c9d0e1f2...  12.3 MiB
-✓ All images resolved (144.2 MiB total)
-
-⠋ Building layers...
-  Layer sha256:a1b2c3d4  → 3 sub-layers  42.8 MiB  (cached)
-  Layer sha256:e5f6a7b8  → 5 sub-layers  89.1 MiB  (built in 1.4s)
-  Layer sha256:c9d0e1f2  → 2 sub-layers  12.3 MiB  (cached)
-✓ Build complete (1.4s)
+Parsed 1 components, 0 connections
+  app -> file:///opt/images/myapp
+    Imported as image://app@sha256:e24d7a6f52f5048e...
+Build complete. 1 image(s) imported.
 ```
 
 ### Layer Caching
 
-Layers are stored under `.containust/images/` (project-local) keyed by their SHA-256 content hash. A layer is rebuilt only when its source content changes. Use `--offline` to restrict builds to locally cached layers only.
+Layer blobs are stored under `.containust/layers/<sha256>/` (project-local) and the catalog under `.containust/images/catalog.json`. A layer is re-imported only when its source content changes. Use `--offline` to restrict builds to locally cached layers only; copying the `layers/` and `images/` directories to another machine is sufficient to run the images air-gapped.
 
 ### Exit Codes
 
@@ -124,6 +117,9 @@ ctst build infrastructure/production.ctst
 
 # Build in offline mode (no network access — cached layers only)
 ctst build --offline
+
+# Show what would be imported without writing anything
+ctst build --dry-run webapp.ctst
 
 # Build with a custom state file location
 ctst build --state-file /tmp/dev-state.json webapp.ctst

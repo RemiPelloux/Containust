@@ -310,6 +310,12 @@ fn pipeline_image_catalog_crud() {
         "new catalog should be empty"
     );
 
+    let store = containust_image::storage::StorageBackend::open(dir.path().to_path_buf())
+        .expect("open store");
+    let staged = store.staging_path();
+    std::fs::write(&staged, b"layer bytes").expect("write staged layer");
+    store.commit_layer(&staged, "layer1").expect("commit layer");
+
     let entry = containust_image::registry::ImageEntry {
         id: containust_common::types::ImageId::new("test-1"),
         name: "test-image".into(),
@@ -317,6 +323,8 @@ fn pipeline_image_catalog_crud() {
         layers: vec!["layer1".into()],
         size_bytes: 1024,
         created_at: "2026-01-01T00:00:00Z".into(),
+        digest: None,
+        tool_version: String::new(),
     };
     catalog.register(entry).expect("register image");
     assert_eq!(catalog.list().expect("list").len(), 1);
@@ -340,6 +348,8 @@ fn pipeline_image_catalog_multiple_entries() {
             layers: vec![],
             size_bytes: (i + 1) * 512,
             created_at: "2026-01-01T00:00:00Z".into(),
+            digest: None,
+            tool_version: String::new(),
         };
         catalog.register(entry).expect("register");
     }

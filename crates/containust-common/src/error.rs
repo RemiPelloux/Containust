@@ -60,6 +60,15 @@ pub enum ContainustError {
         #[from]
         source: serde_json::Error,
     },
+
+    /// A network operation failed or was rejected by policy.
+    #[error("network error for {url}: {message}")]
+    Network {
+        /// URL of the failed or rejected request.
+        url: String,
+        /// Actionable description of the failure.
+        message: String,
+    },
 }
 
 /// Convenience alias used throughout the workspace.
@@ -100,6 +109,17 @@ mod tests {
         assert!(msg.contains("image.tar"));
         assert!(msg.contains("aaa"));
         assert!(msg.contains("bbb"));
+    }
+
+    #[test]
+    fn network_error_display_url_and_message() {
+        let err = ContainustError::Network {
+            url: "https://example.test/layer.tar".into(),
+            message: "offline mode blocks remote fetch".into(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("https://example.test/layer.tar"));
+        assert!(msg.contains("offline mode"));
     }
 
     #[test]

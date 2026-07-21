@@ -1,0 +1,395 @@
+//! Content-addressed image import and materialization.
+//!
+//! Importing converts any supported source (directory, tar archive, or
+//! opt-in remote download) into a verified layer blob addressed by its
+//! SHA-256 digest, then records the image in the local catalog with its
+//! supply-chain metadata. Materialization reconstructs a rootfs from
+//! the catalog without touching the original source or the network.
+
+use std::io::Read;
+use std::path::Path;
+
+use containust_common::error::{ContainustError, Result};
+use containust_common::types::ImageId;
+
+use crate::fetch::{FetchPolicy, fetch_remote};
+use crate::pack::pack_directory;
+use crate::reference::{ImageReference, ImageScheme};
+use crate::registry::{ImageCatalog, ImageEntry};
+use crate::storage::StorageBackend;
+
+const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
+
+/// Parameters for importing an image into the local store.
+#[derive(Debug, Clone)]
+pub struct ImportRequest {
+    /// Catalog name to register the image under.
+    pub name: String,
+    /// When true, remote sources are rejected before any connection.
+    pub offline: bool,
+    /// Network policy applied to remote sources.
+    pub fetch_policy: FetchPolicy,
+}
+
+impl ImportRequest {
+    /// Creates an import request with the default fetch policy.
+    #[must_use]
+    pub fn new(name: impl Into<String>, offline: bool) -> Self {
+        Self {
+            name: name.into(),
+            offline,
+            fetch_policy: FetchPolicy {
+                offline,
+                ..FetchPolicy::default()
+            },
+        }
+    }
+}
+
+/// Imports an image source into the content-addressed local store.
+///
+/// The resulting layer digest is deterministic: importing the same
+/// directory or archive twice always produces the same content address
+/// and reuses the stored layer.
+///
+/// # Errors
+///
+/// Returns an error if the source is missing, a pinned digest does not
+/// match, offline mode blocks a remote source, or storage/catalog
+/// operations fail.
+pub fn import_image(
+    data_dir: &Path,
+    reference: &ImageReference,
+    request: &ImportRequest,
+) -> Result<ImageEntry> {
+    let store = StorageBackend::open(data_dir.to_path_buf())?;
+    let staged = stage_source(&store, reference, request)?;
+
+    let digest = crate::hash::hash_file(&staged)?;
+    if let Some(pinned) = reference.digest()
+        && pinned.as_hex() != digest.as_hex()
+    {
+        let _ = std::fs::remove_file(&staged);
+        return Err(ContainustError::HashMismatch {
+            resource: reference.to_string(),
+            expected: pinned.as_hex().to_string(),
+            actual: digest.as_hex().to_string(),
+        });
+    }
+
+    let size_bytes = file_size(&staged)?;
+    store.commit_layer(&staged, digest.as_hex())?;
+
+    let entry = ImageEntry {
+        id: ImageId::new(digest.as_hex()),
+        name: request.name.clone(),
+        source: reference.to_string(),
+        layers: vec![digest.as_hex().to_string()],
+        size_bytes,
+        created_at: chrono::Utc::now().to_rfc3339(),
+        digest: Some(digest.as_hex().to_string()),
+        tool_version: env!("CARGO_PKG_VERSION").to_string(),
+    };
+    ImageCatalog::open(data_dir)?.register(entry.clone())?;
+    tracing::info!(name = %entry.name, digest = %digest, "image imported");
+    Ok(entry)
+}
+
+/// Reconstructs an image rootfs from the local catalog into `target`.
+///
+/// Works entirely from the content-addressed store, so it is safe in
+/// offline / air-gapped environments. A digest pinned on the reference
+/// must match the catalog entry.
+///
+/// # Errors
+///
+/// Returns an error if the image or one of its layers is missing, the
+/// pinned digest disagrees with the catalog, or extraction fails.
+pub fn materialize_image(data_dir: &Path, reference: &ImageReference, target: &Path) -> Result<()> {
+    if reference.scheme() != ImageScheme::Catalog {
+        return Err(ContainustError::Config {
+            message: format!(
+                "only image:// references can be materialized from the catalog, got: {reference}"
+            ),
+        });
+    }
+    let entry = ImageCatalog::open(data_dir)?.find(reference.location())?;
+    verify_pinned_digest(reference, &entry)?;
+
+    let store = StorageBackend::open(data_dir.to_path_buf())?;
+    std::fs::create_dir_all(target).map_err(|source| ContainustError::Io {
+        path: target.to_path_buf(),
+        source,
+    })?;
+    for layer in &entry.layers {
+        extract_layer_blob(&store, layer, target)?;
+    }
+    tracing::info!(name = %entry.name, target = %target.display(), "image materialized");
+    Ok(())
+}
+
+fn verify_pinned_digest(reference: &ImageReference, entry: &ImageEntry) -> Result<()> {
+    let Some(pinned) = reference.digest() else {
+        return Ok(());
+    };
+    if entry.digest.as_deref() == Some(pinned.as_hex()) {
+        return Ok(());
+    }
+    Err(ContainustError::HashMismatch {
+        resource: reference.to_string(),
+        expected: pinned.as_hex().to_string(),
+        actual: entry.digest.clone().unwrap_or_else(|| "<none>".into()),
+    })
+}
+
+fn stage_source(
+    store: &StorageBackend,
+    reference: &ImageReference,
+    request: &ImportRequest,
+) -> Result<std::path::PathBuf> {
+    if request.offline && reference.is_remote() {
+        return Err(ContainustError::Network {
+            url: reference.canonical_uri(),
+            message: "offline mode blocks remote image import".into(),
+        });
+    }
+    let staged = store.staging_path();
+    match reference.scheme() {
+        ImageScheme::File => {
+            let source = require_existing(reference.location(), "image directory")?;
+            pack_directory(&source, &staged)?;
+        }
+        ImageScheme::Tar => {
+            let source = require_existing(reference.location(), "tar archive")?;
+            let _ = std::fs::copy(&source, &staged).map_err(|e| ContainustError::Io {
+                path: source.clone(),
+                source: e,
+            })?;
+        }
+        ImageScheme::Https | ImageScheme::Http => {
+            let _ = fetch_remote(reference, &request.fetch_policy, &staged)?;
+        }
+        ImageScheme::Catalog => {
+            return Err(ContainustError::Config {
+                message: format!(
+                    "image:// references are already imported and cannot be re-imported: \
+                     {reference}"
+                ),
+            });
+        }
+    }
+    Ok(staged)
+}
+
+fn require_existing(location: &str, kind: &'static str) -> Result<std::path::PathBuf> {
+    let path = std::path::PathBuf::from(location);
+    if !path.exists() {
+        return Err(ContainustError::NotFound {
+            kind,
+            id: location.to_string(),
+        });
+    }
+    Ok(path)
+}
+
+fn file_size(path: &Path) -> Result<u64> {
+    let metadata = std::fs::metadata(path).map_err(|source| ContainustError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(metadata.len())
+}
+
+fn extract_layer_blob(store: &StorageBackend, hash: &str, target: &Path) -> Result<()> {
+    let blob = store.layer_blob_path(hash);
+    let mut file = std::fs::File::open(&blob).map_err(|_| ContainustError::NotFound {
+        kind: "image layer",
+        id: hash.to_string(),
+    })?;
+    let mut magic = [0_u8; 2];
+    let gzip = file
+        .read(&mut magic)
+        .map_err(|source| ContainustError::Io {
+            path: blob.clone(),
+            source,
+        })?
+        == 2
+        && magic == GZIP_MAGIC;
+
+    let file = std::fs::File::open(&blob).map_err(|source| ContainustError::Io {
+        path: blob.clone(),
+        source,
+    })?;
+    let io_error = |source| ContainustError::Io {
+        path: target.to_path_buf(),
+        source,
+    };
+    if gzip {
+        tar::Archive::new(flate2::read::GzDecoder::new(file))
+            .unpack(target)
+            .map_err(io_error)?;
+    } else {
+        tar::Archive::new(file).unpack(target).map_err(io_error)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_rootfs(root: &Path) {
+        std::fs::create_dir_all(root.join("bin")).expect("mkdir");
+        std::fs::write(root.join("bin/app"), b"#!/bin/sh\necho hi\n").expect("write");
+    }
+
+    fn file_reference(path: &Path) -> ImageReference {
+        ImageReference::parse(&format!("file://{}", path.display())).expect("parse")
+    }
+
+    #[test]
+    fn import_directory_twice_is_deterministic_and_deduplicated() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rootfs = dir.path().join("rootfs");
+        build_rootfs(&rootfs);
+        let data_dir = dir.path().join("data");
+        let request = ImportRequest::new("app", false);
+
+        let first =
+            import_image(&data_dir, &file_reference(&rootfs), &request).expect("first import");
+        let second =
+            import_image(&data_dir, &file_reference(&rootfs), &request).expect("second import");
+
+        assert_eq!(first.digest, second.digest);
+        assert_eq!(first.layers, second.layers);
+        let catalog = ImageCatalog::open(&data_dir).expect("open catalog");
+        assert_eq!(catalog.list().expect("list").len(), 1);
+    }
+
+    #[test]
+    fn import_tar_records_supply_chain_metadata() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rootfs = dir.path().join("rootfs");
+        build_rootfs(&rootfs);
+        let archive = dir.path().join("app.tar");
+        pack_directory(&rootfs, &archive).expect("pack");
+        let data_dir = dir.path().join("data");
+        let reference =
+            ImageReference::parse(&format!("tar://{}", archive.display())).expect("parse");
+
+        let entry =
+            import_image(&data_dir, &reference, &ImportRequest::new("app", true)).expect("import");
+
+        assert_eq!(entry.digest.as_deref().map(str::len), Some(64));
+        assert_eq!(entry.tool_version, env!("CARGO_PKG_VERSION"));
+        assert!(entry.source.starts_with("tar://"));
+        assert!(!entry.created_at.is_empty());
+    }
+
+    #[test]
+    fn import_with_wrong_pinned_digest_fails_and_stores_nothing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rootfs = dir.path().join("rootfs");
+        build_rootfs(&rootfs);
+        let data_dir = dir.path().join("data");
+        let wrong = "0".repeat(64);
+        let reference =
+            ImageReference::parse(&format!("file://{}@sha256:{wrong}", rootfs.display()))
+                .expect("parse");
+
+        let error = import_image(&data_dir, &reference, &ImportRequest::new("app", false))
+            .expect_err("pinned mismatch must fail");
+
+        assert!(matches!(error, ContainustError::HashMismatch { .. }));
+        let catalog = ImageCatalog::open(&data_dir).expect("open catalog");
+        assert!(catalog.list().expect("list").is_empty());
+    }
+
+    #[test]
+    fn import_offline_rejects_remote_reference() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let digest = "0".repeat(64);
+        let reference =
+            ImageReference::parse(&format!("https://example.test/app.tar@sha256:{digest}"))
+                .expect("parse");
+
+        let error = import_image(dir.path(), &reference, &ImportRequest::new("app", true))
+            .expect_err("offline remote must fail");
+
+        assert!(error.to_string().contains("offline"));
+    }
+
+    #[test]
+    fn import_missing_directory_returns_not_found() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let reference = file_reference(&dir.path().join("missing"));
+        let error = import_image(dir.path(), &reference, &ImportRequest::new("app", false))
+            .expect_err("missing source must fail");
+        assert!(matches!(error, ContainustError::NotFound { .. }));
+    }
+
+    #[test]
+    fn materialize_reconstructs_rootfs_from_catalog_only() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rootfs = dir.path().join("rootfs");
+        build_rootfs(&rootfs);
+        let data_dir = dir.path().join("data");
+        let entry = import_image(
+            &data_dir,
+            &file_reference(&rootfs),
+            &ImportRequest::new("app", false),
+        )
+        .expect("import");
+
+        // Delete the original source: materialization must not need it.
+        std::fs::remove_dir_all(&rootfs).expect("remove source");
+
+        let digest = entry.digest.expect("digest");
+        let reference =
+            ImageReference::parse(&format!("image://app@sha256:{digest}")).expect("parse");
+        let target = dir.path().join("materialized");
+        materialize_image(&data_dir, &reference, &target).expect("materialize");
+
+        let content = std::fs::read(target.join("bin/app")).expect("read app");
+        assert_eq!(content, b"#!/bin/sh\necho hi\n");
+    }
+
+    #[test]
+    fn materialize_with_wrong_pinned_digest_fails() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rootfs = dir.path().join("rootfs");
+        build_rootfs(&rootfs);
+        let data_dir = dir.path().join("data");
+        let _ = import_image(
+            &data_dir,
+            &file_reference(&rootfs),
+            &ImportRequest::new("app", false),
+        )
+        .expect("import");
+
+        let wrong = "0".repeat(64);
+        let reference =
+            ImageReference::parse(&format!("image://app@sha256:{wrong}")).expect("parse");
+        let error = materialize_image(&data_dir, &reference, &dir.path().join("out"))
+            .expect_err("pinned mismatch must fail");
+        assert!(matches!(error, ContainustError::HashMismatch { .. }));
+    }
+
+    #[test]
+    fn materialize_unknown_image_returns_not_found() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let reference = ImageReference::parse("image://ghost").expect("parse");
+        let error = materialize_image(dir.path(), &reference, &dir.path().join("out"))
+            .expect_err("unknown image must fail");
+        assert!(matches!(error, ContainustError::NotFound { .. }));
+    }
+
+    #[test]
+    fn reimporting_catalog_reference_is_rejected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let reference = ImageReference::parse("image://app").expect("parse");
+        let error = import_image(dir.path(), &reference, &ImportRequest::new("app", false))
+            .expect_err("catalog re-import must fail");
+        assert!(error.to_string().contains("cannot be re-imported"));
+    }
+}
