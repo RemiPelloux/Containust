@@ -10,6 +10,13 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [1.0.4] — 2026-07-22
+
+### Fixed
+
+- QEMU: use TCG under `CI=true` (GitHub macOS has no HVF).
+- Volume specs: parse Windows drive-letter sources (`C:\data:/app`).
+
 ## [1.0.3] — 2026-07-22
 
 ### Fixed

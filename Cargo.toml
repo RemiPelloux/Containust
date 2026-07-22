@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.0.3"
+version = "1.0.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/containust/containust"
@@ -21,15 +21,15 @@ rust-version = "1.88.0"
 
 [workspace.dependencies]
 # Internal crates
-containust-common = { version = "1.0.3", path = "crates/containust-common" }
-containust-core = { version = "1.0.3", path = "crates/containust-core" }
-containust-image = { version = "1.0.3", path = "crates/containust-image" }
-containust-runtime = { version = "1.0.3", path = "crates/containust-runtime" }
-containust-compose = { version = "1.0.3", path = "crates/containust-compose" }
-containust-ebpf = { version = "1.0.3", path = "crates/containust-ebpf" }
-containust-sdk = { version = "1.0.3", path = "crates/containust-sdk" }
-containust-tui = { version = "1.0.3", path = "crates/containust-tui" }
-containust-cli = { version = "1.0.3", path = "crates/containust-cli" }
+containust-common = { version = "1.0.4", path = "crates/containust-common" }
+containust-core = { version = "1.0.4", path = "crates/containust-core" }
+containust-image = { version = "1.0.4", path = "crates/containust-image" }
+containust-runtime = { version = "1.0.4", path = "crates/containust-runtime" }
+containust-compose = { version = "1.0.4", path = "crates/containust-compose" }
+containust-ebpf = { version = "1.0.4", path = "crates/containust-ebpf" }
+containust-sdk = { version = "1.0.4", path = "crates/containust-sdk" }
+containust-tui = { version = "1.0.4", path = "crates/containust-tui" }
+containust-cli = { version = "1.0.4", path = "crates/containust-cli" }
 
 # CLI & TUI
 clap = { version = "4.5", features = ["derive", "env", "unicode"] }

@@ -31,10 +31,18 @@ pub const fn machine_type() -> &'static str {
     }
 }
 
+/// Returns whether software emulation should be used (CI / forced TCG).
+#[must_use]
+fn use_software_accel() -> bool {
+    matches!(std::env::var("CONTAINUST_QEMU_ACCEL").as_deref(), Ok("tcg"))
+        || std::env::var_os("CI").is_some()
+}
+
 /// Returns the preferred CPU model for acceleration.
 #[must_use]
-pub const fn cpu_model() -> &'static str {
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+pub fn cpu_model() -> &'static str {
+    // `host` requires working HVF/KVM; CI macOS runners only support TCG.
+    if cfg!(all(target_os = "macos", target_arch = "aarch64")) && !use_software_accel() {
         "host"
     } else {
         "max"
@@ -51,11 +59,25 @@ pub const fn net_device() -> &'static str {
     }
 }
 
-/// Returns platform-specific QEMU acceleration flags (preferred then fallback).
+/// Returns platform-specific QEMU acceleration flags.
+///
+/// GitHub Actions macOS runners reject HVF (`HV_UNSUPPORTED`). Honor `CI=true`
+/// or `CONTAINUST_QEMU_ACCEL=tcg|hvf|whpx` to select an accelerator.
 #[must_use]
 pub fn accel_flags() -> Vec<String> {
+    if let Ok(forced) = std::env::var("CONTAINUST_QEMU_ACCEL") {
+        return match forced.as_str() {
+            "tcg" => vec!["-accel".into(), "tcg".into()],
+            "hvf" => vec!["-accel".into(), "hvf".into()],
+            "whpx" => vec!["-accel".into(), "whpx,kernel-irqchip=off".into()],
+            other => vec!["-accel".into(), other.into()],
+        };
+    }
+    if use_software_accel() {
+        return vec!["-accel".into(), "tcg".into()];
+    }
     if cfg!(target_os = "macos") {
-        vec!["-accel".into(), "hvf".into(), "-accel".into(), "tcg".into()]
+        vec!["-accel".into(), "hvf".into()]
     } else if cfg!(target_os = "windows") {
         vec!["-accel".into(), "whpx,kernel-irqchip=off".into()]
     } else {

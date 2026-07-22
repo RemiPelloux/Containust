@@ -197,7 +197,9 @@ jobs:
         run: cargo build -p containust-cli --locked --release
       - name: VM start / stop smoke
         env:
-          CONTAINUST_VM_BOOT_TIMEOUT_SECS: "240"
+          # GitHub macOS runners lack HVF; force TCG and allow a long cold boot.
+          CONTAINUST_QEMU_ACCEL: tcg
+          CONTAINUST_VM_BOOT_TIMEOUT_SECS: "600"
         run: |
           set -euo pipefail
           BIN=./target/release/ctst
