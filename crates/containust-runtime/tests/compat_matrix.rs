@@ -66,7 +66,8 @@ CONNECT web -> db
 
 #[test]
 fn error_codes_cover_offline_and_not_found() {
-    let offline = codes::classify_message("offline mode rejects remote source: https://example.com");
+    let offline =
+        codes::classify_message("offline mode rejects remote source: https://example.com");
     assert_eq!(offline.code, "I004");
     let missing = codes::classify_message("container not found: abc");
     assert_eq!(missing.code, "R001");

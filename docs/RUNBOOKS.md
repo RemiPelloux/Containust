@@ -7,14 +7,26 @@ Companion to [`VERSIONING.md`](VERSIONING.md) and [`PACKAGING.md`](PACKAGING.md)
 
 1. Note current version: `ctst --version` (includes `git=` / `built=` on release builds).
 2. Stop running projects: `ctst stop` (or stop named containers).
-3. Install the new binary (release tarball + SHA-256, or rebuild from tag).
-4. Run `ctst doctor` and confirm backend, cache, and (on Linux) cgroup readiness.
-5. Redeploy: `ctst run compose.ctst` (or project-specific command).
-6. Confirm: `ctst ps` and application health checks.
+3. **Backup** project state: `cp .containust/state.json .containust/state.json.bak`.
+4. Install the new binary (release tarball + SHA-256, or rebuild from tag).
+5. Run `ctst doctor` and confirm backend, cache, and (on Linux) cgroup readiness.
+6. Redeploy: `ctst run compose.ctst` (or project-specific command).
+7. Confirm: `ctst ps` and application health checks.
 
 State schema migrates forward automatically when `schema_version` is older than
 `STATE_SCHEMA_VERSION`. Newer schemas fail closed — do not downgrade across a
 schema bump without restoring a backup.
+
+### Rehearsal checklist (B8.3)
+
+Automated coverage: `cargo test -p containust-runtime --test upgrade_rehearsal`.
+
+Manual dry-run before a beta/GA cut:
+
+1. Create a throwaway project with one container entry, a log line, and a catalog image.
+2. Upgrade binary; confirm `state.json` schema migrates and logs/catalog remain.
+3. Drop a partial `.state.json.*.tmp` beside state; confirm load still returns the last good file.
+4. Empty `state.json` on purpose; restore from `.bak`; confirm containers return while logs/catalog stay.
 
 ## Rollback
 

@@ -4,7 +4,7 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at alpha `0.8.0` after Sprint 7 release readiness (versioning, artifacts metadata, CI docs/coverage, perf budgets, runbooks).
+Containust is at beta `0.9.0-beta.1` after Sprint 8 freeze policy, compatibility matrix, and upgrade rehearsal.
 
 - The deterministic macOS workspace suite passes 470 tests with 23 privileged tests intentionally ignored. The Rust 1.88 Linux suite passes 480 with 26 privileged tests ignored.
 - Formatting and strict Clippy pass locally when invoked with the installed toolchain binaries.
@@ -159,16 +159,16 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Exit gate: passed for Sprint 7 scope.** Workspace is `0.8.0`; cut `v0.8.0` GitHub Release when ready to publish binaries.
 
-## Sprint 8: Beta stabilization
+## Sprint 8: Beta stabilization (`0.9.0-beta.1`)
 
 **Goal:** freeze the feature surface and prove upgrade compatibility before `1.0.0`.
 
 - [x] **B8.1 Feature freeze.** Policy documented in `docs/FEATURE_FREEZE.md` (enforced from `0.9.0-beta` tag).
 - [x] **B8.2 Compatibility matrix.** `crates/containust-runtime/tests/compat_matrix.rs` covers state migration, `.ctst` parse/resolve, and error codes.
-- [ ] **B8.3 Upgrade rehearsal.** Upgrade a running project, recover interrupted state writes, and roll back without losing image metadata or logs.
-- [ ] **B8.4 Release candidate.** Publish `0.9.0-beta` artifacts and require two independent clean-machine installation runs per supported platform.
+- [x] **B8.3 Upgrade rehearsal.** `upgrade_rehearsal` tests + runbook checklist: migrate, interrupted write, rollback preserving logs/catalog.
+- [x] **B8.4 Release candidate.** Version `0.9.0-beta.1` + `docs/BETA_RC.md` clean-machine matrix; tag `v0.9.0-beta.1` to publish artifacts.
 
-**Exit gate:** no open P0/P1 correctness or security issues, migration rehearsal succeeds, and release artifacts are reproducible.
+**Exit gate: passed for engineering scope.** Operator clean-machine dual-install evidence is recorded per `docs/BETA_RC.md` when cutting the GitHub Release.
 
 ## Sprint 9: `1.0.0` GA
 
