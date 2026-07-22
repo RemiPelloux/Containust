@@ -7,6 +7,7 @@ use containust_common::error::{ContainustError, Result};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
+use super::ports::{ensure_ports_covered, normalize_forward_ports, probe_available};
 use super::process::{process_is_alive, terminate_pid, wait_until_dead};
 use super::qemu::{find_qemu, spawn_qemu};
 use super::rpc::{VM_AGENT_PORT, is_agent_ready, wait_for_vm_ready};
@@ -31,6 +32,9 @@ pub struct VmPidRecord {
     pub pid: u32,
     /// Agent TCP port forwarded on the host.
     pub agent_port: u16,
+    /// Container host ports forwarded at QEMU boot (`hostfwd`).
+    #[serde(default)]
+    pub forwarded_ports: Vec<u16>,
 }
 
 /// Exclusive lock for VM start/stop races.
@@ -79,23 +83,35 @@ pub fn ensure_running(
 ) -> Result<VmStartOutcome> {
     let _lock = VmLock::acquire(vm_dir)?;
     let _ = recover_stale(vm_dir)?;
+    let ports = normalize_forward_ports(ports)?;
 
     if is_agent_ready() {
-        if read_pid_record(vm_dir)?.is_none() {
+        if let Some(record) = read_pid_record(vm_dir)? {
+            ensure_ports_covered(&record.forwarded_ports, &ports)?;
+        } else {
             tracing::warn!("VM agent is ready but pidfile is missing; continuing");
+            if !ports.is_empty() {
+                return Err(ContainustError::Config {
+                    message: "VM agent is reachable without qemu.pid.json; refuse to \
+                         assume hostfwd ownership. Run `ctst vm stop` and restart"
+                        .into(),
+                });
+            }
         }
         return Ok(VmStartOutcome::AlreadyRunning);
     }
 
+    probe_available(&ports)?;
     let qemu = find_qemu()?;
     eprintln!("  Booting lightweight Linux VM...");
-    let child = spawn_qemu(&qemu, kernel, initramfs, ports)?;
+    let child = spawn_qemu(&qemu, kernel, initramfs, &ports)?;
     let pid = child.id();
     write_pid_record(
         vm_dir,
         &VmPidRecord {
             pid,
             agent_port: VM_AGENT_PORT,
+            forwarded_ports: ports,
         },
     )?;
     // Detach: do not wait/kill on Child drop — the pidfile owns lifecycle.
@@ -236,6 +252,7 @@ mod tests {
         let record = VmPidRecord {
             pid: 4242,
             agent_port: 10809,
+            forwarded_ports: vec![8080, 8443],
         };
         write_pid_record(dir.path(), &record).unwrap();
         let loaded = read_pid_record(dir.path()).unwrap().expect("present");
@@ -252,6 +269,7 @@ mod tests {
             &VmPidRecord {
                 pid: 4_294_967_294,
                 agent_port: 10809,
+                forwarded_ports: vec![],
             },
         )
         .unwrap();

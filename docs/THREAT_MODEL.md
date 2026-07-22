@@ -1,6 +1,6 @@
 # Containust Threat Model
 
-**Version:** 0.5.0 (Sprint 4)  
+**Version:** 0.6.0 (Sprint 5; security baseline from Sprint 4)  
 **Status:** Living document — update when isolation, image, or persistence boundaries change.
 
 ## 1. Assets

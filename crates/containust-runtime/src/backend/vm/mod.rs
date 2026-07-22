@@ -19,6 +19,7 @@ pub mod assets;
 mod assets_fetch;
 pub mod initramfs;
 mod lifecycle;
+mod ports;
 mod process;
 mod protocol;
 mod qemu;
@@ -119,14 +120,9 @@ impl VMBackend {
     pub fn ensure_vm_running(&self, ports: &[u16]) -> Result<()> {
         let (kernel, initramfs) = self.ensure_vm_assets()?;
         let outcome = lifecycle::ensure_running(&self.vm_dir, &kernel, &initramfs, ports)?;
+        self.sync_forwarded_ports_from_pidfile()?;
         if matches!(outcome, lifecycle::VmStartOutcome::Started) {
-            let mut port_guard =
-                self.forwarded_ports
-                    .lock()
-                    .map_err(|_| ContainustError::Config {
-                        message: "port list lock poisoned".into(),
-                    })?;
-            port_guard.extend_from_slice(ports);
+            tracing::info!(?ports, "VM started with hostfwd ports");
         }
         Ok(())
     }
@@ -137,7 +133,29 @@ impl VMBackend {
     ///
     /// Returns an error on lock/pidfile failure or an untracked live agent.
     pub fn stop_vm(&self, force: bool) -> Result<()> {
-        lifecycle::stop_running(&self.vm_dir, force)
+        lifecycle::stop_running(&self.vm_dir, force)?;
+        self.forwarded_ports
+            .lock()
+            .map_err(|_| ContainustError::Config {
+                message: "port list lock poisoned".into(),
+            })?
+            .clear();
+        Ok(())
+    }
+
+    fn sync_forwarded_ports_from_pidfile(&self) -> Result<()> {
+        let ports = lifecycle::read_pid_record(&self.vm_dir)?
+            .map(|record| record.forwarded_ports)
+            .unwrap_or_default();
+        let mut guard = self
+            .forwarded_ports
+            .lock()
+            .map_err(|_| ContainustError::Config {
+                message: "port list lock poisoned".into(),
+            })?;
+        *guard = ports;
+        drop(guard);
+        Ok(())
     }
 
     fn send_command(&self, method: &str, params: &serde_json::Value) -> Result<serde_json::Value> {

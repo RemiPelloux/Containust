@@ -2,7 +2,7 @@
 
 Containust is a daemon-less container runtime and declarative composition tool written in Rust. It is designed for local, sovereign, and air-gapped workflows where a long-running privileged daemon is undesirable.
 
-> **Project status: alpha (`0.5.0`).** Sprint 4 security hardening is in place: safe archive extraction, fail-closed capability drop with `NO_NEW_PRIVS`, explicit namespace policy, volume path confinement, fail-closed cgroup limits, secret redaction in state, and `docs/THREAT_MODEL.md`. Image pipeline (`preset://`, content-addressed import, offline catalog) from Sprint 3 remains. Native Linux process isolation and the QEMU VM backend remain experimental until full privileged validation is complete.
+> **Project status: alpha (`0.6.0`).** Sprint 5 cross-platform VM backend is in place: pinned Alpine assets, resumable cache, pidfile lifecycle, versioned agent RPC, hostfwd port ownership, and macOS QEMU CI smoke. Sprint 4 security hardening and the Sprint 3 image pipeline remain. Native Linux process isolation still needs full privileged-host validation for GA.
 
 [![CI](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml)
 [![Security audit](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml)

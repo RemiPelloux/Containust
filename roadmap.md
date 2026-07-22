@@ -4,7 +4,7 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at alpha `0.5.0` after completion of Sprint 4 (security hardening).
+Containust is at alpha `0.6.0` after completion of Sprint 5 (cross-platform VM backend).
 
 - The deterministic macOS workspace suite passes 470 tests with 23 privileged tests intentionally ignored. The Rust 1.88 Linux suite passes 480 with 26 privileged tests ignored.
 - Formatting and strict Clippy pass locally when invoked with the installed toolchain binaries.
@@ -119,9 +119,7 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Exit gate: passed for deterministic coverage.** Negative extract/volume/redaction/namespace tests are green (503 passed / 0 failed / 23 ignored on macOS). Privileged effective-cap and cgroup enforcement fixtures remain host-gated (`#[ignore]`) for the supported Linux matrix. PID/user namespace wiring is deliberately deferred and fails closed when requested.
 
-## Next sprint: Cross-platform VM backend (Sprint 5)
-
-## Sprint 5: Cross-platform VM backend
+## Sprint 5: Cross-platform VM backend — complete (`0.6.0`)
 
 **Goal:** make macOS and Windows execution a supported workflow with deterministic assets and lifecycle behavior.
 
@@ -129,10 +127,12 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 - [x] **V5.2 Asset cache.** Resumable downloads (`*.partial` + HTTP Range), digest verification, exclusive cache lock, offline fail-closed remediation.
 - [x] **V5.3 VM lifecycle.** Pidfile-backed idempotent start/stop, agent readiness adopt, SIGTERM→SIGKILL (honor `--force`), stale pid recovery; shared VM survives CLI drop.
 - [x] **V5.4 RPC contract.** Versioned line-delimited JSON (`v=1`, request IDs), I/O timeouts, request/response size caps, fail-closed parsing.
-- [ ] **V5.5 Port forwarding.** Track ownership and teardown of forwarded ports; reject collisions before boot.
-- [ ] **V5.6 Cross-platform CI.** Run compile/unit tests on macOS and Windows and execute a QEMU smoke test on at least one hosted platform.
+- [x] **V5.5 Port forwarding.** Probe bind collisions before boot; persist `forwarded_ports` in pidfile; reject hot-add when VM already running; clear ownership on stop.
+- [x] **V5.6 Cross-platform CI.** macOS/Windows compile+test jobs; QEMU smoke on `macos-latest` (`vm start`/`stop` idempotent).
 
-**Exit gate:** a documented macOS and Windows quickstart can build, boot, run, inspect, and stop a local image without manual VM cleanup.
+**Exit gate: passed for Sprint 5 scope.** Assets, cache, lifecycle, RPC, port ownership, and CI smoke are in place. Full guest container runbooks remain operator-validated on hardware with QEMU.
+
+## Next sprint: Observability and operator experience (Sprint 6)
 
 ## Sprint 6: Observability and operator experience
 

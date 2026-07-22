@@ -1,7 +1,7 @@
 # Containust — Sprint Tracker
 
 > **Goal**: Ship Containust as a production-ready container runtime, lighter and more reliable than Docker.
-> **Version**: `0.5.0`
+> **Version**: `0.6.0`
 > **Standards**: 90%+ test coverage for library crates, zero clippy warnings, `cargo deny` green, no banned patterns.
 
 ## Completed
@@ -12,19 +12,20 @@
 - **Post–Sprint 3 (`0.4.1`)** — curated `preset://alpine` / `preset://busybox`.
 - **Performance pass (`0.4.2`)** — single-pass import hashing, in-place preset cache reuse, perf regression gates.
 - **Sprint 4 (`0.5.0`)** — security hardening (S4.1–S4.7). See `docs/THREAT_MODEL.md` and `roadmap.md`.
+- **Sprint 5 (`0.6.0`)** — cross-platform VM backend (V5.1–V5.6).
 
-## Current sprint: Sprint 5 — Cross-platform VM backend (`0.6.0`)
+## Current sprint: Sprint 6 — Observability and operator experience (`0.7.0`)
 
-Make macOS and Windows execution a supported workflow with deterministic assets and lifecycle behavior.
+Make failures diagnosable during repeated operational use.
 
-- [x] **V5.1 VM asset manifest.** Pinned Alpine 3.21.7 netboot kernel/initramfs URLs + SHA-256 per arch (`backend/vm/assets.rs`); cache hits re-verified; corrupt blobs re-downloaded fail-closed.
-- [x] **V5.2 Asset cache.** Resumable downloads (`*.partial` + HTTP Range), exclusive `.assets.lock`, offline fail-closed with cache remediation hint.
-- [x] **V5.3 VM lifecycle.** Pidfile + lock, adopt ready agent, SIGTERM→SIGKILL stop (`--force`), stale pid cleanup, Drop no longer kills shared VM.
-- [x] **V5.4 RPC contract.** Protocol `v=1` with request IDs, 30s I/O timeouts, 64 KiB/1 MiB bounds, fail-closed response validation.
-- [ ] **V5.5 Port forwarding.** Ownership/teardown of forwarded ports; reject collisions before boot.
-- [ ] **V5.6 Cross-platform CI.** Compile/unit tests on macOS and Windows; QEMU smoke on one hosted platform.
+- [ ] **O6.1 Structured events.** Emit lifecycle events with container ID, project, operation, duration, and error code.
+- [ ] **O6.2 Metrics correctness.** Validate CPU, memory, I/O, and process metrics against a known workload; define zero/unavailable semantics.
+- [ ] **O6.3 TUI integration.** Wire `ctst ps --tui` to the real engine and support refresh, selection, logs, and quit behavior.
+- [ ] **O6.4 eBPF lifecycle.** Implement feature-gated load/attach/detach, capability checks, and graceful degradation when unsupported.
+- [ ] **O6.5 Diagnostics.** Add `ctst doctor` for platform, cgroups, namespace, mount, QEMU, cache, and permissions checks.
+- [ ] **O6.6 Error UX.** Standardize exit codes and include a remediation hint for every user-facing runtime error.
 
-**Exit gate:** a documented macOS and Windows quickstart can build, boot, run, inspect, and stop a local image without manual VM cleanup.
+**Exit gate:** a failure can be diagnosed from CLI output and logs without reading source code; TUI and eBPF are clearly reported as unavailable when prerequisites are missing.
 
 ## Deferred
 

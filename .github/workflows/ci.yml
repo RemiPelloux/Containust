@@ -117,3 +117,33 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+
+  # QEMU smoke on macOS (HVF). Downloads pinned Alpine assets on first run.
+  qemu-smoke-macos:
+    name: QEMU smoke (macOS)
+    runs-on: macos-latest
+    needs: [macos-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+      - name: Install QEMU
+        run: brew install qemu
+      - name: Cache VM boot assets
+        uses: actions/cache@v4
+        with:
+          path: ~/.containust/cache/vm
+          key: vm-assets-${{ runner.os }}-${{ runner.arch }}-v1
+      - name: Build ctst
+        run: cargo build -p containust-cli --locked --release
+      - name: VM start / stop smoke
+        run: |
+          set -euo pipefail
+          BIN=./target/release/ctst
+          "$BIN" vm start
+          "$BIN" vm start
+          "$BIN" vm stop
+          "$BIN" vm stop
+          test ! -f "$HOME/.containust/cache/vm/qemu.pid.json"

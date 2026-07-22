@@ -5,7 +5,7 @@ use std::process::{Child, Command, Stdio};
 
 use containust_common::error::{ContainustError, Result};
 
-use super::rpc::VM_AGENT_PORT;
+use super::ports::build_netdev_arg;
 
 const VM_MEMORY_MB: u32 = 512;
 const VM_CPUS: u32 = 2;
@@ -71,14 +71,7 @@ pub fn find_qemu() -> Result<PathBuf> {
 /// Returns an I/O error when the process cannot be spawned.
 pub fn spawn_qemu(qemu: &Path, kernel: &Path, initramfs: &Path, ports: &[u16]) -> Result<Child> {
     tracing::info!(qemu = %qemu.display(), "booting VM");
-
-    let mut hostfwd = format!("user,id=net0,hostfwd=tcp::{VM_AGENT_PORT}-:{VM_AGENT_PORT}");
-    for &port in ports {
-        if port != VM_AGENT_PORT {
-            use std::fmt::Write as _;
-            let _ = write!(hostfwd, ",hostfwd=tcp::{port}-:{port}");
-        }
-    }
+    let hostfwd = build_netdev_arg(ports);
 
     let mut cmd = Command::new(qemu);
     let _ = cmd
