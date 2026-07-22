@@ -198,44 +198,39 @@ fn gate_dry_run_writes_nothing() {
     );
 }
 
-/// Full runtime pass of the exit gate: the air-gapped composition is
-/// deployed with `--offline` and the container process actually runs.
-///
-/// Requires a static `busybox` binary on the host (for the fixture
-/// rootfs) in addition to the usual privileged prerequisites.
 #[cfg(target_os = "linux")]
-#[test]
-#[ignore = "requires root privileges, user namespaces, cgroups v2, and busybox"]
-fn gate_offline_run_starts_container_from_catalog() {
+fn write_busybox_ctst(path: &Path, image: &str) {
+    std::fs::write(
+        path,
+        format!(
+            "COMPONENT app {{\n    image = \"{image}\"\n    \
+             command = [\"/bin/busybox\", \"sleep\", \"30\"]\n}}\n"
+        ),
+    )
+    .expect("write ctst");
+}
+
+#[cfg(target_os = "linux")]
+fn import_busybox_online(online_dir: &Path) -> (PathBuf, String) {
     let busybox = Path::new("/bin/busybox");
     assert!(
         busybox.exists(),
         "install busybox-static to run the privileged gate fixture"
     );
-
-    // Online project: a runnable rootfs containing only static busybox.
-    let workspace = tempfile::tempdir().expect("tempdir");
-    let online_dir = workspace.path().join("online");
     let rootfs = online_dir.join("rootfs");
     std::fs::create_dir_all(rootfs.join("bin")).expect("mkdir bin");
     let _ = std::fs::copy(busybox, rootfs.join("bin/busybox")).expect("copy busybox");
     let online_ctst = online_dir.join("app.ctst");
-    std::fs::write(
-        &online_ctst,
-        format!(
-            "COMPONENT app {{\n    image = \"file://{}\"\n    \
-             command = [\"/bin/busybox\", \"sleep\", \"30\"]\n}}\n",
-            rootfs.display()
-        ),
-    )
-    .expect("write online ctst");
+    write_busybox_ctst(&online_ctst, &format!("file://{}", rootfs.display()));
     let _ = run_checked(ctst().arg("build").arg(&online_ctst));
     let online_project = containust_common::constants::project_dir(&online_ctst);
     let digest = imported_digest(&online_project, "app");
+    (online_project, digest)
+}
 
-    // Air-gapped project: only the content-addressed store travels.
-    let airgap_dir = workspace.path().join("airgap");
-    std::fs::create_dir_all(&airgap_dir).expect("mkdir airgap");
+#[cfg(target_os = "linux")]
+fn stage_airgap_project(airgap_dir: &Path, online_project: &Path, digest: &str) -> PathBuf {
+    std::fs::create_dir_all(airgap_dir).expect("mkdir airgap");
     let airgap_project = airgap_dir.join(".containust");
     copy_dir(
         &online_project.join("images"),
@@ -246,14 +241,24 @@ fn gate_offline_run_starts_container_from_catalog() {
         &airgap_project.join("layers"),
     );
     let airgap_ctst = airgap_dir.join("app.ctst");
-    std::fs::write(
-        &airgap_ctst,
-        format!(
-            "COMPONENT app {{\n    image = \"image://app@sha256:{digest}\"\n    \
-             command = [\"/bin/busybox\", \"sleep\", \"30\"]\n}}\n"
-        ),
-    )
-    .expect("write airgap ctst");
+    write_busybox_ctst(&airgap_ctst, &format!("image://app@sha256:{digest}"));
+    airgap_ctst
+}
+
+/// Full runtime pass of the exit gate: the air-gapped composition is
+/// deployed with `--offline` and the container process actually runs.
+///
+/// Requires a static `busybox` binary on the host (for the fixture
+/// rootfs) in addition to the usual privileged prerequisites.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires root privileges, user namespaces, cgroups v2, and busybox"]
+fn gate_offline_run_starts_container_from_catalog() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let online_dir = workspace.path().join("online");
+    let (online_project, digest) = import_busybox_online(&online_dir);
+    let airgap_dir = workspace.path().join("airgap");
+    let airgap_ctst = stage_airgap_project(&airgap_dir, &online_project, &digest);
     std::fs::remove_dir_all(&online_dir).expect("remove online project");
 
     let _ = run_checked(
@@ -263,11 +268,9 @@ fn gate_offline_run_starts_container_from_catalog() {
             .arg("--detach")
             .arg(&airgap_ctst),
     );
-
     let ps = run_checked(ctst().current_dir(&airgap_dir).arg("ps").arg("--all"));
     let stdout = String::from_utf8_lossy(&ps.stdout);
     assert!(stdout.contains("app"), "stdout: {stdout}");
     assert!(stdout.contains("running"), "stdout: {stdout}");
-
     let _ = run_checked(ctst().current_dir(&airgap_dir).arg("stop").arg("--force"));
 }

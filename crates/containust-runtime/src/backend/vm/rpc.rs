@@ -19,7 +19,11 @@ const RPC_MAX_RETRIES: u32 = 8;
 const RPC_RETRY_DELAY_MS: u64 = 800;
 
 fn boot_timeout_secs() -> u64 {
-    parse_boot_timeout(std::env::var("CONTAINUST_VM_BOOT_TIMEOUT_SECS").ok().as_deref())
+    parse_boot_timeout(
+        std::env::var("CONTAINUST_VM_BOOT_TIMEOUT_SECS")
+            .ok()
+            .as_deref(),
+    )
 }
 
 fn parse_boot_timeout(raw: Option<&str>) -> u64 {
@@ -168,7 +172,10 @@ mod tests {
     fn parse_boot_timeout_defaults_and_overrides() {
         assert_eq!(parse_boot_timeout(None), VM_BOOT_TIMEOUT_DEFAULT_SECS);
         assert_eq!(parse_boot_timeout(Some("0")), VM_BOOT_TIMEOUT_DEFAULT_SECS);
-        assert_eq!(parse_boot_timeout(Some("bogus")), VM_BOOT_TIMEOUT_DEFAULT_SECS);
+        assert_eq!(
+            parse_boot_timeout(Some("bogus")),
+            VM_BOOT_TIMEOUT_DEFAULT_SECS
+        );
         assert_eq!(parse_boot_timeout(Some("90")), 90);
     }
 

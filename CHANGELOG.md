@@ -10,6 +10,12 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-07-22
+
+### Fixed
+
+- `cargo fmt` on VM boot timeout helpers; clippy `too_many_lines` in sprint3 gate.
+
 ## [1.0.1] — 2026-07-22
 
 ### Fixed

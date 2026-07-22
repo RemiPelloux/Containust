@@ -4,7 +4,7 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at GA `1.0.1` after Sprint 9 security/perf/support sign-off and the Windows/QEMU CI patch release.
+Containust is at GA `1.0.2` after Sprint 9 security/perf/support sign-off and the Windows/QEMU CI patch release.
 
 - The deterministic macOS workspace suite passes 470 tests with 23 privileged tests intentionally ignored. The Rust 1.88 Linux suite passes 480 with 26 privileged tests ignored.
 - Formatting and strict Clippy pass locally when invoked with the installed toolchain binaries.

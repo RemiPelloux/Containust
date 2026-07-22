@@ -1,7 +1,7 @@
 # Containust — Sprint Tracker
 
 > **Goal**: Ship Containust as a production-ready container runtime, lighter and more reliable than Docker.
-> **Version**: `1.0.1`
+> **Version**: `1.0.2`
 > **Standards**: 90%+ test coverage for library crates, zero clippy warnings, `cargo deny` green, no banned patterns.
 
 ## Completed
