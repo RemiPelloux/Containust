@@ -159,6 +159,7 @@ fn report_offline(offline: bool) {
     );
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(clippy::missing_const_for_fn))]
 fn report_linux_extras() {
     report_linux_cgroup_v2();
 }
