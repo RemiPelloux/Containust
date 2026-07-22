@@ -149,7 +149,7 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Goal:** establish a repeatable release process with evidence for supported platforms.
 
-- [ ] **L7.1 Versioning.** Centralize workspace versioning and document compatibility guarantees for `.ctst`, state files, and the SDK.
+- [x] **L7.1 Versioning.** Workspace SemVer + `docs/VERSIONING.md` / `CHANGELOG.md`; `STATE_SCHEMA_VERSION` in common; SDK/CLI doc banners aligned.
 - [ ] **L7.2 Release artifacts.** Produce signed/checksummed binaries for Linux, macOS, and Windows with reproducible build metadata.
 - [ ] **L7.3 Packaging.** Add Homebrew, Debian, RPM, and Windows installation paths or explicitly defer each with an issue and owner.
 - [ ] **L7.4 CI gates.** Require check, format, clippy, deterministic tests, privileged Linux tests, dependency audit, and documentation checks before release.

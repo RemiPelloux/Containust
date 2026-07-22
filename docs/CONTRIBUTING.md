@@ -390,15 +390,20 @@ Reviewers evaluate contributions on:
 
 ### Versioning
 
-Containust follows [Semantic Versioning](https://semver.org/):
+Containust follows [Semantic Versioning](https://semver.org/). Full compatibility
+rules for crates, `.ctst`, `state.json`, and the SDK are in
+[VERSIONING.md](VERSIONING.md).
 
 - **MAJOR** — breaking changes to the SDK public API or `.ctst` language syntax.
 - **MINOR** — new features, new CLI commands, new `.ctst` keywords (backward-compatible).
 - **PATCH** — bug fixes, performance improvements, documentation updates.
 
+Bump `[workspace.package].version` **and** matching `containust-*` pins under
+`[workspace.dependencies]` in the root `Cargo.toml`.
+
 ### Changelog
 
-Maintain `CHANGELOG.md` in [Keep a Changelog](https://keepachangelog.com/) format:
+Maintain root [`CHANGELOG.md`](../CHANGELOG.md) in [Keep a Changelog](https://keepachangelog.com/) format:
 
 ```markdown
 ## [Unreleased]
@@ -416,15 +421,16 @@ Maintain `CHANGELOG.md` in [Keep a Changelog](https://keepachangelog.com/) forma
 ### Tag and Publish
 
 ```bash
-# Update version in all Cargo.toml files
-cargo set-version --workspace 0.2.0
+# Update workspace package version (and verify workspace.dependencies pins)
+cargo set-version --workspace 0.8.0
 
-# Update CHANGELOG.md — move [Unreleased] to [0.2.0]
+# Update CHANGELOG.md — move [Unreleased] to [0.8.0]
+# Align docs/CLI_REFERENCE.md and docs/SDK_GUIDE.md version banners
 
 # Commit and tag
 git add -A
-git commit -m "release: v0.2.0"
-git tag v0.2.0
+git commit -m "release: v0.8.0"
+git tag v0.8.0
 
 # Push
 git push origin main --tags

@@ -88,6 +88,11 @@ pub const CGROUP_V2_PATH: &str = "/sys/fs/cgroup";
 /// File extension for Containust composition files.
 pub const CTST_EXTENSION: &str = ".ctst";
 
+/// Current `state.json` schema version.
+///
+/// Older schemas are migrated on load; newer schemas are rejected (fail closed).
+pub const STATE_SCHEMA_VERSION: u32 = 2;
+
 /// SHA-256 digest length in hex characters.
 pub const SHA256_HEX_LENGTH: usize = 64;
 
@@ -99,3 +104,13 @@ pub const APP_NAME: &str = "containust";
 
 /// Binary name for the CLI.
 pub const BIN_NAME: &str = "ctst";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_schema_version_is_positive() {
+        assert!(STATE_SCHEMA_VERSION >= 1);
+    }
+}

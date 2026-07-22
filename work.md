@@ -11,7 +11,8 @@
 
 ## Current sprint: Sprint 7 → `0.8.0`
 
-Release readiness: packaging, CI gates, coverage, benchmarks, runbooks.
+- [x] **L7.1** Versioning / compatibility docs (`docs/VERSIONING.md`, `CHANGELOG.md`).
+- [ ] **L7.2–L7.7** Artifacts, packaging, CI gates, coverage, benchmarks, runbooks.
 
 Sprint 8 (`0.9.0-beta`): feature freeze + upgrade rehearsal.  
 Sprint 9 (`1.0.0`): GA.

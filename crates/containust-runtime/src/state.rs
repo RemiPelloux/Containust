@@ -7,13 +7,14 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use containust_common::constants::STATE_SCHEMA_VERSION;
 use containust_common::error::{ContainustError, Result};
 use containust_common::types::{ContainerId, ContainerState};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
-/// Current on-disk state schema.
-pub const CURRENT_STATE_SCHEMA: u32 = 2;
+/// Current on-disk state schema (alias of [`STATE_SCHEMA_VERSION`]).
+pub const CURRENT_STATE_SCHEMA: u32 = STATE_SCHEMA_VERSION;
 
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
