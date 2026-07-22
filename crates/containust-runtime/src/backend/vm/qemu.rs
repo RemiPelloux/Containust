@@ -10,6 +10,7 @@ use super::ports::build_netdev_arg;
 
 const VM_MEMORY_MB: u32 = 512;
 const VM_CPUS: u32 = 2;
+const VM_CPUS_TCG: u32 = 1;
 
 /// Returns the QEMU binary name for the host architecture.
 #[must_use]
@@ -50,13 +51,13 @@ pub fn cpu_model() -> &'static str {
 }
 
 /// Returns the virtio NIC model for the host architecture.
+///
+/// Prefer PCI virtio on aarch64 `virt` machines: Alpine's virtio-mmio path
+/// often leaves the guest without `eth0` unless modules race correctly, while
+/// `virtio-net-pci` enumerates reliably for QEMU user-net + hostfwd.
 #[must_use]
 pub const fn net_device() -> &'static str {
-    if cfg!(target_arch = "aarch64") {
-        "virtio-net-device,netdev=net0"
-    } else {
-        "virtio-net-pci,netdev=net0"
-    }
+    "virtio-net-pci,netdev=net0"
 }
 
 /// Returns platform-specific QEMU acceleration flags.
@@ -113,6 +114,20 @@ pub fn qemu_stderr_path(vm_dir: &Path) -> PathBuf {
     vm_dir.join("qemu.stderr.log")
 }
 
+/// Path where guest serial console is captured for diagnostics.
+#[must_use]
+pub fn qemu_serial_path(vm_dir: &Path) -> PathBuf {
+    vm_dir.join("qemu.serial.log")
+}
+
+fn vm_smp() -> u32 {
+    if use_software_accel() {
+        VM_CPUS_TCG
+    } else {
+        VM_CPUS
+    }
+}
+
 /// Inputs for a QEMU VM spawn.
 #[derive(Debug, Clone, Copy)]
 pub struct QemuSpawn<'a> {
@@ -141,6 +156,11 @@ pub fn spawn_qemu(opts: QemuSpawn<'_>) -> Result<Child> {
         path: stderr_path.clone(),
         source,
     })?;
+    let serial_path = qemu_serial_path(opts.vm_dir);
+    let serial_file = File::create(&serial_path).map_err(|source| ContainustError::Io {
+        path: serial_path.clone(),
+        source,
+    })?;
 
     let mut cmd = Command::new(opts.qemu);
     let _ = cmd
@@ -150,19 +170,20 @@ pub fn spawn_qemu(opts: QemuSpawn<'_>) -> Result<Child> {
         .args(["-kernel", &opts.kernel.display().to_string()])
         .args(["-initrd", &opts.initramfs.display().to_string()])
         .args(["-m", &VM_MEMORY_MB.to_string()])
-        .args(["-smp", &VM_CPUS.to_string()])
+        .args(["-smp", &vm_smp().to_string()])
         .arg("-nographic")
         .arg("-no-reboot")
         .args([
             "-append",
             if cfg!(target_arch = "aarch64") {
-                "console=ttyAMA0 earlyprintk=serial,ttyAMA0 loglevel=3"
+                // rdinit forces our injected PID1 even if Alpine ships another init path.
+                "console=ttyAMA0 earlyprintk=serial,ttyAMA0 loglevel=6 rdinit=/init"
             } else {
-                "console=ttyS0 earlyprintk=serial,ttyS0 loglevel=3"
+                "console=ttyS0 earlyprintk=serial,ttyS0 loglevel=6 rdinit=/init"
             },
         ])
         .args(["-netdev", &hostfwd, "-device", net_device()])
-        .stdout(Stdio::null())
+        .stdout(Stdio::from(serial_file))
         .stderr(Stdio::from(stderr_file));
 
     cmd.spawn().map_err(|e| ContainustError::Io {
@@ -171,20 +192,31 @@ pub fn spawn_qemu(opts: QemuSpawn<'_>) -> Result<Child> {
     })
 }
 
-/// Returns a short tail of the QEMU stderr log for error messages.
+/// Returns a short tail of QEMU stderr + serial console for error messages.
 #[must_use]
 pub fn read_stderr_tail(vm_dir: &Path) -> String {
-    let path = qemu_stderr_path(vm_dir);
-    let Ok(content) = std::fs::read_to_string(&path) else {
+    let mut parts = Vec::new();
+    if let Some(tail) = log_tail(&qemu_stderr_path(vm_dir), 8) {
+        parts.push(format!("qemu stderr: {tail}"));
+    }
+    if let Some(tail) = log_tail(&qemu_serial_path(vm_dir), 16) {
+        parts.push(format!("guest serial: {tail}"));
+    }
+    if parts.is_empty() {
         return String::new();
-    };
-    let lines: Vec<&str> = content.lines().rev().take(12).collect();
+    }
+    format!("; {}", parts.join(" | "))
+}
+
+fn log_tail(path: &Path, max_lines: usize) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let lines: Vec<&str> = content.lines().rev().take(max_lines).collect();
     if lines.is_empty() {
-        return String::new();
+        return None;
     }
     let mut ordered: Vec<&str> = lines.into_iter().rev().collect();
     ordered.dedup();
-    format!("; qemu stderr: {}", ordered.join(" | "))
+    Some(ordered.join(" | "))
 }
 
 #[cfg(test)]

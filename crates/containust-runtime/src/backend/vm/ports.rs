@@ -93,11 +93,14 @@ pub fn probe_available(ports: &[u16]) -> Result<()> {
 /// Builds the QEMU user-mode netdev argument including agent + container forwards.
 #[must_use]
 pub fn build_netdev_arg(ports: &[u16]) -> String {
-    let mut hostfwd = format!("user,id=net0,hostfwd=tcp::{VM_AGENT_PORT}-:{VM_AGENT_PORT}");
+    // Pin host+guest addresses so macOS/TCG user-net reliably forwards to the
+    // static guest IP configured in the init script (10.0.2.15).
+    let mut hostfwd =
+        format!("user,id=net0,hostfwd=tcp:127.0.0.1:{VM_AGENT_PORT}-10.0.2.15:{VM_AGENT_PORT}");
     for &port in ports {
         if port != VM_AGENT_PORT {
             use std::fmt::Write as _;
-            let _ = write!(hostfwd, ",hostfwd=tcp::{port}-:{port}");
+            let _ = write!(hostfwd, ",hostfwd=tcp:127.0.0.1:{port}-10.0.2.15:{port}");
         }
     }
     hostfwd
@@ -174,7 +177,9 @@ mod tests {
     #[test]
     fn build_netdev_arg_includes_agent_and_ports() {
         let arg = build_netdev_arg(&[8080]);
-        assert!(arg.contains(&format!("hostfwd=tcp::{VM_AGENT_PORT}-:{VM_AGENT_PORT}")));
-        assert!(arg.contains("hostfwd=tcp::8080-:8080"));
+        assert!(arg.contains(&format!(
+            "hostfwd=tcp:127.0.0.1:{VM_AGENT_PORT}-10.0.2.15:{VM_AGENT_PORT}"
+        )));
+        assert!(arg.contains("hostfwd=tcp:127.0.0.1:8080-10.0.2.15:8080"));
     }
 }

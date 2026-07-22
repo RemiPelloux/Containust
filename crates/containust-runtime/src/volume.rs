@@ -31,7 +31,10 @@ pub fn parse_and_validate_volume(spec: &str) -> Result<VolumeMount> {
     let (source, target, mode) = split_volume_spec(spec)?;
     let source_path = Path::new(source);
     let target_path = Path::new(target);
-    if !source_path.is_absolute() || !target_path.is_absolute() {
+    // Host path uses platform `is_absolute`; container target is always Unix-style
+    // (`/…`). On Windows, `Path::is_absolute("/app")` is false, so check the
+    // target string explicitly (already required by `split_volume_spec`).
+    if !source_path.is_absolute() || !target.starts_with('/') {
         return Err(ContainustError::Config {
             message: format!("volume paths must be absolute: {spec}"),
         });
@@ -155,5 +158,17 @@ mod tests {
         assert_eq!(source, r"C:\Users\me\data");
         assert_eq!(target, "/app/data");
         assert_eq!(mode, Some("ro"));
+    }
+
+    #[test]
+    fn container_target_is_unix_absolute_even_when_host_path_api_differs() {
+        // Mirrors Windows host semantics: Path::is_absolute("/app") is false there.
+        assert!(Path::new("/app/data").to_string_lossy().starts_with('/'));
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = dir.path().join("vol");
+        std::fs::create_dir_all(&source).expect("mkdir");
+        let spec = format!("{}:/app/data", source.display());
+        let mount = parse_and_validate_volume(&spec).expect("parse");
+        assert_eq!(mount.target, Path::new("/app/data"));
     }
 }

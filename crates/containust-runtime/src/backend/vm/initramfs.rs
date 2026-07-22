@@ -29,19 +29,41 @@ chmod 1777 /tmp
 
 hostname containust-vm
 
-modprobe -q virtio_net 2>/dev/null
+# Order matters: bus/transport before net; failover deps for virtio_net.
+modprobe -q virtio_mmio 2>/dev/null
 modprobe -q virtio_pci 2>/dev/null
+modprobe -q failover 2>/dev/null
+modprobe -q net_failover 2>/dev/null
+modprobe -q virtio_net 2>/dev/null
 modprobe -q virtio_blk 2>/dev/null
 
 ip link set lo up
-for iface in eth0 enp0s1 ens3; do
-    ip link set "$iface" up 2>/dev/null && break
+IFACE=""
+for candidate in eth0 enp0s1 ens3; do
+    if ip link set "$candidate" up 2>/dev/null; then
+        IFACE="$candidate"
+        break
+    fi
 done
-
-if command -v udhcpc >/dev/null 2>&1; then
-    udhcpc -i eth0 -s /usr/share/udhcpc/default.script -q -n -t 5 2>/dev/null
+# virtio-net-device on aarch64 may appear as eth0 only after modprobe settles.
+if [ -z "$IFACE" ]; then
+    for candidate in /sys/class/net/*; do
+        name=$(basename "$candidate")
+        [ "$name" = "lo" ] && continue
+        ip link set "$name" up 2>/dev/null && IFACE="$name" && break
+    done
+fi
+if [ -n "$IFACE" ] && command -v udhcpc >/dev/null 2>&1; then
+    udhcpc -i "$IFACE" -s /usr/share/udhcpc/default.script -q -n -t 8 2>/dev/null \
+        || udhcpc -i "$IFACE" -q -n -t 8 2>/dev/null
+fi
+# QEMU user-net fallback when DHCP script is missing from the initramfs.
+if [ -n "$IFACE" ]; then
+    ip addr add 10.0.2.15/24 dev "$IFACE" 2>/dev/null
+    ip link set "$IFACE" up 2>/dev/null
 fi
 ip route add default via 10.0.2.2 2>/dev/null
+mkdir -p /etc
 echo "nameserver 10.0.2.3" > /etc/resolv.conf
 
 mkdir -p /tmp/containust/containers /tmp/containust/logs /tmp/containust/rootfs
@@ -69,7 +91,7 @@ RD="/tmp/containust/rootfs"
 
 gen_id() { cat /proc/sys/kernel/random/uuid 2>/dev/null | tr -d '-' | head -c 16; }
 # Protocol v1: wrap every response with echoed request id.
-wrap() { echo "{\"v\":1,\"id\":\"$req_id\",$1}"; }
+wrap() { printf '%s\n' "{\"v\":1,\"id\":\"$req_id\",$1}"; }
 wrap_err() { wrap "\"error\":\"$1\""; }
 
 h_create() {
@@ -176,21 +198,22 @@ h_remove() {
     wrap "\"result\":\"ok\""
 }
 
-# Bound request line to 64 KiB (protocol MAX_REQUEST_BYTES).
-line=$(head -c 65537)
+# Line-delimited protocol. Prefer head -n 1 (not head -c): the host keeps the
+# TCP write side open while reading the reply, so byte-count reads deadlock.
+line=$(head -n 1)
 [ "${#line}" -gt 65536 ] && req_id="0" && wrap_err "request exceeds 65536 bytes" && exit 0
-req_id=$(echo "$line" | sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
+req_id=$(printf '%s' "$line" | sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
 [ -z "$req_id" ] && req_id="0"
-req_v=$(echo "$line" | sed -n 's/.*"v" *: *\([0-9][0-9]*\).*/\1/p')
+req_v=$(printf '%s' "$line" | sed -n 's/.*"v" *: *\([0-9][0-9]*\).*/\1/p')
 [ "$req_v" != "1" ] && wrap_err "unsupported protocol version" && exit 0
-project=$(echo "$line" | sed -n 's/.*"project" *: *"\([0-9a-f][0-9a-f]*\)".*/\1/p')
+project=$(printf '%s' "$line" | sed -n 's/.*"project" *: *"\([0-9a-f][0-9a-f]*\)".*/\1/p')
 [ -z "$project" ] && project="default"
 BASE="/tmp/containust/projects/$project"
 SD="$BASE/containers"
 LD="$BASE/logs"
 RD="$BASE/rootfs"
 mkdir -p "$SD" "$LD" "$RD"
-m=$(echo "$line" | sed -n 's/.*"method" *: *"\([^"]*\)".*/\1/p')
+m=$(printf '%s' "$line" | sed -n 's/.*"method" *: *"\([^"]*\)".*/\1/p')
 case "$m" in
     ping) wrap "\"result\":\"pong\"";;
     create) h_create "$line";;
@@ -206,10 +229,14 @@ HANDLER_EOF
 chmod 755 /tmp/handler.sh
 
 echo "containust-agent: listening on port $PORT"
+# BusyBox nc has no -e; the cat|nc|handler>fifo bridge is the portable pattern.
 while true; do
-    nc -ll -p "$PORT" -e /tmp/handler.sh 2>/dev/null
-    nc -l -p "$PORT" -e /tmp/handler.sh 2>/dev/null
-    sleep 0.1
+    rm -f /tmp/ctst.fifo
+    mkfifo /tmp/ctst.fifo
+    cat /tmp/ctst.fifo | nc -l -p "$PORT" | {
+        /tmp/handler.sh
+    } > /tmp/ctst.fifo
+    sleep 0.05
 done
 "##;
 
@@ -537,6 +564,8 @@ mod tests {
         assert!(!INIT_SCRIPT.is_empty());
         assert!(INIT_SCRIPT.contains("#!/bin/sh"));
         assert!(INIT_SCRIPT.contains("exec /sbin/containust-agent"));
+        assert!(INIT_SCRIPT.contains("10.0.2.15/24"));
+        assert!(INIT_SCRIPT.contains("udhcpc -i \"$IFACE\""));
     }
 
     #[test]
@@ -566,7 +595,8 @@ mod tests {
     fn agent_script_speaks_protocol_v1() {
         assert!(AGENT_SCRIPT.contains("unsupported protocol version"));
         assert!(AGENT_SCRIPT.contains("wrap()"));
-        assert!(AGENT_SCRIPT.contains("head -c 65537"));
+        assert!(AGENT_SCRIPT.contains("line=$(head -n 1)"));
+        assert!(AGENT_SCRIPT.contains("mkfifo /tmp/ctst.fifo"));
         assert!(AGENT_SCRIPT.contains("req_id"));
     }
 

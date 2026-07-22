@@ -10,6 +10,15 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [1.0.5] — 2026-07-22
+
+### Fixed
+
+- Windows: container volume targets are Unix-absolute (`/app`), not `Path::is_absolute`.
+- QEMU aarch64: use `virtio-net-pci` so the guest gets `eth0` and agent hostfwd works.
+- VM agent: line-delimited RPC read + FIFO listen loop (BusyBox `nc` without `-e`).
+- QEMU: pin hostfwd to `127.0.0.1` → guest `10.0.2.15`; capture guest serial on boot failure.
+
 ## [1.0.4] — 2026-07-22
 
 ### Fixed

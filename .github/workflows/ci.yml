@@ -199,11 +199,15 @@ jobs:
         env:
           # GitHub macOS runners lack HVF; force TCG and allow a long cold boot.
           CONTAINUST_QEMU_ACCEL: tcg
-          CONTAINUST_VM_BOOT_TIMEOUT_SECS: "600"
+          CONTAINUST_VM_BOOT_TIMEOUT_SECS: "900"
         run: |
           set -euo pipefail
           BIN=./target/release/ctst
-          "$BIN" vm start
+          "$BIN" vm start || {
+            echo '==== qemu.stderr.log ===='; cat "$HOME/.containust/cache/vm/qemu.stderr.log" || true
+            echo '==== qemu.serial.log (tail) ===='; tail -n 80 "$HOME/.containust/cache/vm/qemu.serial.log" || true
+            exit 1
+          }
           "$BIN" vm start
           "$BIN" vm stop
           "$BIN" vm stop
