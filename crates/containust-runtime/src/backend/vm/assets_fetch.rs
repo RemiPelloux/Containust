@@ -262,13 +262,13 @@ mod tests {
         let t1 = std::thread::spawn(move || {
             let lock = CacheLock::acquire(&path).expect("lock a");
             order_a.lock().expect("m").push(1);
-            ready_a.wait();
+            let _ = ready_a.wait();
             std::thread::sleep(std::time::Duration::from_millis(50));
             order_a.lock().expect("m").push(2);
             drop(lock);
         });
         let t2 = std::thread::spawn(move || {
-            ready_b.wait();
+            let _ = ready_b.wait();
             let lock = CacheLock::acquire(&path_b).expect("lock b");
             order_b.lock().expect("m").push(3);
             drop(lock);
