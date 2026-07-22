@@ -81,6 +81,7 @@ impl Engine {
         let backend = backend::detect_backend_with_paths(
             options.data_dir.clone(),
             options.state_file.clone(),
+            options.offline,
         );
         Self::with_backend(options, backend)
     }

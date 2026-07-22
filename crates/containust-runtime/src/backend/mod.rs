@@ -165,7 +165,7 @@ pub fn detect_backend() -> Box<dyn ContainerBackend> {
     let data_dir =
         containust_common::constants::project_dir(std::path::Path::new("containust.ctst"));
     let state_file = data_dir.join("state").join("state.json");
-    detect_backend_with_paths(data_dir, state_file)
+    detect_backend_with_paths(data_dir, state_file, false)
 }
 
 /// Creates the platform backend with explicit runtime storage paths.
@@ -173,14 +173,16 @@ pub fn detect_backend() -> Box<dyn ContainerBackend> {
 pub fn detect_backend_with_paths(
     data_dir: std::path::PathBuf,
     state_file: std::path::PathBuf,
+    offline: bool,
 ) -> Box<dyn ContainerBackend> {
     #[cfg(target_os = "linux")]
     {
+        let _ = offline;
         Box::new(linux::LinuxNativeBackend::with_paths(data_dir, state_file))
     }
     #[cfg(not(target_os = "linux"))]
     {
-        Box::new(vm::VMBackend::with_paths(data_dir, state_file))
+        Box::new(vm::VMBackend::with_options(data_dir, state_file, offline))
     }
 }
 

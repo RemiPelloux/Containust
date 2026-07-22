@@ -17,6 +17,7 @@ use super::{ContainerBackend, ContainerConfig, ContainerInfo, project_identifier
 use crate::exec::ExecOutput;
 
 pub mod assets;
+mod assets_fetch;
 pub mod initramfs;
 
 const VM_PORT: u16 = 10809;
@@ -35,6 +36,7 @@ pub struct VMBackend {
     data_dir: PathBuf,
     state_file: PathBuf,
     project_id: String,
+    offline: bool,
     vm_process: Mutex<Option<Child>>,
     forwarded_ports: Mutex<Vec<u16>>,
 }
@@ -53,6 +55,12 @@ impl VMBackend {
     /// Creates a VM backend scoped to explicit project storage paths.
     #[must_use]
     pub fn with_paths(data_dir: PathBuf, state_file: PathBuf) -> Self {
+        Self::with_options(data_dir, state_file, false)
+    }
+
+    /// Creates a VM backend with explicit storage paths and network policy.
+    #[must_use]
+    pub fn with_options(data_dir: PathBuf, state_file: PathBuf, offline: bool) -> Self {
         let vm_dir = containust_common::constants::global_cache_dir().join("vm");
         let project_id = project_identifier(&data_dir);
         Self {
@@ -60,6 +68,7 @@ impl VMBackend {
             data_dir,
             state_file,
             project_id,
+            offline,
             vm_process: Mutex::new(None),
             forwarded_ports: Mutex::new(Vec::new()),
         }
@@ -94,7 +103,14 @@ impl VMBackend {
         let custom_initramfs_path = self.vm_dir.join("initramfs-containust.img");
         let base_initramfs_path = self.vm_dir.join("initramfs-base.img");
         let entry = assets::asset_for_arch(assets::host_arch())?;
-        assets::ensure_cached(entry, &kernel_path, &base_initramfs_path)?;
+        assets::ensure_cached(
+            entry,
+            &kernel_path,
+            &base_initramfs_path,
+            assets::AssetCachePolicy {
+                offline: self.offline,
+            },
+        )?;
 
         // Always rebuild to pick up agent script changes.
         let _ = std::fs::remove_file(&custom_initramfs_path);

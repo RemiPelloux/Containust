@@ -18,7 +18,7 @@
 Make macOS and Windows execution a supported workflow with deterministic assets and lifecycle behavior.
 
 - [x] **V5.1 VM asset manifest.** Pinned Alpine 3.21.7 netboot kernel/initramfs URLs + SHA-256 per arch (`backend/vm/assets.rs`); cache hits re-verified; corrupt blobs re-downloaded fail-closed.
-- [ ] **V5.2 Asset cache.** Resumable downloads, cache locking, clear offline failures.
+- [x] **V5.2 Asset cache.** Resumable downloads (`*.partial` + HTTP Range), exclusive `.assets.lock`, offline fail-closed with cache remediation hint.
 - [ ] **V5.3 VM lifecycle.** Idempotent start/stop, readiness, graceful shutdown, stale-process recovery.
 - [ ] **V5.4 RPC contract.** Versioned agent protocol, request IDs, timeouts, bounded payloads.
 - [ ] **V5.5 Port forwarding.** Ownership/teardown of forwarded ports; reject collisions before boot.

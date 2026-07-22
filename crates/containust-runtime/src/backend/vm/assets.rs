@@ -1,13 +1,23 @@
 //! Pinned VM boot assets (kernel + base initramfs).
 //!
 //! Each architecture maps to versioned Alpine netboot URLs with
-//! committed SHA-256 digests. Downloads and cache hits are verified
-//! before use so a floating CDN pointer cannot silently change.
+//! committed SHA-256 digests. Downloads are resumable, cache updates
+//! are exclusive-locked, and offline mode fails closed with a clear
+//! remediation hint.
 
 use std::path::Path;
 
 use containust_common::error::{ContainustError, Result};
 use containust_common::types::Sha256Hash;
+
+use super::assets_fetch::{CacheLock, download_resumable};
+
+/// Network policy for populating the VM asset cache.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AssetCachePolicy {
+    /// When true, refuse downloads and require a verified local cache.
+    pub offline: bool,
+}
 
 /// Pinned VM boot assets for one host architecture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,80 +84,88 @@ pub fn asset_for_arch(arch: &str) -> Result<&'static VmAssetEntry> {
 }
 
 /// Ensures kernel and initramfs files exist at `dest_*` and match the
-/// pinned digests. Downloads when missing or corrupt.
+/// pinned digests. Downloads when missing or corrupt unless offline.
+///
+/// Concurrent callers serialize on an exclusive lock in the cache
+/// directory so partial files are never corrupted.
 ///
 /// # Errors
 ///
-/// Returns an error if the architecture is unknown, the download fails,
-/// or the downloaded bytes do not match the pinned digest.
+/// Returns an error if the architecture is unknown, offline mode blocks
+/// a required download, the download fails, or the digest does not match.
 pub fn ensure_cached(
     entry: &VmAssetEntry,
     dest_kernel: &Path,
     dest_initramfs: &Path,
+    policy: AssetCachePolicy,
 ) -> Result<()> {
-    ensure_one("kernel", entry.kernel_url, entry.kernel_sha256, dest_kernel)?;
-    ensure_one(
-        "initramfs",
-        entry.initramfs_url,
-        entry.initramfs_sha256,
-        dest_initramfs,
-    )?;
+    let cache_dir = dest_kernel
+        .parent()
+        .ok_or_else(|| ContainustError::Config {
+            message: format!(
+                "VM kernel path has no parent directory: {}",
+                dest_kernel.display()
+            ),
+        })?;
+    let _lock = CacheLock::acquire(cache_dir)?;
+    ensure_one(EnsureOne {
+        kind: "kernel",
+        url: entry.kernel_url,
+        expected_hex: entry.kernel_sha256,
+        dest: dest_kernel,
+        policy,
+    })?;
+    ensure_one(EnsureOne {
+        kind: "initramfs",
+        url: entry.initramfs_url,
+        expected_hex: entry.initramfs_sha256,
+        dest: dest_initramfs,
+        policy,
+    })?;
     Ok(())
 }
 
-fn ensure_one(kind: &str, url: &str, expected_hex: &str, dest: &Path) -> Result<()> {
-    let expected = Sha256Hash::from_hex(expected_hex)?;
-    if dest.exists() && !is_empty(dest) {
-        match containust_image::hash::validate_hash(dest, &expected) {
+#[derive(Clone, Copy)]
+struct EnsureOne<'a> {
+    kind: &'a str,
+    url: &'a str,
+    expected_hex: &'a str,
+    dest: &'a Path,
+    policy: AssetCachePolicy,
+}
+
+fn ensure_one(req: EnsureOne<'_>) -> Result<()> {
+    let expected = Sha256Hash::from_hex(req.expected_hex)?;
+    if req.dest.exists() && !is_empty(req.dest) {
+        match containust_image::hash::validate_hash(req.dest, &expected) {
             Ok(()) => return Ok(()),
             Err(error) => {
                 tracing::warn!(
-                    path = %dest.display(),
+                    path = %req.dest.display(),
                     %error,
-                    "cached VM {kind} failed digest check; re-downloading"
+                    "cached VM {} failed digest check; re-downloading",
+                    req.kind
                 );
-                let _ = std::fs::remove_file(dest);
+                let _ = std::fs::remove_file(req.dest);
             }
         }
     }
-    eprintln!("  Downloading Alpine Linux {kind} (first run / digest refresh)...");
-    download_verified(url, dest, &expected)
-}
-
-fn download_verified(url: &str, dest: &Path, expected: &Sha256Hash) -> Result<()> {
-    let response = reqwest::blocking::get(url).map_err(|e| ContainustError::Network {
-        url: url.to_string(),
-        message: format!("failed to download: {e}"),
-    })?;
-    if !response.status().is_success() {
+    if req.policy.offline {
         return Err(ContainustError::Network {
-            url: url.to_string(),
-            message: format!("HTTP {} downloading asset", response.status()),
+            url: req.url.to_string(),
+            message: format!(
+                "offline mode blocks VM {} download. Run once online \
+                 (`ctst vm start` without --offline) to populate \
+                 ~/.containust/cache/vm/, then retry air-gapped",
+                req.kind
+            ),
         });
     }
-    let bytes = response.bytes().map_err(|e| ContainustError::Network {
-        url: url.to_string(),
-        message: format!("failed to read response body: {e}"),
-    })?;
-    #[allow(clippy::cast_precision_loss)]
-    {
-        let mb = bytes.len() as f64 / 1_048_576.0;
-        eprintln!("  Downloaded {mb:.1} MB");
-    }
-    let staging = dest.with_extension("partial");
-    std::fs::write(&staging, &bytes).map_err(|source| ContainustError::Io {
-        path: staging.clone(),
-        source,
-    })?;
-    if let Err(error) = containust_image::hash::validate_hash(&staging, expected) {
-        let _ = std::fs::remove_file(&staging);
-        return Err(error);
-    }
-    std::fs::rename(&staging, dest).map_err(|source| ContainustError::Io {
-        path: dest.to_path_buf(),
-        source,
-    })?;
-    Ok(())
+    eprintln!(
+        "  Downloading Alpine Linux {} (first run / digest refresh)...",
+        req.kind
+    );
+    download_resumable(req.url, req.dest, &expected)
 }
 
 fn is_empty(path: &Path) -> bool {
@@ -196,30 +214,6 @@ mod tests {
     const ZERO_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
     #[test]
-    fn ensure_cached_rejects_corrupt_bytes() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let kernel = dir.path().join("vmlinuz");
-        let initramfs = dir.path().join("initramfs");
-        std::fs::write(&kernel, b"not-a-kernel").expect("write");
-        std::fs::write(&initramfs, b"not-an-initramfs").expect("write");
-        let entry = VmAssetEntry {
-            arch: "test",
-            alpine_release: "0.0.0",
-            kernel_url: "http://127.0.0.1:1/missing-kernel",
-            kernel_sha256: ZERO_DIGEST,
-            initramfs_url: "http://127.0.0.1:1/missing-initramfs",
-            initramfs_sha256: ZERO_DIGEST,
-        };
-        // Corrupt cache must not be accepted; re-download will fail offline.
-        let error = ensure_cached(&entry, &kernel, &initramfs).expect_err("corrupt");
-        assert!(
-            error.to_string().contains("hash mismatch")
-                || error.to_string().contains("network")
-                || error.to_string().contains("failed to download")
-        );
-    }
-
-    #[test]
     fn ensure_cached_accepts_matching_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let kernel = dir.path().join("vmlinuz");
@@ -234,6 +228,59 @@ mod tests {
             initramfs_url: "http://127.0.0.1:1/unused",
             initramfs_sha256: INIT_DIGEST,
         };
-        ensure_cached(&entry, &kernel, &initramfs).expect("matching cache is accepted");
+        ensure_cached(
+            &entry,
+            &kernel,
+            &initramfs,
+            AssetCachePolicy { offline: true },
+        )
+        .expect("matching cache is accepted offline");
+    }
+
+    #[test]
+    fn ensure_cached_offline_missing_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let entry = VmAssetEntry {
+            arch: "test",
+            alpine_release: "0.0.0",
+            kernel_url: "http://127.0.0.1:1/missing-kernel",
+            kernel_sha256: ZERO_DIGEST,
+            initramfs_url: "http://127.0.0.1:1/missing-initramfs",
+            initramfs_sha256: ZERO_DIGEST,
+        };
+        let error = ensure_cached(
+            &entry,
+            &dir.path().join("vmlinuz"),
+            &dir.path().join("initramfs"),
+            AssetCachePolicy { offline: true },
+        )
+        .expect_err("offline missing must fail");
+        assert!(error.to_string().contains("offline"));
+        assert!(error.to_string().contains("cache/vm"));
+    }
+
+    #[test]
+    fn ensure_cached_offline_corrupt_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let kernel = dir.path().join("vmlinuz");
+        let initramfs = dir.path().join("initramfs");
+        std::fs::write(&kernel, b"not-a-kernel").expect("write");
+        std::fs::write(&initramfs, b"not-an-initramfs").expect("write");
+        let entry = VmAssetEntry {
+            arch: "test",
+            alpine_release: "0.0.0",
+            kernel_url: "https://example.test/kernel",
+            kernel_sha256: ZERO_DIGEST,
+            initramfs_url: "https://example.test/initramfs",
+            initramfs_sha256: ZERO_DIGEST,
+        };
+        let error = ensure_cached(
+            &entry,
+            &kernel,
+            &initramfs,
+            AssetCachePolicy { offline: true },
+        )
+        .expect_err("offline corrupt must fail");
+        assert!(error.to_string().contains("offline"));
     }
 }
