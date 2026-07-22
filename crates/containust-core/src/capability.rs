@@ -34,15 +34,17 @@ impl Capability {
     }
 }
 
-/// Maximum capability number to iterate when dropping.
+/// Inclusive upper bound of capability numbers to drop (covers
+/// `CAP_CHECKPOINT_RESTORE` = 40 on current kernels).
 #[cfg(target_os = "linux")]
 const CAP_LAST_CAP: u32 = 40;
 
 /// Drops all Linux capabilities except those in the allowlist and
 /// sets `NO_NEW_PRIVS` so privilege escalation via setuid is blocked.
 ///
-/// Iterates over all capability numbers 0..40 and drops each one
-/// that is not in the `keep` set using `prctl(PR_CAPBSET_DROP)`.
+/// Iterates over capability numbers `0..=CAP_LAST_CAP` and drops each
+/// one that is not in the `keep` set using `prctl(PR_CAPBSET_DROP)`.
+/// Unknown numbers return `EINVAL` and are skipped.
 ///
 /// # Errors
 ///
@@ -54,7 +56,7 @@ pub fn drop_capabilities(keep: &[Capability]) -> Result<()> {
     let kept_caps: std::collections::HashSet<u32> =
         keep.iter().map(|c| c.linux_cap_number()).collect();
 
-    for cap in 0..CAP_LAST_CAP {
+    for cap in 0..=CAP_LAST_CAP {
         if kept_caps.contains(&cap) {
             continue;
         }

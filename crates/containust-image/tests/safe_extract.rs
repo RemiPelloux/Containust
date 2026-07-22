@@ -99,3 +99,51 @@ fn safe_extract_rejects_symlink_escape() {
     let error = safe_extract_archive(&archive, &target).expect_err("must reject");
     assert!(error.to_string().contains("unsafe archive entry"));
 }
+
+#[cfg(unix)]
+#[test]
+fn safe_extract_rejects_chained_symlink_escape() {
+    // Classic tar-slip: subdir/up -> .. ; subdir/up2 -> up/.. ; then write
+    // through up2. Lexical depth checks miss this; resolve-under-root must not.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive = dir.path().join("chain.tar");
+    let file = std::fs::File::create(&archive).expect("create tar");
+    let mut builder = tar::Builder::new(file);
+
+    let mut dir_header = tar::Header::new_gnu();
+    dir_header.set_entry_type(tar::EntryType::Directory);
+    dir_header.set_size(0);
+    dir_header.set_mode(0o755);
+    dir_header.set_cksum();
+    builder
+        .append_data(&mut dir_header, "subdir", std::io::empty())
+        .expect("dir");
+
+    let mut up = tar::Header::new_gnu();
+    up.set_entry_type(tar::EntryType::Symlink);
+    up.set_size(0);
+    up.set_mode(0o777);
+    up.set_cksum();
+    builder.append_link(&mut up, "subdir/up", "..").expect("up");
+
+    let mut up2 = tar::Header::new_gnu();
+    up2.set_entry_type(tar::EntryType::Symlink);
+    up2.set_size(0);
+    up2.set_mode(0o777);
+    up2.set_cksum();
+    builder
+        .append_link(&mut up2, "subdir/up2", "up/..")
+        .expect("up2");
+    builder.finish().expect("finish");
+
+    let target = dir.path().join("out");
+    let error = safe_extract_archive(&archive, &target).expect_err("chain must fail");
+    assert!(
+        error.to_string().contains("unsafe archive entry"),
+        "unexpected error: {error}"
+    );
+    assert!(
+        !target.exists(),
+        "failed extract must wipe the target so no escape chain remains"
+    );
+}

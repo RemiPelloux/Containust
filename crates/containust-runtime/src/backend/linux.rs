@@ -135,11 +135,10 @@ impl ContainerBackend for LinuxNativeBackend {
                 io_weight: None,
             };
             if let Err(error) = apply_cgroup_limits(&self.project_id, id, pid, &limits) {
-                // Fail closed: tear down the just-spawned process.
-                let _ = nix_kill(pid);
+                // Fail closed: tear down the just-spawned process. If kill
+                // fails, keep the PID tracked so the orphan is not lost.
                 entry.state = containust_common::types::ContainerState::Failed;
-                entry.pid = None;
-                return Ok(Err(error));
+                return Ok(Err(fail_closed_after_cgroup_error(entry, pid, error)));
             }
             entry.state = containust_common::types::ContainerState::Running;
             entry.pid = Some(pid);
@@ -466,7 +465,7 @@ fn prepare_rootfs(
                 id: path_str.to_string(),
             });
         }
-        copy_dir_recursive(&src, &rootfs_dir)?;
+        copy_dir_recursive(&src, &rootfs_dir, &rootfs_dir)?;
         tracing::info!(rootfs = %rootfs_dir.display(), "rootfs copied from file:// source");
     } else if let Some(path_str) = image_uri.strip_prefix("tar://") {
         let archive = PathBuf::from(path_str);
@@ -492,7 +491,12 @@ fn prepare_rootfs(
 }
 
 /// Copies a directory tree recursively without following symlinks.
-fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
+/// Symlink targets must resolve under `confine_root`.
+fn copy_dir_recursive(
+    src: &std::path::Path,
+    dst: &std::path::Path,
+    confine_root: &std::path::Path,
+) -> Result<()> {
     std::fs::create_dir_all(dst).map_err(|e| ContainustError::Io {
         path: dst.to_path_buf(),
         source: e,
@@ -511,7 +515,7 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
             source: e,
         })?;
         let dest_path = dst.join(entry.file_name());
-        copy_one_entry(&entry.path(), &dest_path, file_type)?;
+        copy_one_entry(&entry.path(), &dest_path, file_type, confine_root)?;
     }
 
     Ok(())
@@ -521,13 +525,15 @@ fn copy_one_entry(
     src: &std::path::Path,
     dest: &std::path::Path,
     file_type: std::fs::FileType,
+    confine_root: &std::path::Path,
 ) -> Result<()> {
     if file_type.is_symlink() {
-        return copy_symlink(src, dest);
+        return copy_symlink(src, dest, confine_root);
     }
     if file_type.is_dir() {
-        return copy_dir_recursive(src, dest);
+        return copy_dir_recursive(src, dest, confine_root);
     }
+    containust_image::path_confine::assert_dest_confined(confine_root, dest)?;
     let _ = std::fs::copy(src, dest).map_err(|e| ContainustError::Io {
         path: src.to_path_buf(),
         source: e,
@@ -535,11 +541,16 @@ fn copy_one_entry(
     Ok(())
 }
 
-fn copy_symlink(src: &std::path::Path, dest: &std::path::Path) -> Result<()> {
+fn copy_symlink(
+    src: &std::path::Path,
+    dest: &std::path::Path,
+    confine_root: &std::path::Path,
+) -> Result<()> {
     let link = std::fs::read_link(src).map_err(|e| ContainustError::Io {
         path: src.to_path_buf(),
         source: e,
     })?;
+    containust_image::path_confine::ensure_symlink_confined(confine_root, dest, &link)?;
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(&link, dest).map_err(|e| ContainustError::Io {
@@ -553,6 +564,28 @@ fn copy_symlink(src: &std::path::Path, dest: &std::path::Path) -> Result<()> {
         Err(ContainustError::Config {
             message: "symlink copy requires a Unix host".into(),
         })
+    }
+}
+
+/// After a cgroup apply failure, kill the process or keep its PID tracked.
+fn fail_closed_after_cgroup_error(
+    entry: &mut crate::state::StateEntry,
+    pid: u32,
+    error: ContainustError,
+) -> ContainustError {
+    match nix_kill(pid) {
+        Ok(()) => {
+            entry.pid = None;
+            error
+        }
+        Err(kill_err) => {
+            entry.pid = Some(pid);
+            ContainustError::Config {
+                message: format!(
+                    "cgroup limits failed ({error}); also failed to kill pid {pid}: {kill_err}"
+                ),
+            }
+        }
     }
 }
 
@@ -769,7 +802,7 @@ mod tests {
         std::fs::create_dir_all(src.join("sub")).expect("create subdir");
         std::fs::write(src.join("sub").join("nested.txt"), "nested").expect("write nested file");
 
-        copy_dir_recursive(&src, &dst)?;
+        copy_dir_recursive(&src, &dst, &dst)?;
 
         assert!(dst.join("file.txt").exists());
         assert!(dst.join("sub").join("nested.txt").exists());
@@ -794,7 +827,7 @@ mod tests {
         let dst = temp_dir.join("empty_dst");
 
         std::fs::create_dir_all(&src).expect("create src");
-        copy_dir_recursive(&src, &dst)?;
+        copy_dir_recursive(&src, &dst, &dst)?;
 
         assert!(dst.exists());
         let _ = std::fs::remove_dir_all(&temp_dir);

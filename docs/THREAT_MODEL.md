@@ -45,7 +45,7 @@ Remote image fetch (`https://`, `preset://`) is an explicit trust boundary: offl
 
 | ID | Control | Status |
 | --- | --- | --- |
-| S4.1 | Safe archive extraction rejects traversal, absolute paths, unsafe types, escaping symlinks | Implemented (`containust-image::extract`) |
+| S4.1 | Safe archive extraction rejects traversal, absolute paths, unsafe types, escaping symlinks (including chained-symlink resolve-under-root) | Implemented (`containust-image::extract` + `path_confine`) |
 | S4.2 | Drop all capabilities by default; `PR_SET_NO_NEW_PRIVS`; fail closed on drop errors; no `CAP_SYS_ADMIN` | Implemented |
 | S4.3 | Explicit `NamespaceConfig`; mount/network/IPC/UTS on by default; unsupported PID/user requests fail closed | Implemented (PID/user deferred) |
 | S4.4 | Volume specs validated in the parent (absolute, no `..`, canonicalize existing sources) | Implemented |

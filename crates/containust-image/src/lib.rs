@@ -22,6 +22,7 @@ pub mod hash;
 pub mod import;
 pub mod layer;
 pub mod pack;
+pub mod path_confine;
 pub mod preset;
 pub(crate) mod preset_catalog;
 pub mod reference;

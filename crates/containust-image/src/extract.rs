@@ -1,16 +1,22 @@
 //! Safe archive extraction that fails closed on escape attempts.
 //!
 //! Rejects absolute paths, `..` components, hard links, device nodes,
-//! and symlink targets that resolve outside the extraction root.
+//! and symlink targets that resolve outside the extraction root —
+//! including chained-symlink escapes.
 
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use containust_common::error::{ContainustError, Result};
 
+use crate::path_confine::{assert_dest_confined, ensure_symlink_confined};
+
 const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
 
 /// Extracts a tar (optionally gzip-compressed) archive into `target`.
+///
+/// On failure the target directory is removed so a partial extract
+/// cannot leave a planted symlink chain behind.
 ///
 /// # Errors
 ///
@@ -21,6 +27,16 @@ pub fn safe_extract_archive(archive_path: &Path, target: &Path) -> Result<()> {
         path: target.to_path_buf(),
         source,
     })?;
+    match extract_into(archive_path, target) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(target);
+            Err(error)
+        }
+    }
+}
+
+fn extract_into(archive_path: &Path, target: &Path) -> Result<()> {
     let file = std::fs::File::open(archive_path).map_err(|source| ContainustError::Io {
         path: archive_path.to_path_buf(),
         source,
@@ -35,7 +51,6 @@ pub fn safe_extract_archive(archive_path: &Path, target: &Path) -> Result<()> {
         })?
         == 2
         && peek == GZIP_MAGIC;
-    // Re-open so the decoder/tar reader sees the full stream from offset 0.
     let file = std::fs::File::open(archive_path).map_err(|source| ContainustError::Io {
         path: archive_path.to_path_buf(),
         source,
@@ -75,9 +90,10 @@ fn unpack_one<R: Read>(entry: &mut tar::Entry<'_, R>, target: &Path) -> Result<(
     let dest = target.join(&relative);
     match header.entry_type() {
         tar::EntryType::Regular | tar::EntryType::Continuous => {
-            write_regular_file(entry, &dest)?;
+            write_regular_file(entry, target, &dest)?;
         }
         tar::EntryType::Directory => {
+            assert_dest_confined(target, &dest)?;
             std::fs::create_dir_all(&dest).map_err(|source| ContainustError::Io {
                 path: dest.clone(),
                 source,
@@ -91,8 +107,8 @@ fn unpack_one<R: Read>(entry: &mut tar::Entry<'_, R>, target: &Path) -> Result<(
             let Some(link) = link else {
                 return Err(unsafe_entry("symlink missing target", &entry_path));
             };
-            validate_symlink_target(target, &dest, &link)?;
-            create_symlink(&link, &dest)?;
+            ensure_symlink_confined(target, &dest, &link)?;
+            create_symlink(&link, target, &dest)?;
         }
         tar::EntryType::Link
         | tar::EntryType::Char
@@ -137,47 +153,19 @@ pub(crate) fn sanitize_entry_path(path: &Path) -> Result<PathBuf> {
     Ok(sanitized)
 }
 
-fn validate_symlink_target(root: &Path, dest: &Path, link: &Path) -> Result<()> {
-    if link.is_absolute() {
-        return Err(unsafe_entry("absolute symlink target", link));
-    }
-    let parent = dest.parent().unwrap_or(root);
-    let mut depth = root_depth(root, parent);
-    for component in link.components() {
-        match component {
-            Component::Normal(_) => depth = depth.saturating_add(1),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if depth == 0 {
-                    return Err(unsafe_entry("symlink escapes extraction root", link));
-                }
-                depth -= 1;
-            }
-            Component::RootDir | Component::Prefix(_) => {
-                return Err(unsafe_entry("absolute symlink target", link));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Counts how many components separate `path` from `root` (≥ 0 when under root).
-fn root_depth(root: &Path, path: &Path) -> usize {
-    path.strip_prefix(root).map_or(0, |relative| {
-        relative
-            .components()
-            .filter(|c| matches!(c, Component::Normal(_)))
-            .count()
-    })
-}
-
-fn write_regular_file<R: Read>(entry: &mut tar::Entry<'_, R>, dest: &Path) -> Result<()> {
+fn write_regular_file<R: Read>(
+    entry: &mut tar::Entry<'_, R>,
+    root: &Path,
+    dest: &Path,
+) -> Result<()> {
     if let Some(parent) = dest.parent() {
+        assert_dest_confined(root, parent)?;
         std::fs::create_dir_all(parent).map_err(|source| ContainustError::Io {
             path: parent.to_path_buf(),
             source,
         })?;
     }
+    assert_dest_confined(root, dest)?;
     let mut out = std::fs::File::create(dest).map_err(|source| ContainustError::Io {
         path: dest.to_path_buf(),
         source,
@@ -189,8 +177,9 @@ fn write_regular_file<R: Read>(entry: &mut tar::Entry<'_, R>, dest: &Path) -> Re
     Ok(())
 }
 
-fn create_symlink(link: &Path, dest: &Path) -> Result<()> {
+fn create_symlink(link: &Path, root: &Path, dest: &Path) -> Result<()> {
     if let Some(parent) = dest.parent() {
+        assert_dest_confined(root, parent)?;
         std::fs::create_dir_all(parent).map_err(|source| ContainustError::Io {
             path: parent.to_path_buf(),
             source,
