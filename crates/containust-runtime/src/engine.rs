@@ -326,14 +326,22 @@ impl Engine {
 
     /// Starts the QEMU-based VM backend on macOS/Windows.
     ///
-    /// Boots a lightweight Alpine Linux VM via QEMU with optional
-    /// custom kernel and initramfs paths. Does nothing on Linux
-    /// (native backend).
+    /// Boots a lightweight Alpine Linux VM via QEMU. Custom kernel and
+    /// initramfs paths are not yet supported and fail closed.
     ///
     /// # Errors
     ///
-    /// Returns an error if QEMU is not installed or the VM fails to start.
+    /// Returns an error if QEMU is not installed, custom assets are
+    /// requested, or the VM fails to start.
     pub fn vm_start(&self, kernel: Option<&str>, initramfs: Option<&str>) -> Result<()> {
+        if kernel.is_some() || initramfs.is_some() {
+            return Err(ContainustError::Config {
+                message: "custom --kernel/--initramfs is not supported yet; \
+                     omit them to use pinned Alpine netboot assets in \
+                     ~/.containust/cache/vm/"
+                    .into(),
+            });
+        }
         let Some(vm) = self
             .backend
             .as_any()
@@ -344,21 +352,19 @@ impl Engine {
             });
         };
 
-        _ = kernel;
-        _ = initramfs;
         vm.ensure_vm_running(&[])
     }
 
     /// Stops the QEMU-based VM backend.
     ///
-    /// Gracefully shuts down the Alpine Linux VM. The `force` flag
-    /// is reserved for future use (currently both paths send SIGKILL).
+    /// Without `force`, sends SIGTERM and escalates to SIGKILL after a
+    /// short grace period. With `force`, sends SIGKILL immediately.
+    /// Idempotent when the VM is already stopped.
     ///
     /// # Errors
     ///
-    /// Returns an error if the VM is not running.
+    /// Returns an error if stop cannot be completed safely.
     pub fn vm_stop(&self, force: bool) -> Result<()> {
-        _ = force;
         let Some(vm) = self
             .backend
             .as_any()
@@ -369,7 +375,7 @@ impl Engine {
             });
         };
 
-        vm.stop_vm()
+        vm.stop_vm(force)
     }
 }
 

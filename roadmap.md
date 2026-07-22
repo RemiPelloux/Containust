@@ -127,7 +127,7 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 - [x] **V5.1 VM asset manifest.** Pin kernel/initramfs URLs and SHA-256 digests per architecture (`backend/vm/assets.rs`, Alpine 3.21.7).
 - [x] **V5.2 Asset cache.** Resumable downloads (`*.partial` + HTTP Range), digest verification, exclusive cache lock, offline fail-closed remediation.
-- [ ] **V5.3 VM lifecycle.** Implement idempotent start/stop, readiness checks, graceful shutdown, and stale-process recovery.
+- [x] **V5.3 VM lifecycle.** Pidfile-backed idempotent start/stop, agent readiness adopt, SIGTERM→SIGKILL (honor `--force`), stale pid recovery; shared VM survives CLI drop.
 - [ ] **V5.4 RPC contract.** Version the agent protocol, validate all responses, add request IDs, timeouts, and bounded payload sizes.
 - [ ] **V5.5 Port forwarding.** Track ownership and teardown of forwarded ports; reject collisions before boot.
 - [ ] **V5.6 Cross-platform CI.** Run compile/unit tests on macOS and Windows and execute a QEMU smoke test on at least one hosted platform.

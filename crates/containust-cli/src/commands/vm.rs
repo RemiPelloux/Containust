@@ -31,22 +31,10 @@ pub struct VmStopArgs {
 /// Returns an error if QEMU is not installed or the VM fails to start.
 pub fn vm_start(args: VmStartArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
     let engine = options.engine();
-
-    let kernel = args.kernel.as_deref();
-    let initramfs = args.initramfs.as_deref();
     engine
-        .vm_start(kernel, initramfs)
+        .vm_start(args.kernel.as_deref(), args.initramfs.as_deref())
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-    match (kernel, initramfs) {
-        (Some(k), Some(i)) => {
-            println!("VM started with custom kernel ({k}) and initramfs ({i}).");
-        }
-        _ => {
-            println!("VM started with default assets.");
-        }
-    }
-
+    println!("VM is ready (pinned Alpine assets in ~/.containust/cache/vm/).");
     Ok(())
 }
 
