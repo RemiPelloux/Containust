@@ -28,11 +28,12 @@ pub fn execute(_args: DoctorArgs, options: &super::RuntimeOptions) -> anyhow::Re
     failed += report_cache(&info);
     report_offline(options.offline);
     report_linux_extras();
+    let ebpf = containust_runtime::observe::ebpf_status();
     report(
         "observe.ebpf",
         Status::Info,
-        "optional",
-        "eBPF probes are feature-gated; unavailable platforms degrade gracefully",
+        ebpf,
+        "Syscall/file/net probes",
     );
     println!();
     if failed == 0 {

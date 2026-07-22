@@ -4,7 +4,7 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at alpha `0.7.0` after Sprint 5 (VM backend) and the Sprint 6 observability core (events, doctor, error UX).
+Containust is at alpha `0.7.0` after Sprint 5 (VM backend) and Sprint 6 observability (events, metrics, TUI, eBPF gates, doctor, error UX).
 
 - The deterministic macOS workspace suite passes 470 tests with 23 privileged tests intentionally ignored. The Rust 1.88 Linux suite passes 480 with 26 privileged tests ignored.
 - Formatting and strict Clippy pass locally when invoked with the installed toolchain binaries.
@@ -132,20 +132,18 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Exit gate: passed for Sprint 5 scope.** Assets, cache, lifecycle, RPC, port ownership, and CI smoke are in place. Full guest container runbooks remain operator-validated on hardware with QEMU.
 
-## Next sprint: Observability and operator experience (Sprint 6)
-
-## Sprint 6: Observability and operator experience (`0.7.0` in progress)
+## Sprint 6: Observability and operator experience (`0.7.0`)
 
 **Goal:** make failures diagnosable during repeated operational use.
 
 - [x] **O6.1 Structured events.** Runtime `EventBus` + `Operation` events (project, operation, duration_ms, error_code); SDK `EventListener::subscribe`.
-- [ ] **O6.2 Metrics correctness.** Validate CPU, memory, I/O, and process metrics against a known workload; define zero/unavailable semantics.
-- [ ] **O6.3 TUI integration.** Wire `ctst ps --tui` to the real engine and support refresh, selection, logs, and quit behavior.
-- [ ] **O6.4 eBPF lifecycle.** Implement feature-gated load/attach/detach, capability checks, and graceful degradation when unsupported.
+- [x] **O6.2 Metrics correctness.** `MetricAvailability` for CPU/memory/I/O; Linux cgroup/`io.stat` reads; non-Linux zeros mean unavailable, not idle.
+- [x] **O6.3 TUI integration.** `ctst ps --tui` drives `containust_tui::run_dashboard` with live container rows, selection, and quit.
+- [x] **O6.4 eBPF lifecycle.** Feature/OS-gated `attach`/`detach`, doctor status via `runtime::observe`, graceful degradation when unsupported.
 - [x] **O6.5 Diagnostics.** `ctst doctor` for OS/arch, native/QEMU backend, cache writability, VM assets, offline, cgroup v2 (Linux).
 - [x] **O6.6 Error UX.** Stable codes via `containust_common::codes` with CLI `error[CODE]` + remediation hint + exit status.
 
-**Exit gate (partial):** failures surface codes/hints; doctor reports platform readiness. TUI/eBPF/metrics remain for the next commits.
+**Exit gate: passed for Sprint 6 scope.**
 
 ## Sprint 7: Release readiness
 

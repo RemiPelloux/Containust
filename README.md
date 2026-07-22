@@ -2,7 +2,7 @@
 
 Containust is a daemon-less container runtime and declarative composition tool written in Rust. It is designed for local, sovereign, and air-gapped workflows where a long-running privileged daemon is undesirable.
 
-> **Project status: alpha (`0.7.0`).** Sprint 6 adds structured lifecycle events, `ctst doctor`, and CLI error codes with remediation hints. Sprint 5 VM backend and earlier image/security work remain. Remaining toward 1.0: metrics/TUI/eBPF polish, packaging, beta freeze, GA gates.
+> **Project status: alpha (`0.7.0`).** Sprint 6 complete: lifecycle events, metrics availability, `ctst ps --tui`, eBPF attach/detach gates, `ctst doctor`, CLI error codes. Remaining toward 1.0: packaging/CI (Sprint 7), beta freeze (Sprint 8), GA (Sprint 9).
 
 [![CI](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml)
 [![Security audit](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml)

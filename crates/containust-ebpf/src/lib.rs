@@ -11,6 +11,9 @@
 //! BPF for these capabilities to be available.
 
 pub mod file_monitor;
+pub mod lifecycle;
 pub mod net_monitor;
 pub mod programs;
 pub mod tracer;
+
+pub use lifecycle::{ProbeAvailability, attach, availability_message, detach, probe_availability};
