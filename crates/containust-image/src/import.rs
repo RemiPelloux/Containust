@@ -6,20 +6,18 @@
 //! supply-chain metadata. Materialization reconstructs a rootfs from
 //! the catalog without touching the original source or the network.
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use containust_common::error::{ContainustError, Result};
 use containust_common::types::{ImageId, Sha256Hash};
 
+use crate::extract::safe_extract_archive;
 use crate::fetch::{FetchPolicy, fetch_remote};
 use crate::pack::pack_directory_hashed;
 use crate::preset::{preset_fetch_reference, resolve_preset};
 use crate::reference::{ImageReference, ImageScheme};
 use crate::registry::{ImageCatalog, ImageEntry};
 use crate::storage::StorageBackend;
-
-const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
 
 /// Parameters for importing an image into the local store.
 #[derive(Debug, Clone)]
@@ -291,36 +289,13 @@ fn file_size(path: &Path) -> Result<u64> {
 
 fn extract_layer_blob(store: &StorageBackend, hash: &str, target: &Path) -> Result<()> {
     let blob = store.layer_blob_path(hash);
-    let mut file = std::fs::File::open(&blob).map_err(|_| ContainustError::NotFound {
-        kind: "image layer",
-        id: hash.to_string(),
-    })?;
-    let mut magic = [0_u8; 2];
-    let gzip = file
-        .read(&mut magic)
-        .map_err(|source| ContainustError::Io {
-            path: blob.clone(),
-            source,
-        })?
-        == 2
-        && magic == GZIP_MAGIC;
-
-    let file = std::fs::File::open(&blob).map_err(|source| ContainustError::Io {
-        path: blob.clone(),
-        source,
-    })?;
-    let io_error = |source| ContainustError::Io {
-        path: target.to_path_buf(),
-        source,
-    };
-    if gzip {
-        tar::Archive::new(flate2::read::GzDecoder::new(file))
-            .unpack(target)
-            .map_err(io_error)?;
-    } else {
-        tar::Archive::new(file).unpack(target).map_err(io_error)?;
+    if !blob.exists() {
+        return Err(ContainustError::NotFound {
+            kind: "image layer",
+            id: hash.to_string(),
+        });
     }
-    Ok(())
+    safe_extract_archive(&blob, target)
 }
 
 #[cfg(test)]

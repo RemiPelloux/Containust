@@ -38,16 +38,19 @@ impl Capability {
 #[cfg(target_os = "linux")]
 const CAP_LAST_CAP: u32 = 40;
 
-/// Drops all Linux capabilities except those in the allowlist.
+/// Drops all Linux capabilities except those in the allowlist and
+/// sets `NO_NEW_PRIVS` so privilege escalation via setuid is blocked.
 ///
 /// Iterates over all capability numbers 0..40 and drops each one
 /// that is not in the `keep` set using `prctl(PR_CAPBSET_DROP)`.
 ///
 /// # Errors
 ///
-/// Returns an error if capability manipulation fails on a non-Linux platform.
+/// Returns an error if capability manipulation fails. Callers must
+/// fail closed — never ignore this error on a security boundary.
 #[cfg(target_os = "linux")]
 pub fn drop_capabilities(keep: &[Capability]) -> Result<()> {
+    set_no_new_privs()?;
     let kept_caps: std::collections::HashSet<u32> =
         keep.iter().map(|c| c.linux_cap_number()).collect();
 
@@ -59,6 +62,22 @@ pub fn drop_capabilities(keep: &[Capability]) -> Result<()> {
     }
     tracing::info!(retained = keep.len(), "capabilities dropped");
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn set_no_new_privs() -> Result<()> {
+    // SAFETY: PR_SET_NO_NEW_PRIVS with args (1, 0, 0, 0) is the documented
+    // way to permanently disable privilege gains for the calling thread.
+    let ret = unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) };
+    if ret == 0 {
+        return Ok(());
+    }
+    Err(ContainustError::PermissionDenied {
+        message: format!(
+            "failed to set PR_SET_NO_NEW_PRIVS: {}",
+            std::io::Error::last_os_error()
+        ),
+    })
 }
 
 #[cfg(target_os = "linux")]

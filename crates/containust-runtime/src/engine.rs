@@ -175,6 +175,7 @@ impl Engine {
             readonly_rootfs: comp.readonly.unwrap_or(true),
             volumes: component_volumes(comp),
             port: comp.port,
+            namespaces: containust_core::namespace::NamespaceConfig::default(),
         };
 
         eprintln!("  Creating container '{}'...", comp.name);

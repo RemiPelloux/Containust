@@ -31,15 +31,55 @@ pub struct NamespaceConfig {
 }
 
 impl Default for NamespaceConfig {
+    /// Secure defaults for the Linux spawn path (`unshare` + `exec`).
+    ///
+    /// Mount, network, IPC, and UTS are enabled. PID and user namespaces
+    /// require additional machinery (double-fork / uid maps) and must be
+    /// opted into once those paths are implemented — requesting them
+    /// today fails closed via [`Self::validate_for_spawn`].
     fn default() -> Self {
         Self {
-            pid: true,
+            pid: false,
             mount: true,
             network: true,
-            user: true,
+            user: false,
             ipc: true,
             uts: true,
         }
+    }
+}
+
+impl NamespaceConfig {
+    /// Validates that this configuration can be applied by the current
+    /// Linux spawn path. Unsupported combinations fail closed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when mount isolation is disabled, or when PID /
+    /// user namespaces are requested before the runtime supports them.
+    pub fn validate_for_spawn(&self) -> Result<()> {
+        if !self.mount {
+            return Err(ContainustError::Config {
+                message: "mount namespace is required for Linux containers \
+                          (pivot_root depends on it)"
+                    .into(),
+            });
+        }
+        if self.pid {
+            return Err(ContainustError::Config {
+                message: "PID namespace isolation is not yet supported by the \
+                          spawn path (requires double-fork); leave namespaces.pid = false"
+                    .into(),
+            });
+        }
+        if self.user {
+            return Err(ContainustError::Config {
+                message: "user namespace isolation is not yet supported \
+                          (requires uid/gid mapping); leave namespaces.user = false"
+                    .into(),
+            });
+        }
+        Ok(())
     }
 }
 
@@ -100,14 +140,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn namespace_config_default_has_all_flags_true() {
+    fn namespace_config_default_enables_supported_isolation() {
         let config = NamespaceConfig::default();
-        assert!(config.pid);
+        assert!(!config.pid);
         assert!(config.mount);
         assert!(config.network);
-        assert!(config.user);
+        assert!(!config.user);
         assert!(config.ipc);
         assert!(config.uts);
+        assert!(config.validate_for_spawn().is_ok());
+    }
+
+    #[test]
+    fn namespace_config_rejects_disabled_mount() {
+        let config = NamespaceConfig {
+            mount: false,
+            ..NamespaceConfig::default()
+        };
+        assert!(config.validate_for_spawn().is_err());
+    }
+
+    #[test]
+    fn namespace_config_rejects_unsupported_pid_and_user() {
+        let with_pid = NamespaceConfig {
+            pid: true,
+            ..NamespaceConfig::default()
+        };
+        assert!(with_pid.validate_for_spawn().is_err());
+        let with_user = NamespaceConfig {
+            user: true,
+            ..NamespaceConfig::default()
+        };
+        assert!(with_user.validate_for_spawn().is_err());
     }
 
     #[test]
@@ -157,7 +221,14 @@ mod tests {
     #[test]
     #[ignore = "requires root privileges"]
     fn create_namespaces_all_succeed_with_root() {
-        let config = NamespaceConfig::default();
+        let config = NamespaceConfig {
+            pid: true,
+            mount: true,
+            network: true,
+            user: true,
+            ipc: true,
+            uts: true,
+        };
         let result = create_namespaces(&config);
         assert!(result.is_ok());
     }

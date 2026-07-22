@@ -784,6 +784,9 @@ Summary of all exit codes used across `ctst` commands.
 | `CONTAINUST_CACHE_DIR` | Global cache directory for immutable VM assets | `~/.containust/cache` |
 | `CONTAINUST_IMAGE_STORE` | Directory for cached images and layers | `.containust/images` (project-local) |
 | `CONTAINUST_ROOTFS_DIR` | Directory for container rootfs mounts | `.containust/rootfs` (project-local) |
+| `CONTAINUST_SECRET_<NAME>` | Restores a redacted secret env var `<NAME>` at container start | unset |
+
+Secret-looking environment keys (`PASSWORD`, `TOKEN`, `SECRET`, …) are stored as `<redacted>` in `state.json`. Provide the real value via `CONTAINUST_SECRET_<NAME>` or the host environment before `ctst` starts the container; missing secrets fail closed.
 
 CLI flags take precedence over environment variables.
 

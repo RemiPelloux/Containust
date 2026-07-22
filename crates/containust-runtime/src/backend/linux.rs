@@ -68,6 +68,9 @@ impl ContainerBackend for LinuxNativeBackend {
                     message: format!("container name already exists: {}", config.name),
                 });
             }
+            let _ = crate::volume::validate_volumes(&config.volumes)?;
+            config.namespaces.validate_for_spawn()?;
+            validate_resource_limits(config.memory_bytes, config.cpu_shares)?;
             let rootfs = prepare_rootfs(&self.data_dir, &config.image, &id)?;
             state.containers.push(crate::state::StateEntry {
                 id: id.clone(),
@@ -76,7 +79,7 @@ impl ContainerBackend for LinuxNativeBackend {
                 pid: None,
                 image: config.image.clone(),
                 command: config.command.clone(),
-                env: config.env.clone(),
+                env: containust_common::redact::redact_env(&config.env),
                 memory_bytes: config.memory_bytes,
                 cpu_shares: config.cpu_shares,
                 readonly_rootfs: config.readonly_rootfs,
@@ -131,7 +134,13 @@ impl ContainerBackend for LinuxNativeBackend {
                 cpu_shares: entry.cpu_shares,
                 io_weight: None,
             };
-            apply_cgroup_limits(&self.project_id, id, pid, &limits);
+            if let Err(error) = apply_cgroup_limits(&self.project_id, id, pid, &limits) {
+                // Fail closed: tear down the just-spawned process.
+                let _ = nix_kill(pid);
+                entry.state = containust_common::types::ContainerState::Failed;
+                entry.pid = None;
+                return Ok(Err(error));
+            }
             entry.state = containust_common::types::ContainerState::Running;
             entry.pid = Some(pid);
             Ok(Ok(pid))
@@ -343,7 +352,8 @@ impl LinuxNativeBackend {
         }
         let image = entry.image.clone();
         let command = entry.command.clone();
-        let env = entry.env.clone();
+        let env = containust_common::redact::resolve_env(&entry.env)
+            .map_err(|message| ContainustError::Config { message })?;
         let readonly_rootfs = entry.readonly_rootfs;
         let volumes = entry.volumes.clone();
         let rootfs = match &entry.rootfs_path {
@@ -363,6 +373,7 @@ impl LinuxNativeBackend {
             rootfs,
             readonly_rootfs,
             volumes,
+            namespaces: containust_core::namespace::NamespaceConfig::default(),
         })
     }
 
@@ -496,62 +507,58 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
             source: e,
         })?;
         let file_type = entry.file_type().map_err(|e| ContainustError::Io {
-            path: src.to_path_buf(),
+            path: entry.path(),
             source: e,
         })?;
         let dest_path = dst.join(entry.file_name());
-
-        if file_type.is_dir() {
-            copy_dir_recursive(&entry.path(), &dest_path)?;
-        } else {
-            let _ = std::fs::copy(entry.path(), &dest_path).map_err(|e| ContainustError::Io {
-                path: entry.path(),
-                source: e,
-            })?;
-        }
+        copy_one_entry(&entry.path(), &dest_path, file_type)?;
     }
 
     Ok(())
 }
 
-/// Extracts a tar archive into a target directory.
-fn extract_tar(archive: &std::path::Path, dst: &std::path::Path) -> Result<()> {
-    std::fs::create_dir_all(dst).map_err(|e| ContainustError::Io {
-        path: dst.to_path_buf(),
-        source: e,
-    })?;
-
-    let tar_gz = std::fs::File::open(archive).map_err(|e| ContainustError::Io {
-        path: archive.to_path_buf(),
-        source: e,
-    })?;
-
-    // Try gzip first, fall back to plain tar
-    let size = tar_gz.metadata().map_or(0, |m| m.len());
-    if size > 0 {
-        // Peek first bytes to detect gzip magic (1f 8b)
-        use std::io::Read;
-        let mut reader = std::io::BufReader::new(tar_gz);
-        let mut header = [0u8; 2];
-        if reader.read_exact(&mut header).is_ok() && header == [0x1f, 0x8b] {
-            // Gzipped tar
-            let decoder = flate2::read::GzDecoder::new(reader);
-            let mut archive = tar::Archive::new(decoder);
-            archive.unpack(dst).map_err(|e| ContainustError::Config {
-                message: format!("tar.gz extraction failed: {e}"),
-            })?;
-        } else {
-            // Plain tar
-            use std::io::Seek;
-            let _ = reader.seek(std::io::SeekFrom::Start(0));
-            let mut archive = tar::Archive::new(reader);
-            archive.unpack(dst).map_err(|e| ContainustError::Config {
-                message: format!("tar extraction failed: {e}"),
-            })?;
-        }
+fn copy_one_entry(
+    src: &std::path::Path,
+    dest: &std::path::Path,
+    file_type: std::fs::FileType,
+) -> Result<()> {
+    if file_type.is_symlink() {
+        return copy_symlink(src, dest);
     }
-
+    if file_type.is_dir() {
+        return copy_dir_recursive(src, dest);
+    }
+    let _ = std::fs::copy(src, dest).map_err(|e| ContainustError::Io {
+        path: src.to_path_buf(),
+        source: e,
+    })?;
     Ok(())
+}
+
+fn copy_symlink(src: &std::path::Path, dest: &std::path::Path) -> Result<()> {
+    let link = std::fs::read_link(src).map_err(|e| ContainustError::Io {
+        path: src.to_path_buf(),
+        source: e,
+    })?;
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&link, dest).map_err(|e| ContainustError::Io {
+            path: dest.to_path_buf(),
+            source: e,
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (link, dest);
+        Err(ContainustError::Config {
+            message: "symlink copy requires a Unix host".into(),
+        })
+    }
+}
+
+/// Extracts a tar archive into a target directory with path-escape rejection.
+fn extract_tar(archive: &std::path::Path, dst: &std::path::Path) -> Result<()> {
+    containust_image::extract::safe_extract_archive(archive, dst)
 }
 
 /// Derives a default shell command from the image source.
@@ -565,37 +572,74 @@ fn derive_command_from_image(_image_uri: &str) -> Vec<String> {
 // Cgroup management helpers
 // ---------------------------------------------------------------------------
 
-/// Attempt to apply cgroup resource limits for a container.
-/// Non-fatal on failure — containers still run without limits.
-#[allow(clippy::missing_const_for_fn)]
+/// Applies cgroup resource limits when any limit was explicitly requested.
+/// Fail closed: if the caller asked for limits and they cannot be applied,
+/// the container must not remain running.
 fn apply_cgroup_limits(
     project_id: &str,
     container_id: &ContainerId,
     pid: u32,
     limits: &containust_common::types::ResourceLimits,
-) {
+) -> Result<()> {
+    let requested =
+        limits.memory_bytes.is_some() || limits.cpu_shares.is_some() || limits.io_weight.is_some();
+    if !requested {
+        return Ok(());
+    }
+
     #[cfg(target_os = "linux")]
     {
         use containust_core::cgroup::CgroupManager;
 
         let cgroup_id = format!("{project_id}/{}", container_id.as_str());
-        match CgroupManager::create(&cgroup_id) {
-            Ok(mgr) => {
-                let _ = mgr.apply_limits(limits).map_err(|e| {
-                    tracing::warn!(%e, "failed to apply cgroup limits");
-                });
-                let _ = mgr.add_process(pid).map_err(|e| {
-                    tracing::warn!(%e, "failed to add process to cgroup");
-                });
-            }
-            Err(e) => {
-                tracing::warn!(%e, "cgroup creation failed (containers run without resource limits)");
-            }
-        }
+        let mgr = CgroupManager::create(&cgroup_id)?;
+        mgr.apply_limits(limits)?;
+        mgr.add_process(pid)?;
+        Ok(())
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (project_id, container_id, pid, limits);
+        let _ = (project_id, container_id, pid);
+        Err(ContainustError::Config {
+            message: "cgroup resource limits require Linux".into(),
+        })
+    }
+}
+
+/// Validates explicit resource limit ranges before create/start.
+fn validate_resource_limits(memory_bytes: Option<u64>, cpu_shares: Option<u64>) -> Result<()> {
+    if let Some(memory) = memory_bytes
+        && memory == 0
+    {
+        return Err(ContainustError::Config {
+            message: "memory limit must be greater than zero".into(),
+        });
+    }
+    if let Some(cpu) = cpu_shares
+        && !(1..=10_000).contains(&cpu)
+    {
+        return Err(ContainustError::Config {
+            message: format!("cpu shares must be in 1..=10000, got {cpu}"),
+        });
+    }
+    Ok(())
+}
+
+fn nix_kill(pid: u32) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use nix::sys::signal::{Signal, kill};
+        use nix::unistd::Pid;
+        kill(Pid::from_raw(pid.cast_signed()), Signal::SIGKILL).map_err(|e| {
+            ContainustError::Config {
+                message: format!("failed to kill pid {pid} after cgroup failure: {e}"),
+            }
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        Ok(())
     }
 }
 
@@ -973,6 +1017,7 @@ mod tests {
             readonly_rootfs: true,
             volumes: Vec::new(),
             port: None,
+            namespaces: containust_core::namespace::NamespaceConfig::default(),
         };
 
         let first_id = first.create(&config).expect("first create");

@@ -48,6 +48,8 @@ pub struct ContainerConfig {
     pub volumes: Vec<String>,
     /// Primary exposed port.
     pub port: Option<u16>,
+    /// Namespace isolation policy applied at spawn.
+    pub namespaces: containust_core::namespace::NamespaceConfig,
 }
 
 /// Information about a tracked container.
@@ -262,6 +264,7 @@ mod tests {
             readonly_rootfs: true,
             volumes: vec![],
             port: Some(8080),
+            namespaces: containust_core::namespace::NamespaceConfig::default(),
         };
         assert_eq!(cfg.name, "test");
         assert!(cfg.readonly_rootfs);
@@ -279,6 +282,7 @@ mod tests {
             readonly_rootfs: false,
             volumes: Vec::new(),
             port: None,
+            namespaces: containust_core::namespace::NamespaceConfig::default(),
         };
         assert_eq!(cfg.name, "minimal");
         assert!(cfg.image.is_empty());
@@ -299,6 +303,7 @@ mod tests {
             readonly_rootfs: false,
             volumes: vec!["/host:/guest".into()],
             port: Some(3000),
+            namespaces: containust_core::namespace::NamespaceConfig::default(),
         };
         let cloned = cfg.clone();
         assert_eq!(cfg.name, cloned.name);

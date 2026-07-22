@@ -36,33 +36,13 @@ pub fn extract_layer(archive_path: &Path, target: &Path) -> Result<Layer> {
         source: e,
     })?;
 
-    let file = std::fs::File::open(archive_path).map_err(|e| ContainustError::Io {
-        path: archive_path.to_path_buf(),
-        source: e,
-    })?;
-
-    let metadata = file.metadata().map_err(|e| ContainustError::Io {
+    let metadata = std::fs::metadata(archive_path).map_err(|e| ContainustError::Io {
         path: archive_path.to_path_buf(),
         source: e,
     })?;
     let size_bytes = metadata.len();
 
-    let is_gzip = is_gzip_archive(archive_path);
-
-    if is_gzip {
-        let decoder = flate2::read::GzDecoder::new(file);
-        let mut archive = tar::Archive::new(decoder);
-        archive.unpack(target).map_err(|e| ContainustError::Io {
-            path: target.to_path_buf(),
-            source: e,
-        })?;
-    } else {
-        let mut archive = tar::Archive::new(file);
-        archive.unpack(target).map_err(|e| ContainustError::Io {
-            path: target.to_path_buf(),
-            source: e,
-        })?;
-    }
+    crate::extract::safe_extract_archive(archive_path, target)?;
 
     let hash = crate::hash::hash_file(archive_path)?;
     tracing::info!(hash = %hash, size = size_bytes, "layer extracted");
@@ -70,15 +50,15 @@ pub fn extract_layer(archive_path: &Path, target: &Path) -> Result<Layer> {
     Ok(Layer { hash, size_bytes })
 }
 
-/// Determines whether the archive is gzip-compressed based on extension.
-fn is_gzip_archive(path: &Path) -> bool {
-    path.extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("gz") || ext.eq_ignore_ascii_case("tgz"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn is_gzip_archive(path: &Path) -> bool {
+        path.extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("gz") || ext.eq_ignore_ascii_case("tgz"))
+    }
+
     fn create_test_tar(dir: &Path) -> std::path::PathBuf {
         let tar_path = dir.join("test.tar");
         let file = std::fs::File::create(&tar_path).expect("failed to create tar file");

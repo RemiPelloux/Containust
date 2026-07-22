@@ -10,4 +10,6 @@ pub mod exec;
 pub mod logs;
 pub mod metrics;
 pub mod process;
+mod process_mounts;
 pub mod state;
+pub mod volume;

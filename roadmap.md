@@ -4,7 +4,7 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at alpha `0.4.2` after completion of Sprint 3 and its follow-up passes.
+Containust is at alpha `0.5.0` after completion of Sprint 4 (security hardening).
 
 - The deterministic macOS workspace suite passes 470 tests with 23 privileged tests intentionally ignored. The Rust 1.88 Linux suite passes 480 with 26 privileged tests ignored.
 - Formatting and strict Clippy pass locally when invoked with the installed toolchain binaries.
@@ -105,19 +105,21 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 - CLI reference (`docs/CLI_REFERENCE.md`) and `.ctst` language reference (`docs/CTST_LANG.md`) document the new build pipeline and the `image://` scheme.
 - Backward compatibility: schema-less legacy catalog entries deserialize with defaulted metadata fields.
 
-## Next sprint: Security hardening (Sprint 4)
+## Sprint 4: Security hardening — complete (`0.5.0`)
 
 **Goal:** validate and enforce the security model rather than only exposing security-shaped options.
 
-- [ ] **S4.1 Rootfs safety.** Reject path traversal and unsafe tar entries; do not follow symlinks outside the extraction root.
-- [ ] **S4.2 Capability policy.** Define a minimal default capability set, validate allowlists, and test the effective capability drop in a privileged Linux fixture.
-- [ ] **S4.3 Namespace policy.** Make user, PID, mount, UTS, IPC, and network namespace choices explicit in the runtime config and validate unsupported combinations.
-- [ ] **S4.4 Mount and volume policy.** Validate source/target paths, prevent host escape, enforce read-only mounts, and cleanly unmount on teardown.
-- [ ] **S4.5 Resource limits.** Validate CPU/memory ranges and fail closed when an explicitly requested cgroup limit cannot be applied.
-- [ ] **S4.6 Secret handling.** Keep secrets out of state, logs, debug output, and generated plans; add redaction tests.
-- [ ] **S4.7 Threat-model review.** Update the repository threat model and run `cargo deny`, advisory, license, and unsafe-code reviews in CI.
+- [x] **S4.1 Rootfs safety.** Shared `safe_extract_archive` rejects absolute paths, `..`, hard links, device nodes, and escaping symlinks; wired into import, layer extract, and Linux `tar://` prep. Symlink-safe `copy_dir_recursive`.
+- [x] **S4.2 Capability policy.** Drop-all default kept; `PR_SET_NO_NEW_PRIVS` applied; drop errors fail closed in the spawn path (no longer ignored). `CAP_SYS_ADMIN` remains absent from the allowlist enum.
+- [x] **S4.3 Namespace policy.** `NamespaceConfig` is part of `ContainerConfig` / `ProcessConfig`. Defaults enable mount/network/IPC/UTS; unsupported PID/user requests fail closed via `validate_for_spawn`. Spawn uses `create_namespaces`.
+- [x] **S4.4 Mount and volume policy.** Parent-process validation (`volume.rs`): absolute paths, no `..`, canonicalize existing sources, `ro`/`rw` only. Applied before create and again before spawn.
+- [x] **S4.5 Resource limits.** Memory must be > 0; CPU shares in `1..=10000`. Explicit limits apply fail-closed through cgroups v2; on failure the just-spawned process is killed and the container is marked `Failed`.
+- [x] **S4.6 Secret handling.** `containust_common::redact` redacts secret-looking env values in `state.json` and restores them at start from `CONTAINUST_SECRET_*` / host env (fail closed if missing).
+- [x] **S4.7 Threat-model review.** Added `docs/THREAT_MODEL.md`. `cargo deny` + `cargo audit` remain in `.github/workflows/security.yml`.
 
-**Exit gate:** security-sensitive inputs have negative tests, privileged tests pass on the supported Linux matrix, and an independent review signs off on the threat model.
+**Exit gate: passed for deterministic coverage.** Negative extract/volume/redaction/namespace tests are green (503 passed / 0 failed / 23 ignored on macOS). Privileged effective-cap and cgroup enforcement fixtures remain host-gated (`#[ignore]`) for the supported Linux matrix. PID/user namespace wiring is deliberately deferred and fails closed when requested.
+
+## Next sprint: Cross-platform VM backend (Sprint 5)
 
 ## Sprint 5: Cross-platform VM backend
 

@@ -70,6 +70,7 @@ impl Container {
             rootfs: rootfs.to_path_buf(),
             readonly_rootfs: true,
             volumes: Vec::new(),
+            namespaces: containust_core::namespace::NamespaceConfig::default(),
         })?;
         self.pid = Some(pid);
         self.rootfs_path = Some(rootfs.to_path_buf());
