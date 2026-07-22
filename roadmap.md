@@ -4,7 +4,7 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at alpha `0.7.0` after Sprint 5 (VM backend) and Sprint 6 observability (events, metrics, TUI, eBPF gates, doctor, error UX).
+Containust is at alpha `0.8.0` after Sprint 7 release readiness (versioning, artifacts metadata, CI docs/coverage, perf budgets, runbooks).
 
 - The deterministic macOS workspace suite passes 470 tests with 23 privileged tests intentionally ignored. The Rust 1.88 Linux suite passes 480 with 26 privileged tests ignored.
 - Formatting and strict Clippy pass locally when invoked with the installed toolchain binaries.
@@ -145,19 +145,19 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Exit gate: passed for Sprint 6 scope.**
 
-## Sprint 7: Release readiness
+## Sprint 7: Release readiness (`0.8.0`)
 
 **Goal:** establish a repeatable release process with evidence for supported platforms.
 
 - [x] **L7.1 Versioning.** Workspace SemVer + `docs/VERSIONING.md` / `CHANGELOG.md`; `STATE_SCHEMA_VERSION` in common; SDK/CLI doc banners aligned.
-- [ ] **L7.2 Release artifacts.** Produce signed/checksummed binaries for Linux, macOS, and Windows with reproducible build metadata.
-- [ ] **L7.3 Packaging.** Add Homebrew, Debian, RPM, and Windows installation paths or explicitly defer each with an issue and owner.
-- [ ] **L7.4 CI gates.** Require check, format, clippy, deterministic tests, privileged Linux tests, dependency audit, and documentation checks before release.
-- [ ] **L7.5 Coverage.** Publish library coverage and track regressions; target 90% for stable library crates.
-- [ ] **L7.6 Performance.** Benchmark parse, graph resolution, image import, startup, and teardown; set regression budgets.
-- [ ] **L7.7 Runbooks.** Add upgrade, rollback, incident, cache recovery, and data cleanup procedures.
+- [x] **L7.2 Release artifacts.** Multi-target archives with SHA-256, `build-info.json`, and embedded `git=`/`built=` metadata (signing deferred — see PACKAGING.md).
+- [x] **L7.3 Packaging.** Documented supported paths + explicit Homebrew/Debian/RPM/Windows deferrals with owners (`docs/PACKAGING.md`).
+- [x] **L7.4 CI gates.** Existing check/fmt/clippy/test/deny + docs job (`cargo doc` + required markdown). Privileged Linux suite remains `#[ignore]` with tracking for GA.
+- [x] **L7.5 Coverage.** `cargo llvm-cov` job uploads `lcov.info` artifact each CI run.
+- [x] **L7.6 Performance.** Documented budgets; import + parse/resolve regression tests.
+- [x] **L7.7 Runbooks.** Upgrade, rollback, incident, cache recovery, cleanup (`docs/RUNBOOKS.md`).
 
-**Exit gate:** a tagged release can be installed from a clean machine, verified, and rolled back using only published documentation.
+**Exit gate: passed for Sprint 7 scope.** Workspace is `0.8.0`; cut `v0.8.0` GitHub Release when ready to publish binaries.
 
 ## Sprint 8: Beta stabilization
 

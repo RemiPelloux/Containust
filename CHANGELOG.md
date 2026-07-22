@@ -10,10 +10,15 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-07-22
+
 ### Added
 
 - Workspace versioning and compatibility documentation (`docs/VERSIONING.md`).
 - Shared `STATE_SCHEMA_VERSION` constant in `containust-common`.
+- Release build metadata (`git=` / `built=`) via CLI `build.rs`; archives include `build-info.json`.
+- Packaging deferrals (`docs/PACKAGING.md`), operator runbooks (`docs/RUNBOOKS.md`), performance budgets (`docs/PERFORMANCE.md`).
+- CI docs + library coverage jobs; compose parse/resolve regression gates.
 
 ## [0.7.0] — 2026-07-22
 

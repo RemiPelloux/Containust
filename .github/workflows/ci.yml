@@ -84,6 +84,59 @@ jobs:
           tool: cargo-deny
       - run: cargo deny check
 
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required docs present
+        run: |
+          set -euo pipefail
+          for path in \
+            README.md \
+            CHANGELOG.md \
+            docs/VERSIONING.md \
+            docs/PACKAGING.md \
+            docs/RUNBOOKS.md \
+            docs/PERFORMANCE.md \
+            docs/CONTRIBUTING.md \
+            docs/CLI_REFERENCE.md \
+            docs/SDK_GUIDE.md \
+            docs/THREAT_MODEL.md
+          do
+            test -s "${path}"
+          done
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+      - run: cargo doc --workspace --no-deps --document-private-items
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - name: Library coverage (lcov)
+        run: |
+          cargo llvm-cov --workspace --lib --lcov --output-path lcov.info \
+            --ignore-filename-regex '(/tests/|/target/)'
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-info
+          path: lcov.info
+
   # Cross-platform: macOS
   macos-ci:
     name: macOS CI

@@ -110,7 +110,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn state_schema_version_is_positive() {
-        assert!(STATE_SCHEMA_VERSION >= 1);
+    fn state_schema_version_matches_runtime_expectation() {
+        // Keep in sync with docs/VERSIONING.md (schema 2).
+        assert_eq!(STATE_SCHEMA_VERSION, 2);
     }
 }

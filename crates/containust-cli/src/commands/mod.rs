@@ -19,9 +19,19 @@ use containust_runtime::backend::ContainerInfo;
 use containust_runtime::engine::{Engine, EngineOptions};
 use std::path::{Path, PathBuf};
 
+use crate::build_info;
+
+const LONG_VERSION: &str = build_info::long_version();
+
 /// Containust — Daemon-less sovereign container runtime.
 #[derive(Parser, Debug)]
-#[command(name = "ctst", version, about, long_about = None)]
+#[command(
+    name = "ctst",
+    version = build_info::version(),
+    long_version = LONG_VERSION,
+    about,
+    long_about = None
+)]
 pub struct Cli {
     /// Subcommand to execute.
     #[command(subcommand)]

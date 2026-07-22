@@ -37,6 +37,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Build metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse --short=12 HEAD)"
+          EPOCH="$(git log -1 --format=%ct)"
+          if date -u -d "@${EPOCH}" +%Y-%m-%d >/tmp/ctst-date 2>/dev/null; then
+            DATE="$(cat /tmp/ctst-date)"
+          else
+            DATE="$(date -u -r "${EPOCH}" +%Y-%m-%d)"
+          fi
+          {
+            echo "CONTAINUST_GIT_SHA=${SHA}"
+            echo "CONTAINUST_BUILD_DATE=${DATE}"
+            echo "SOURCE_DATE_EPOCH=${EPOCH}"
+          } >> "${GITHUB_ENV}"
+          printf '{"git_sha":"%s","built":"%s","source_date_epoch":"%s","target":"%s"}\n' \
+            "${SHA}" "${DATE}" "${EPOCH}" "${{ matrix.target }}" > build-info.json
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -52,25 +71,41 @@ jobs:
       - name: Build (cross)
         if: matrix.cross
         run: cross build --release --target ${{ matrix.target }} --package containust-cli
+        env:
+          CONTAINUST_GIT_SHA: ${{ env.CONTAINUST_GIT_SHA }}
+          CONTAINUST_BUILD_DATE: ${{ env.CONTAINUST_BUILD_DATE }}
+          SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
 
       - name: Build (native)
         if: "!matrix.cross"
         run: cargo build --release --target ${{ matrix.target }} --package containust-cli
+        env:
+          CONTAINUST_GIT_SHA: ${{ env.CONTAINUST_GIT_SHA }}
+          CONTAINUST_BUILD_DATE: ${{ env.CONTAINUST_BUILD_DATE }}
+          SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../ctst-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
-          cd ../../..
-          sha256sum ctst-${{ matrix.target }}.tar.gz > ctst-${{ matrix.target }}.tar.gz.sha256
+          set -euo pipefail
+          STAGE="ctst-${{ matrix.target }}"
+          mkdir -p "${STAGE}"
+          cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "${STAGE}/"
+          cp build-info.json "${STAGE}/"
+          tar czf "${STAGE}.tar.gz" -C "${STAGE}" .
+          sha256sum "${STAGE}.tar.gz" > "${STAGE}.tar.gz.sha256"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ matrix.artifact }}" -DestinationPath "ctst-${{ matrix.target }}.zip"
-          (Get-FileHash "ctst-${{ matrix.target }}.zip" -Algorithm SHA256).Hash.ToLower() + "  ctst-${{ matrix.target }}.zip" | Out-File "ctst-${{ matrix.target }}.zip.sha256" -Encoding ASCII
+          $stage = "ctst-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.artifact }}" $stage
+          Copy-Item build-info.json $stage
+          Compress-Archive -Path "$stage\*" -DestinationPath "$stage.zip"
+          $hash = (Get-FileHash "$stage.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $stage.zip" | Out-File "$stage.zip.sha256" -Encoding ASCII
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -90,10 +125,24 @@ jobs:
         with:
           path: artifacts
 
+      - name: Verify checksum files
+        run: |
+          set -euo pipefail
+          mapfile -t sums < <(find artifacts -name '*.sha256')
+          test "${#sums[@]}" -ge 5
+          for sum in "${sums[@]}"; do
+            dir="$(dirname "${sum}")"
+            (cd "${dir}" && sha256sum -c "$(basename "${sum}")")
+          done
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          body: |
+            Verify downloads with the accompanying `.sha256` files.
+            Each archive includes `build-info.json` (`git_sha`, `built`, `source_date_epoch`).
+            Code signing is not yet attached; see `docs/PACKAGING.md`.
           files: artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -11,6 +11,7 @@
     clippy::exit
 )]
 
+mod build_info;
 mod commands;
 mod converter;
 mod output;
