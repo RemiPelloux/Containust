@@ -10,6 +10,10 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+### Added
+
+- Feature freeze policy (`docs/FEATURE_FREEZE.md`) and compatibility matrix tests (B8.1/B8.2).
+
 ## [0.8.0] — 2026-07-22
 
 ### Added

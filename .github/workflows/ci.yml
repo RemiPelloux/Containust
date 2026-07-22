@@ -99,6 +99,7 @@ jobs:
             docs/PACKAGING.md \
             docs/RUNBOOKS.md \
             docs/PERFORMANCE.md \
+            docs/FEATURE_FREEZE.md \
             docs/CONTRIBUTING.md \
             docs/CLI_REFERENCE.md \
             docs/SDK_GUIDE.md \

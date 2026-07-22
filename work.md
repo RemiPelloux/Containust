@@ -12,7 +12,10 @@
 
 ## Current sprint: Sprint 8 → `0.9.0-beta`
 
-Feature freeze, compatibility matrix, upgrade rehearsal, release candidate.
+- [x] **B8.1** Feature freeze policy (`docs/FEATURE_FREEZE.md`).
+- [x] **B8.2** Compatibility matrix tests.
+- [ ] **B8.3** Upgrade rehearsal.
+- [ ] **B8.4** Publish `0.9.0-beta` RC.
 
 Sprint 9 (`1.0.0`): GA.
 

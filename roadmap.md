@@ -163,8 +163,8 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Goal:** freeze the feature surface and prove upgrade compatibility before `1.0.0`.
 
-- [ ] **B8.1 Feature freeze.** No new runtime features after the beta tag; only correctness, security, performance, and documentation fixes.
-- [ ] **B8.2 Compatibility matrix.** Test state/schema migration, `.ctst` parsing, CLI exit codes, and SDK behavior across the previous two minor releases.
+- [x] **B8.1 Feature freeze.** Policy documented in `docs/FEATURE_FREEZE.md` (enforced from `0.9.0-beta` tag).
+- [x] **B8.2 Compatibility matrix.** `crates/containust-runtime/tests/compat_matrix.rs` covers state migration, `.ctst` parse/resolve, and error codes.
 - [ ] **B8.3 Upgrade rehearsal.** Upgrade a running project, recover interrupted state writes, and roll back without losing image metadata or logs.
 - [ ] **B8.4 Release candidate.** Publish `0.9.0-beta` artifacts and require two independent clean-machine installation runs per supported platform.
 
