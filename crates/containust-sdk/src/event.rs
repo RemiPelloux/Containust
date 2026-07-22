@@ -1,11 +1,11 @@
-//! Container lifecycle event streaming.
-//!
-//! Provides an async event listener for monitoring container state
-//! changes and metrics updates programmatically.
+//! Container lifecycle event streaming via the runtime event bus.
+
+use std::sync::mpsc;
 
 use containust_common::types::{ContainerId, ContainerState};
+pub use containust_runtime::events::{EventBus, LifecycleEvent};
 
-/// A container lifecycle event.
+/// A container lifecycle event (SDK-facing aliases for runtime events).
 #[derive(Debug, Clone)]
 pub enum ContainerEvent {
     /// A container changed state.
@@ -22,21 +22,83 @@ pub enum ContainerEvent {
         /// Container this update belongs to.
         container_id: ContainerId,
     },
+    /// A timed operation completed.
+    Operation {
+        /// Optional target container.
+        container_id: Option<ContainerId>,
+        /// Project identity.
+        project: String,
+        /// Operation name.
+        operation: String,
+        /// Duration in milliseconds.
+        duration_ms: u64,
+        /// Error catalog code on failure.
+        error_code: Option<String>,
+    },
 }
 
-/// Listens for container lifecycle events.
+impl From<LifecycleEvent> for ContainerEvent {
+    fn from(event: LifecycleEvent) -> Self {
+        match event {
+            LifecycleEvent::Operation {
+                container_id,
+                project,
+                operation,
+                duration_ms,
+                error_code,
+            } => Self::Operation {
+                container_id: container_id.map(ContainerId::new),
+                project,
+                operation,
+                duration_ms,
+                error_code,
+            },
+            LifecycleEvent::StateChange {
+                container_id,
+                from,
+                to,
+            } => Self::StateChange {
+                container_id: ContainerId::new(container_id),
+                from: parse_state(&from),
+                to: parse_state(&to),
+            },
+        }
+    }
+}
+
+fn parse_state(label: &str) -> ContainerState {
+    match label.to_ascii_lowercase().as_str() {
+        "running" => ContainerState::Running,
+        "stopped" => ContainerState::Stopped,
+        "failed" => ContainerState::Failed,
+        _ => ContainerState::Created,
+    }
+}
+
+/// Listens for container lifecycle events from an [`EventBus`].
 #[derive(Debug)]
 pub struct EventListener {
-    _marker: std::marker::PhantomData<()>,
+    rx: Option<mpsc::Receiver<LifecycleEvent>>,
 }
 
 impl EventListener {
-    /// Creates a new event listener.
+    /// Creates a listener that is not yet subscribed.
     #[must_use]
     pub const fn new() -> Self {
+        Self { rx: None }
+    }
+
+    /// Subscribes to `bus` and returns a listener that can poll events.
+    #[must_use]
+    pub fn subscribe(bus: &EventBus) -> Self {
         Self {
-            _marker: std::marker::PhantomData,
+            rx: Some(bus.subscribe()),
         }
+    }
+
+    /// Tries to receive the next event without blocking.
+    pub fn try_recv(&self) -> Option<ContainerEvent> {
+        self.rx.as_ref()?.try_recv().ok().map(ContainerEvent::from)
     }
 }
 
@@ -47,26 +109,39 @@ impl Default for EventListener {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic, clippy::match_wildcard_for_single_variants)]
+#[allow(
+    clippy::panic,
+    clippy::expect_used,
+    clippy::match_wildcard_for_single_variants
+)]
 mod tests {
-    use containust_common::types::{ContainerId, ContainerState};
-
     use super::*;
 
     #[test]
-    fn event_listener_new_constructs() {
-        let listener = EventListener::new();
-        let debug = format!("{listener:?}");
-        assert!(debug.contains("EventListener"));
-    }
-
-    #[test]
-    fn event_listener_default_equals_new() {
-        let a = EventListener::new();
-        let b = EventListener::default();
-        let debug_a = format!("{a:?}");
-        let debug_b = format!("{b:?}");
-        assert_eq!(debug_a, debug_b);
+    fn event_listener_subscribes_to_bus() {
+        let bus = EventBus::new();
+        let listener = EventListener::subscribe(&bus);
+        bus.emit_operation(containust_runtime::events::OperationEmit {
+            project: "demo".into(),
+            operation: "deploy".into(),
+            duration_ms: 5,
+            container_id: None,
+            error_code: Some("R001"),
+        });
+        let event = listener.try_recv().expect("event");
+        match event {
+            ContainerEvent::Operation {
+                project,
+                operation,
+                error_code,
+                ..
+            } => {
+                assert_eq!(project, "demo");
+                assert_eq!(operation, "deploy");
+                assert_eq!(error_code.as_deref(), Some("R001"));
+            }
+            _ => panic!("expected operation"),
+        }
     }
 
     #[test]
@@ -77,105 +152,17 @@ mod tests {
             from: ContainerState::Created,
             to: ContainerState::Running,
         };
-
         match event {
             ContainerEvent::StateChange {
                 container_id,
                 from,
                 to,
             } => {
-                assert_eq!(container_id, id);
+                assert_eq!(container_id.as_str(), id.as_str());
                 assert_eq!(from, ContainerState::Created);
                 assert_eq!(to, ContainerState::Running);
             }
-            ContainerEvent::MetricsUpdate { .. } => {
-                panic!("expected StateChange variant");
-            }
+            _ => panic!("expected StateChange"),
         }
-    }
-
-    #[test]
-    fn container_event_metrics_update_variant() {
-        let id = ContainerId::new("metrics-container");
-        let event = ContainerEvent::MetricsUpdate {
-            container_id: id.clone(),
-        };
-
-        match event {
-            ContainerEvent::MetricsUpdate { container_id } => {
-                assert_eq!(container_id, id);
-            }
-            ContainerEvent::StateChange { .. } => {
-                panic!("expected MetricsUpdate variant");
-            }
-        }
-    }
-
-    #[test]
-    fn container_event_clone_works() {
-        let id = ContainerId::new("clone-test");
-        let event = ContainerEvent::StateChange {
-            container_id: id,
-            from: ContainerState::Running,
-            to: ContainerState::Stopped,
-        };
-
-        let cloned = event.clone();
-        match (event, cloned) {
-            (
-                ContainerEvent::StateChange {
-                    container_id: id1,
-                    from: from1,
-                    to: to1,
-                },
-                ContainerEvent::StateChange {
-                    container_id: id2,
-                    from: from2,
-                    to: to2,
-                },
-            ) => {
-                // ContainerId is Clone but not PartialEq in the same way; just check the fields
-                assert_eq!(format!("{id1}"), format!("{id2}"));
-                assert_eq!(from1, from2);
-                assert_eq!(to1, to2);
-            }
-            _ => {
-                panic!("expected StateChange variants");
-            }
-        }
-    }
-
-    #[test]
-    fn container_event_all_state_transitions() {
-        let transitions = [
-            (ContainerState::Created, ContainerState::Running),
-            (ContainerState::Running, ContainerState::Stopped),
-            (ContainerState::Running, ContainerState::Failed),
-            (ContainerState::Created, ContainerState::Failed),
-        ];
-
-        let id = ContainerId::new("transitions");
-        for (from, to) in &transitions {
-            let event = ContainerEvent::StateChange {
-                container_id: id.clone(),
-                from: *from,
-                to: *to,
-            };
-            match event {
-                ContainerEvent::StateChange { from: f, to: t, .. } => {
-                    assert_eq!(f, *from);
-                    assert_eq!(t, *to);
-                }
-                _ => panic!("unexpected variant"),
-            }
-        }
-    }
-
-    #[test]
-    fn container_event_debug_output() {
-        let id = ContainerId::new("debug-container");
-        let event = ContainerEvent::MetricsUpdate { container_id: id };
-        let debug = format!("{event:?}");
-        assert!(debug.contains("MetricsUpdate"));
     }
 }

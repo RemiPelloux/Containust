@@ -9,6 +9,7 @@
 
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, unsafe_code))]
 
+pub mod codes;
 pub mod config;
 pub mod constants;
 pub mod error;

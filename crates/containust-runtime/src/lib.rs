@@ -6,6 +6,7 @@
 pub mod backend;
 pub mod container;
 pub mod engine;
+pub mod events;
 pub mod exec;
 pub mod logs;
 pub mod metrics;

@@ -7,7 +7,8 @@
     clippy::unnecessary_wraps,
     clippy::needless_pass_by_value,
     clippy::print_stdout,
-    clippy::print_stderr
+    clippy::print_stderr,
+    clippy::exit
 )]
 
 mod commands;
@@ -15,14 +16,20 @@ mod converter;
 mod output;
 
 use clap::Parser;
+use containust_common::codes;
 
 use crate::commands::Cli;
 
-fn main() -> anyhow::Result<()> {
+fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
     let cli = Cli::parse();
-    commands::execute(cli)
+    if let Err(error) = commands::execute(cli) {
+        let class = codes::classify_message(&format!("{error:#}"));
+        eprintln!("error[{}]: {error}", class.code);
+        eprintln!("hint: {}", class.remediation);
+        std::process::exit(class.exit_code);
+    }
 }

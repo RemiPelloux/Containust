@@ -2,6 +2,7 @@
 
 pub mod build;
 pub mod convert;
+pub mod doctor;
 pub mod exec;
 pub mod images;
 pub mod logs;
@@ -139,6 +140,8 @@ pub enum Command {
     /// Manage the lightweight VM backend.
     #[command(subcommand)]
     Vm(VmCommand),
+    /// Diagnose platform, QEMU, cache, and offline readiness.
+    Doctor(doctor::DoctorArgs),
 }
 
 /// VM subcommands.
@@ -173,6 +176,7 @@ pub fn execute(cli: Cli) -> anyhow::Result<()> {
             VmCommand::Start(args) => vm::vm_start(args, &options),
             VmCommand::Stop(args) => vm::vm_stop(args, &options),
         },
+        Command::Doctor(args) => doctor::execute(args, &options),
     }
 }
 

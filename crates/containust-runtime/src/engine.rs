@@ -2,13 +2,17 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Instant;
 
+use containust_common::codes;
 use containust_common::error::{ContainustError, Result};
 use containust_common::types::ContainerId;
 
 use crate::backend::{
     self, ContainerBackend, ContainerConfig, ContainerInfo, ReconciliationReport,
 };
+use crate::events::{EventBus, OperationEmit};
 use crate::exec::ExecOutput;
 
 /// Immutable storage and network policy for an engine instance.
@@ -55,6 +59,7 @@ pub struct Engine {
     data_dir: PathBuf,
     state_file: PathBuf,
     offline: bool,
+    events: Arc<EventBus>,
 }
 
 impl Engine {
@@ -94,7 +99,14 @@ impl Engine {
             data_dir: options.data_dir,
             state_file: options.state_file,
             offline: options.offline,
+            events: Arc::new(EventBus::new()),
         }
+    }
+
+    /// Returns the shared lifecycle event bus.
+    #[must_use]
+    pub fn events(&self) -> &EventBus {
+        &self.events
     }
 
     /// Deploys all components from a `.ctst` file.
@@ -108,6 +120,39 @@ impl Engine {
     /// Returns an error if parsing, validation, graph resolution,
     /// container creation, or start fails.
     pub fn deploy(&self, ctst_path: &Path) -> Result<Vec<DeployedComponent>> {
+        let started = Instant::now();
+        let project = self
+            .data_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("project")
+            .to_string();
+        match self.deploy_inner(ctst_path) {
+            Ok(deployed) => {
+                self.events.emit_operation(OperationEmit {
+                    project,
+                    operation: "deploy".into(),
+                    duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    container_id: None,
+                    error_code: None,
+                });
+                Ok(deployed)
+            }
+            Err(error) => {
+                let class = codes::classify(&error);
+                self.events.emit_operation(OperationEmit {
+                    project,
+                    operation: "deploy".into(),
+                    duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    container_id: None,
+                    error_code: Some(class.code),
+                });
+                Err(error)
+            }
+        }
+    }
+
+    fn deploy_inner(&self, ctst_path: &Path) -> Result<Vec<DeployedComponent>> {
         let project_dir = containust_common::constants::project_dir(ctst_path);
         for subdir in ["logs", "state"] {
             let path = project_dir.join(subdir);
@@ -232,7 +277,7 @@ impl Engine {
     ///
     /// Returns an error if the container is not found or cannot be stopped.
     pub fn stop(&self, id: &ContainerId) -> Result<()> {
-        self.backend.stop(id)
+        self.stop_with_force(id, false)
     }
 
     /// Stops a container immediately when `force` is true.
@@ -241,11 +286,39 @@ impl Engine {
     ///
     /// Returns an error if the container cannot be stopped.
     pub fn stop_with_force(&self, id: &ContainerId, force: bool) -> Result<()> {
-        if force {
+        let started = Instant::now();
+        let project = self
+            .data_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("project")
+            .to_string();
+        let result = if force {
             self.backend.force_stop(id)
         } else {
             self.backend.stop(id)
+        };
+        let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        match &result {
+            Ok(()) => self.events.emit_operation(OperationEmit {
+                project,
+                operation: "stop".into(),
+                duration_ms,
+                container_id: Some(id.clone()),
+                error_code: None,
+            }),
+            Err(error) => {
+                let class = codes::classify(error);
+                self.events.emit_operation(OperationEmit {
+                    project,
+                    operation: "stop".into(),
+                    duration_ms,
+                    container_id: Some(id.clone()),
+                    error_code: Some(class.code),
+                });
+            }
         }
+        result
     }
 
     /// Removes a stopped container and all project-owned resources.
