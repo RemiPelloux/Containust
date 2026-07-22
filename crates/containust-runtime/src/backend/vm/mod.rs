@@ -16,6 +16,7 @@ use containust_common::types::ContainerId;
 use super::{ContainerBackend, ContainerConfig, ContainerInfo, project_identifier};
 use crate::exec::ExecOutput;
 
+pub mod assets;
 pub mod initramfs;
 
 const VM_PORT: u16 = 10809;
@@ -23,8 +24,6 @@ const VM_MEMORY_MB: u32 = 512;
 const VM_CPUS: u32 = 2;
 const VM_BOOT_TIMEOUT_SECS: u64 = 60;
 const VM_POLL_INTERVAL_MS: u64 = 500;
-
-const ALPINE_VERSION: &str = "3.21";
 
 /// Backend that runs containers inside a lightweight Linux VM.
 ///
@@ -93,17 +92,12 @@ impl VMBackend {
 
         let kernel_path = self.vm_dir.join("vmlinuz");
         let custom_initramfs_path = self.vm_dir.join("initramfs-containust.img");
-
-        if !kernel_path.exists() || kernel_is_empty(&kernel_path) {
-            download_kernel(&kernel_path)?;
-        }
-
-        // Always rebuild to pick up agent script changes
-        let _ = std::fs::remove_file(&custom_initramfs_path);
         let base_initramfs_path = self.vm_dir.join("initramfs-base.img");
-        if !base_initramfs_path.exists() {
-            download_initramfs(&base_initramfs_path)?;
-        }
+        let entry = assets::asset_for_arch(assets::host_arch())?;
+        assets::ensure_cached(entry, &kernel_path, &base_initramfs_path)?;
+
+        // Always rebuild to pick up agent script changes.
+        let _ = std::fs::remove_file(&custom_initramfs_path);
         initramfs::build_initramfs(&base_initramfs_path, &custom_initramfs_path)?;
 
         Ok((kernel_path, custom_initramfs_path))
@@ -293,70 +287,6 @@ impl Drop for VMBackend {
 }
 
 // ---------------------------------------------------------------------------
-// Asset download helpers
-// ---------------------------------------------------------------------------
-
-/// Returns the Alpine Linux CDN architecture string.
-const fn alpine_arch() -> &'static str {
-    if cfg!(target_arch = "aarch64") {
-        "aarch64"
-    } else {
-        "x86_64"
-    }
-}
-
-/// Downloads the Alpine Linux netboot kernel.
-fn download_kernel(dest: &Path) -> Result<()> {
-    let arch = alpine_arch();
-    let url = format!(
-        "https://dl-cdn.alpinelinux.org/alpine/v{ALPINE_VERSION}/releases/{arch}/netboot/vmlinuz-virt"
-    );
-    eprintln!("  Downloading Alpine Linux kernel (first run only)...");
-    download_file(&url, dest)
-}
-
-/// Downloads the Alpine Linux netboot initramfs.
-fn download_initramfs(dest: &Path) -> Result<()> {
-    let arch = alpine_arch();
-    let url = format!(
-        "https://dl-cdn.alpinelinux.org/alpine/v{ALPINE_VERSION}/releases/{arch}/netboot/initramfs-virt"
-    );
-    eprintln!("  Downloading Alpine Linux initramfs (first run only)...");
-    download_file(&url, dest)
-}
-
-/// Downloads a file from `url` to `dest` with progress indication.
-fn download_file(url: &str, dest: &Path) -> Result<()> {
-    let response = reqwest::blocking::get(url).map_err(|e| ContainustError::Config {
-        message: format!("failed to download {url}: {e}"),
-    })?;
-
-    if !response.status().is_success() {
-        return Err(ContainustError::Config {
-            message: format!("HTTP {} downloading {url}", response.status()),
-        });
-    }
-
-    let total = response.content_length().unwrap_or(0);
-    let bytes = response.bytes().map_err(|e| ContainustError::Config {
-        message: format!("failed to read response body from {url}: {e}"),
-    })?;
-
-    if total > 0 {
-        #[allow(clippy::cast_precision_loss)]
-        let mb = bytes.len() as f64 / 1_048_576.0;
-        eprintln!("  Downloaded {mb:.1} MB");
-    }
-
-    std::fs::write(dest, &bytes).map_err(|e| ContainustError::Io {
-        path: dest.to_path_buf(),
-        source: e,
-    })?;
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
 // QEMU helpers
 // ---------------------------------------------------------------------------
 
@@ -414,11 +344,6 @@ fn lock_vm_process(
     mutex.lock().map_err(|_| ContainustError::Config {
         message: "VM process lock poisoned".into(),
     })
-}
-
-/// Checks if a kernel file exists but is empty (a placeholder).
-fn kernel_is_empty(kernel: &Path) -> bool {
-    std::fs::metadata(kernel).map_or(true, |m| m.len() == 0)
 }
 
 /// Spawns the QEMU process with all required arguments including dynamic port forwarding.
@@ -623,11 +548,10 @@ mod tests {
     use containust_common::types::ContainerId;
 
     #[test]
-    fn alpine_arch_aarch64() {
-        // This test runs on whatever platform it's on.
-        // Just verify the function returns a valid arch string.
-        let arch = alpine_arch();
+    fn host_arch_is_supported() {
+        let arch = assets::host_arch();
         assert!(matches!(arch, "aarch64" | "x86_64"));
+        assert!(assets::asset_for_arch(arch).is_ok());
     }
 
     #[test]
@@ -806,11 +730,5 @@ mod tests {
         assert_ne!(first.project_id, second.project_id);
         assert_eq!(first.data_dir(), first_dir);
         assert_eq!(second.state_file(), second_dir.join("state/state.json"));
-    }
-
-    #[test]
-    fn kernel_is_empty_returns_true_for_nonexistent_path() {
-        let path = std::path::PathBuf::from("/nonexistent/kernel");
-        assert!(kernel_is_empty(&path));
     }
 }
