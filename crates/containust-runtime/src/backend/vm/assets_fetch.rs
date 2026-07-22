@@ -252,19 +252,23 @@ mod tests {
     fn cache_lock_serializes_two_acquisitions() {
         let dir = tempfile::tempdir().expect("tempdir");
         let order = Arc::new(Mutex::new(Vec::new()));
+        let ready = Arc::new(std::sync::Barrier::new(2));
         let order_a = Arc::clone(&order);
         let order_b = Arc::clone(&order);
+        let ready_a = Arc::clone(&ready);
+        let ready_b = Arc::clone(&ready);
         let path = dir.path().to_path_buf();
         let path_b = path.clone();
         let t1 = std::thread::spawn(move || {
             let lock = CacheLock::acquire(&path).expect("lock a");
             order_a.lock().expect("m").push(1);
+            ready_a.wait();
             std::thread::sleep(std::time::Duration::from_millis(50));
             order_a.lock().expect("m").push(2);
             drop(lock);
         });
-        std::thread::sleep(std::time::Duration::from_millis(10));
         let t2 = std::thread::spawn(move || {
+            ready_b.wait();
             let lock = CacheLock::acquire(&path_b).expect("lock b");
             order_b.lock().expect("m").push(3);
             drop(lock);
@@ -272,6 +276,7 @@ mod tests {
         t1.join().expect("t1");
         t2.join().expect("t2");
         let seen = order.lock().expect("m").clone();
+        // Holder logs 1..2 under the lock; waiter must observe 3 only after release.
         assert_eq!(seen, vec![1, 2, 3]);
     }
 }
