@@ -20,7 +20,7 @@ Make macOS and Windows execution a supported workflow with deterministic assets 
 - [x] **V5.1 VM asset manifest.** Pinned Alpine 3.21.7 netboot kernel/initramfs URLs + SHA-256 per arch (`backend/vm/assets.rs`); cache hits re-verified; corrupt blobs re-downloaded fail-closed.
 - [x] **V5.2 Asset cache.** Resumable downloads (`*.partial` + HTTP Range), exclusive `.assets.lock`, offline fail-closed with cache remediation hint.
 - [x] **V5.3 VM lifecycle.** Pidfile + lock, adopt ready agent, SIGTERM→SIGKILL stop (`--force`), stale pid cleanup, Drop no longer kills shared VM.
-- [ ] **V5.4 RPC contract.** Versioned agent protocol, request IDs, timeouts, bounded payloads.
+- [x] **V5.4 RPC contract.** Protocol `v=1` with request IDs, 30s I/O timeouts, 64 KiB/1 MiB bounds, fail-closed response validation.
 - [ ] **V5.5 Port forwarding.** Ownership/teardown of forwarded ports; reject collisions before boot.
 - [ ] **V5.6 Cross-platform CI.** Compile/unit tests on macOS and Windows; QEMU smoke on one hosted platform.
 

@@ -68,6 +68,9 @@ LD="/tmp/containust/logs"
 RD="/tmp/containust/rootfs"
 
 gen_id() { cat /proc/sys/kernel/random/uuid 2>/dev/null | tr -d '-' | head -c 16; }
+# Protocol v1: wrap every response with echoed request id.
+wrap() { echo "{\"v\":1,\"id\":\"$req_id\",$1}"; }
+wrap_err() { wrap "\"error\":\"$1\""; }
 
 h_create() {
     local id=$(gen_id)
@@ -88,17 +91,15 @@ h_create() {
         [ ! -e "$r/bin/sh" ] && ln -s busybox "$r/bin/sh"
     fi
     echo "nameserver 10.0.2.3" > "$r/etc/resolv.conf"
-    echo "{\"result\":{\"id\":\"$id\"}}"
+    wrap "\"result\":{\"id\":\"$id\"}"
 }
 
 h_start() {
     local id=$(echo "$1"|sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
-    [ ! -d "$SD/$id" ] && echo "{\"error\":\"not found: $id\"}" && return
+    [ ! -d "$SD/$id" ] && wrap_err "not found: $id" && return
     local r="$RD/$id"
     local lf="$LD/$id.log"
-    # Extract command array and write as a runnable shell script
     local cm=$(sed -n 's/.*"command":\(\[[^]]*\]\).*/\1/p' "$SD/$id/meta.json")
-    # Handle ["sh","-c","actual command"] pattern
     local third=$(echo "$cm" | sed -n 's/\[[^,]*,[^,]*,"\(.*\)"\]/\1/p')
     if [ -n "$third" ]; then
         echo "#!/bin/sh" > "$r/tmp/run.sh"
@@ -117,65 +118,71 @@ h_start() {
     local p=$!
     echo "$p" > "$SD/$id/pid"
     sed -i 's/"state":"[^"]*"/"state":"running"/' "$SD/$id/meta.json"
-    echo "{\"result\":{\"pid\":$p}}"
+    wrap "\"result\":{\"pid\":$p}"
 }
 
 h_stop() {
     local id=$(echo "$1"|sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
-    [ ! -d "$SD/$id" ] && echo "{\"error\":\"not found: $id\"}" && return
+    [ ! -d "$SD/$id" ] && wrap_err "not found: $id" && return
     [ -f "$SD/$id/pid" ] && { kill $(cat "$SD/$id/pid") 2>/dev/null; sleep 1; kill -9 $(cat "$SD/$id/pid") 2>/dev/null; rm "$SD/$id/pid"; }
     local r="$RD/$id"
     umount "$r/dev" 2>/dev/null; umount "$r/proc" 2>/dev/null
     sed -i 's/"state":"[^"]*"/"state":"stopped"/' "$SD/$id/meta.json"
-    echo '{"result":"ok"}'
+    wrap "\"result\":\"ok\""
 }
 
 h_exec() {
     local id=$(echo "$1"|sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
-    [ ! -d "$SD/$id" ] && echo "{\"error\":\"not found: $id\"}" && return
+    [ ! -d "$SD/$id" ] && wrap_err "not found: $id" && return
     local cm=$(echo "$1"|sed -n 's/.*"command" *: *\(\[[^]]*\]\).*/\1/p')
     local sc=$(echo "$cm"|sed 's/^\[//;s/\]$//;s/","/ /g;s/"//g')
     local r="$RD/$id"
     local o=$(chroot "$r" /bin/sh -c "$sc" 2>/tmp/e.$id)
     local rc=$?
     local e=$(cat /tmp/e.$id 2>/dev/null); rm -f /tmp/e.$id
-    o=$(printf '%s' "$o"|sed 's/"/\\"/g'|tr '\n' ' ')
-    e=$(printf '%s' "$e"|sed 's/"/\\"/g'|tr '\n' ' ')
-    echo "{\"result\":{\"stdout\":\"$o\",\"stderr\":\"$e\",\"exit_code\":$rc}}"
+    o=$(printf '%s' "$o"|head -c 524288|sed 's/"/\\"/g'|tr '\n' ' ')
+    e=$(printf '%s' "$e"|head -c 65536|sed 's/"/\\"/g'|tr '\n' ' ')
+    wrap "\"result\":{\"stdout\":\"$o\",\"stderr\":\"$e\",\"exit_code\":$rc}"
 }
 
 h_logs() {
     local id=$(echo "$1"|sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
     local lf="$LD/$id.log"
     if [ -f "$lf" ]; then
-        local c=$(cat "$lf"|sed 's/"/\\"/g'|tr '\n' ' ')
-        echo "{\"result\":{\"logs\":\"$c\"}}"
+        local c=$(head -c 524288 "$lf"|sed 's/"/\\"/g'|tr '\n' ' ')
+        wrap "\"result\":{\"logs\":\"$c\"}"
     else
-        echo '{"result":{"logs":""}}'
+        wrap "\"result\":{\"logs\":\"\"}"
     fi
 }
 
 h_list() {
-    local res='{"result":{"containers":['
+    local res='"result":{"containers":['
     local f=1
     for dd in "$SD"/*/; do
         [ -f "$dd/meta.json" ] || continue
         [ "$f" = 0 ] && res="$res,"
         f=0
-        res="$res$(cat "$dd/meta.json")"
+        res="$res$(head -c 8192 "$dd/meta.json")"
     done
-    echo "$res]}}"
+    wrap "$res]}"
 }
 
 h_remove() {
     local id=$(echo "$1"|sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
-    [ ! -d "$SD/$id" ] && echo "{\"error\":\"not found: $id\"}" && return
-    [ -f "$SD/$id/pid" ] && echo "{\"error\":\"container $id must be stopped before removal\"}" && return
+    [ ! -d "$SD/$id" ] && wrap_err "not found: $id" && return
+    [ -f "$SD/$id/pid" ] && wrap_err "container $id must be stopped before removal" && return
     rm -rf "$SD/$id" "$RD/$id" "$LD/$id.log"
-    echo '{"result":"ok"}'
+    wrap "\"result\":\"ok\""
 }
 
-read -r line
+# Bound request line to 64 KiB (protocol MAX_REQUEST_BYTES).
+line=$(head -c 65537)
+[ "${#line}" -gt 65536 ] && req_id="0" && wrap_err "request exceeds 65536 bytes" && exit 0
+req_id=$(echo "$line" | sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
+[ -z "$req_id" ] && req_id="0"
+req_v=$(echo "$line" | sed -n 's/.*"v" *: *\([0-9][0-9]*\).*/\1/p')
+[ "$req_v" != "1" ] && wrap_err "unsupported protocol version" && exit 0
 project=$(echo "$line" | sed -n 's/.*"project" *: *"\([0-9a-f][0-9a-f]*\)".*/\1/p')
 [ -z "$project" ] && project="default"
 BASE="/tmp/containust/projects/$project"
@@ -185,7 +192,7 @@ RD="$BASE/rootfs"
 mkdir -p "$SD" "$LD" "$RD"
 m=$(echo "$line" | sed -n 's/.*"method" *: *"\([^"]*\)".*/\1/p')
 case "$m" in
-    ping) echo '{"result":"pong"}';;
+    ping) wrap "\"result\":\"pong\"";;
     create) h_create "$line";;
     start) h_start "$line";;
     stop) h_stop "$line";;
@@ -193,7 +200,7 @@ case "$m" in
     logs) h_logs "$line";;
     list) h_list;;
     remove) h_remove "$line";;
-    *) echo "{\"error\":\"unknown: $m\"}";;
+    *) wrap_err "unknown: $m";;
 esac
 HANDLER_EOF
 chmod 755 /tmp/handler.sh
@@ -553,6 +560,14 @@ mod tests {
     fn agent_script_rejects_removal_of_running_containers() {
         assert!(AGENT_SCRIPT.contains("container $id must be stopped before removal"));
         assert!(!AGENT_SCRIPT.contains("h_stop \"$1\" >/dev/null"));
+    }
+
+    #[test]
+    fn agent_script_speaks_protocol_v1() {
+        assert!(AGENT_SCRIPT.contains("unsupported protocol version"));
+        assert!(AGENT_SCRIPT.contains("wrap()"));
+        assert!(AGENT_SCRIPT.contains("head -c 65537"));
+        assert!(AGENT_SCRIPT.contains("req_id"));
     }
 
     #[test]

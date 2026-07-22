@@ -107,12 +107,12 @@ Containust uses a `ContainerBackend` trait to abstract platform-specific contain
 ### 7.2 VM Backend Specification
 
 - **Guest OS**: Alpine Linux (minimal, ~15MB kernel+initramfs)
-- **VM Agent**: A BusyBox shell-based JSON-RPC server running inside the VM using `nc` and `chroot`
-- **Communication**: JSON-RPC 2.0 over TCP socket
-- **Lifecycle**: Auto-start on first container operation, explicit `ctst vm start/stop` for manual control
-- **Resource Isolation**: VM runs with constrained resources; individual containers inside the VM have their own cgroup limits
+- **VM Agent**: A BusyBox shell handler invoked by `nc -e` inside the VM (`chroot` for guest workloads)
+- **Communication**: Versioned line-delimited JSON RPC over TCP (`127.0.0.1:10809`). Each request carries `v` (protocol version, currently `1`), a unique `id`, `method`, and `params`. Responses echo `v`/`id` and include either `result` or `error`. Requests are capped at 64 KiB; responses at 1 MiB; I/O timeout is 30s per attempt.
+- **Lifecycle**: Shared QEMU process tracked in `~/.containust/cache/vm/qemu.pid.json`; auto-start on first container operation; explicit `ctst vm start/stop` (graceful SIGTERM, `--force` SIGKILL). Dropping the CLI does not kill the VM.
+- **Resource Isolation**: VM runs with constrained resources; individual containers inside the VM have their own limits where supported
 - **State Persistence**: Container state is ephemeral within the VM; project-level state is stored in `.containust/` next to the `.ctst` file on the host
-- **Asset Caching**: VM kernel and initramfs cached in `~/.containust/cache/vm/`, downloaded once and reused across projects
+- **Asset Caching**: Pinned Alpine kernel/initramfs cached in `~/.containust/cache/vm/` with SHA-256 verification and resumable downloads
 
 ### 7.3 `ContainerBackend` Trait
 

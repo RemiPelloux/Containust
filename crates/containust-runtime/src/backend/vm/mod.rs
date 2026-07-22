@@ -20,6 +20,7 @@ mod assets_fetch;
 pub mod initramfs;
 mod lifecycle;
 mod process;
+mod protocol;
 mod qemu;
 mod response;
 mod rpc;
@@ -205,8 +206,8 @@ impl ContainerBackend for VMBackend {
     }
 
     fn stop(&self, id: &ContainerId) -> Result<()> {
-        let _response = self.send_command("stop", &serde_json::json!({ "id": id.as_str() }))?;
-        Ok(())
+        let response = self.send_command("stop", &serde_json::json!({ "id": id.as_str() }))?;
+        response::expect_ok_result(&response)
     }
 
     fn exec(&self, id: &ContainerId, cmd: &[String]) -> Result<ExecOutput> {
@@ -214,22 +215,17 @@ impl ContainerBackend for VMBackend {
             "exec",
             &serde_json::json!({ "id": id.as_str(), "command": cmd }),
         )?;
-        Ok(response::parse_exec_output(&response))
+        response::parse_exec_output(&response)
     }
 
     fn remove(&self, id: &ContainerId) -> Result<()> {
-        let _response = self.send_command("remove", &serde_json::json!({ "id": id.as_str() }))?;
-        Ok(())
+        let response = self.send_command("remove", &serde_json::json!({ "id": id.as_str() }))?;
+        response::expect_ok_result(&response)
     }
 
     fn logs(&self, id: &ContainerId) -> Result<String> {
         let response = self.send_command("logs", &serde_json::json!({ "id": id.as_str() }))?;
-        let logs = response
-            .get("result")
-            .and_then(|r| r.get("logs"))
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        Ok(logs.to_string())
+        response::parse_logs(&response)
     }
 
     fn list(&self) -> Result<Vec<ContainerInfo>> {

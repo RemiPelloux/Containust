@@ -13,30 +13,77 @@ pub fn truncate_u64_to_u32(value: u64) -> Result<u32> {
     })
 }
 
+/// Requires `result == "ok"` for stop/remove style responses.
+///
+/// # Errors
+///
+/// Returns an error when the result is missing or not the string `"ok"`.
+pub fn expect_ok_result(response: &serde_json::Value) -> Result<()> {
+    match response.get("result").and_then(serde_json::Value::as_str) {
+        Some("ok") => Ok(()),
+        Some(other) => Err(ContainustError::Config {
+            message: format!("VM agent expected result \"ok\", got {other:?}"),
+        }),
+        None => Err(ContainustError::Config {
+            message: "VM agent response missing result \"ok\"".into(),
+        }),
+    }
+}
+
 /// Extracts `ExecOutput` fields from a VM agent response.
-#[must_use]
-pub fn parse_exec_output(response: &serde_json::Value) -> ExecOutput {
-    let result = response.get("result").cloned().unwrap_or_default();
+///
+/// # Errors
+///
+/// Returns an error when `result` is not an object or `exit_code` is missing.
+pub fn parse_exec_output(response: &serde_json::Value) -> Result<ExecOutput> {
+    let result = response
+        .get("result")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| ContainustError::Config {
+            message: "VM agent exec response missing result object".into(),
+        })?;
     let stdout = result
         .get("stdout")
         .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
+        .ok_or_else(|| ContainustError::Config {
+            message: "VM agent exec response missing stdout".into(),
+        })?
         .to_string();
     let stderr = result
         .get("stderr")
         .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
+        .ok_or_else(|| ContainustError::Config {
+            message: "VM agent exec response missing stderr".into(),
+        })?
         .to_string();
     let raw_code = result
         .get("exit_code")
         .and_then(serde_json::Value::as_i64)
-        .unwrap_or(-1);
+        .ok_or_else(|| ContainustError::Config {
+            message: "VM agent exec response missing exit_code".into(),
+        })?;
     let exit_code = i32::try_from(raw_code).unwrap_or(-1);
-    ExecOutput {
+    Ok(ExecOutput {
         stdout,
         stderr,
         exit_code,
-    }
+    })
+}
+
+/// Requires a string `result.logs` field.
+///
+/// # Errors
+///
+/// Returns an error when the logs field is missing.
+pub fn parse_logs(response: &serde_json::Value) -> Result<String> {
+    response
+        .get("result")
+        .and_then(|r| r.get("logs"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| ContainustError::Config {
+            message: "VM agent logs response missing result.logs".into(),
+        })
 }
 
 /// Parses a JSON value from the VM agent into a `ContainerInfo`.
@@ -79,18 +126,35 @@ mod tests {
                 "exit_code": 0
             }
         });
-        let output = parse_exec_output(&response);
+        let output = parse_exec_output(&response).expect("parse");
         assert_eq!(output.stdout, "hello world");
         assert_eq!(output.stderr, "warning");
         assert_eq!(output.exit_code, 0);
     }
 
     #[test]
-    fn parse_exec_output_missing_fields_uses_defaults() {
-        let output = parse_exec_output(&serde_json::json!({}));
-        assert_eq!(output.stdout, "");
-        assert_eq!(output.stderr, "");
-        assert_eq!(output.exit_code, -1);
+    fn parse_exec_output_missing_fields_fails_closed() {
+        let err = parse_exec_output(&serde_json::json!({})).expect_err("missing");
+        assert!(err.to_string().contains("missing result object"));
+    }
+
+    #[test]
+    fn expect_ok_result_accepts_ok() {
+        expect_ok_result(&serde_json::json!({ "result": "ok" })).expect("ok");
+    }
+
+    #[test]
+    fn expect_ok_result_rejects_other() {
+        assert!(expect_ok_result(&serde_json::json!({ "result": "nope" })).is_err());
+    }
+
+    #[test]
+    fn parse_logs_requires_field() {
+        assert!(parse_logs(&serde_json::json!({ "result": {} })).is_err());
+        assert_eq!(
+            parse_logs(&serde_json::json!({ "result": { "logs": "hi" } })).expect("logs"),
+            "hi"
+        );
     }
 
     #[test]
