@@ -658,22 +658,19 @@ fn validate_resource_limits(memory_bytes: Option<u64>, cpu_shares: Option<u64>) 
     Ok(())
 }
 
+#[cfg(unix)]
 fn nix_kill(pid: u32) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use nix::sys::signal::{Signal, kill};
-        use nix::unistd::Pid;
-        kill(Pid::from_raw(pid.cast_signed()), Signal::SIGKILL).map_err(|e| {
-            ContainustError::Config {
-                message: format!("failed to kill pid {pid} after cgroup failure: {e}"),
-            }
-        })
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
-        Ok(())
-    }
+    use nix::sys::signal::{Signal, kill};
+    use nix::unistd::Pid;
+    kill(Pid::from_raw(pid.cast_signed()), Signal::SIGKILL).map_err(|e| ContainustError::Config {
+        message: format!("failed to kill pid {pid} after cgroup failure: {e}"),
+    })
+}
+
+#[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)]
+fn nix_kill(_pid: u32) -> Result<()> {
+    Ok(())
 }
 
 /// Cgroup cleanup during container stop or removal.

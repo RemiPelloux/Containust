@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+#[cfg(unix)]
 const GRACEFUL_WAIT: Duration = Duration::from_secs(5);
 const GRACEFUL_POLL: Duration = Duration::from_millis(100);
 

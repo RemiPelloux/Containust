@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ports::{ensure_ports_covered, normalize_forward_ports, probe_available};
 use super::process::{process_is_alive, terminate_pid, wait_until_dead};
-use super::qemu::{find_qemu, spawn_qemu};
+use super::qemu::{QemuSpawn, find_qemu, spawn_qemu};
 use super::rpc::{VM_AGENT_PORT, is_agent_ready, wait_for_vm_ready};
 
 const PID_FILE_NAME: &str = "qemu.pid.json";
@@ -104,7 +104,13 @@ pub fn ensure_running(
     probe_available(&ports)?;
     let qemu = find_qemu()?;
     eprintln!("  Booting lightweight Linux VM...");
-    let child = spawn_qemu(&qemu, kernel, initramfs, &ports)?;
+    let child = spawn_qemu(QemuSpawn {
+        qemu: &qemu,
+        kernel,
+        initramfs,
+        ports: &ports,
+        vm_dir,
+    })?;
     let pid = child.id();
     write_pid_record(
         vm_dir,
@@ -120,10 +126,23 @@ pub fn ensure_running(
     match wait_for_vm_ready() {
         Ok(()) => Ok(VmStartOutcome::Started),
         Err(error) => {
+            let detail = super::qemu::read_stderr_tail(vm_dir);
             terminate_pid(pid, true);
             clear_pid_record(vm_dir)?;
-            Err(error)
+            Err(enrich_boot_error(error, &detail))
         }
+    }
+}
+
+fn enrich_boot_error(error: ContainustError, detail: &str) -> ContainustError {
+    if detail.is_empty() {
+        return error;
+    }
+    match error {
+        ContainustError::Config { message } => ContainustError::Config {
+            message: format!("{message}{detail}"),
+        },
+        other => other,
     }
 }
 

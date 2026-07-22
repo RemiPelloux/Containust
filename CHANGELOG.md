@@ -10,6 +10,13 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [1.0.3] — 2026-07-22
+
+### Fixed
+
+- Windows clippy on `nix_kill` / unused `GRACEFUL_WAIT`.
+- QEMU aarch64: `virt,gic-version=3`, `host` CPU, `virtio-net-device`, HVF→TCG fallback, stderr diagnostics.
+
 ## [1.0.2] — 2026-07-22
 
 ### Fixed
