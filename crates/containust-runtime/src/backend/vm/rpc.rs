@@ -12,10 +12,21 @@ use super::protocol::{MAX_RESPONSE_BYTES, RPC_IO_TIMEOUT_SECS, decode_response, 
 /// Host-forwarded TCP port for the in-VM agent.
 pub const VM_AGENT_PORT: u16 = 10809;
 
-const VM_BOOT_TIMEOUT_SECS: u64 = 60;
+/// Default wait for the guest agent after QEMU start (cold CI boots need longer).
+const VM_BOOT_TIMEOUT_DEFAULT_SECS: u64 = 180;
 const VM_POLL_INTERVAL_MS: u64 = 500;
 const RPC_MAX_RETRIES: u32 = 8;
 const RPC_RETRY_DELAY_MS: u64 = 800;
+
+fn boot_timeout_secs() -> u64 {
+    parse_boot_timeout(std::env::var("CONTAINUST_VM_BOOT_TIMEOUT_SECS").ok().as_deref())
+}
+
+fn parse_boot_timeout(raw: Option<&str>) -> u64 {
+    raw.and_then(|value| value.parse().ok())
+        .filter(|secs| *secs > 0)
+        .unwrap_or(VM_BOOT_TIMEOUT_DEFAULT_SECS)
+}
 
 /// Returns true when the agent answers a versioned `ping` with `pong`.
 #[must_use]
@@ -31,7 +42,8 @@ pub fn is_agent_ready() -> bool {
 /// Returns an error when the agent does not become ready in time.
 pub fn wait_for_vm_ready() -> Result<()> {
     let start = std::time::Instant::now();
-    let timeout = Duration::from_secs(VM_BOOT_TIMEOUT_SECS);
+    let timeout_secs = boot_timeout_secs();
+    let timeout = Duration::from_secs(timeout_secs);
 
     while start.elapsed() < timeout {
         if is_agent_ready() {
@@ -43,7 +55,7 @@ pub fn wait_for_vm_ready() -> Result<()> {
     }
 
     Err(ContainustError::Config {
-        message: format!("VM failed to become reachable within {VM_BOOT_TIMEOUT_SECS}s"),
+        message: format!("VM failed to become reachable within {timeout_secs}s"),
     })
 }
 
@@ -150,6 +162,14 @@ mod tests {
             request.push(byte[0]);
         }
         request
+    }
+
+    #[test]
+    fn parse_boot_timeout_defaults_and_overrides() {
+        assert_eq!(parse_boot_timeout(None), VM_BOOT_TIMEOUT_DEFAULT_SECS);
+        assert_eq!(parse_boot_timeout(Some("0")), VM_BOOT_TIMEOUT_DEFAULT_SECS);
+        assert_eq!(parse_boot_timeout(Some("bogus")), VM_BOOT_TIMEOUT_DEFAULT_SECS);
+        assert_eq!(parse_boot_timeout(Some("90")), 90);
     }
 
     #[test]

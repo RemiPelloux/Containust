@@ -10,6 +10,14 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-07-22
+
+### Fixed
+
+- Windows: compare process `HANDLE` with `.is_null()` so release/CI builds compile.
+- Linux clippy: metrics Option handling and redundant `pub(crate)` on private mounts helper.
+- VM boot wait default raised to 180s (override with `CONTAINUST_VM_BOOT_TIMEOUT_SECS`) for cold CI boots.
+
 ## [1.0.0] — 2026-07-22
 
 ### Added

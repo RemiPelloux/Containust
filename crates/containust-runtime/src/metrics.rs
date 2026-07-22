@@ -74,18 +74,18 @@ pub fn collect_metrics(container_id: &ContainerId) -> Result<MetricsSnapshot> {
         ));
     }
 
-    let (memory, memory_av) = match read_cgroup_u64(&cgroup_path.join("memory.current")) {
-        Some(value) => (value, MetricAvailability::Available),
-        None => (0, MetricAvailability::Missing),
-    };
-    let (cpu, cpu_av) = match read_cpu_usage(&cgroup_path.join("cpu.stat")) {
-        Some(value) => (value, MetricAvailability::Available),
-        None => (0, MetricAvailability::Missing),
-    };
-    let (io_read, io_write, io_av) = match read_io_stat(&cgroup_path.join("io.stat")) {
-        Some((r, w)) => (r, w, MetricAvailability::Available),
-        None => (0, 0, MetricAvailability::Missing),
-    };
+    let (memory, memory_av) = read_cgroup_u64(&cgroup_path.join("memory.current"))
+        .map_or((0, MetricAvailability::Missing), |value| {
+            (value, MetricAvailability::Available)
+        });
+    let (cpu, cpu_av) = read_cpu_usage(&cgroup_path.join("cpu.stat"))
+        .map_or((0, MetricAvailability::Missing), |value| {
+            (value, MetricAvailability::Available)
+        });
+    let (io_read, io_write, io_av) = read_io_stat(&cgroup_path.join("io.stat"))
+        .map_or((0, 0, MetricAvailability::Missing), |(r, w)| {
+            (r, w, MetricAvailability::Available)
+        });
 
     Ok(MetricsSnapshot {
         container_id: container_id.clone(),

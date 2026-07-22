@@ -72,7 +72,7 @@ fn process_is_alive_impl(pid: u32) -> bool {
     // SAFETY: Query-only process handle; CloseHandle always paired.
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle == 0 {
+        if handle.is_null() {
             return false;
         }
         let status = WaitForSingleObject(handle, 0);
@@ -89,7 +89,7 @@ fn terminate_pid_impl(pid: u32, _force: bool) {
     // SAFETY: TerminateProcess on a handle opened with PROCESS_TERMINATE only.
     unsafe {
         let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
-        if handle == 0 {
+        if handle.is_null() {
             return;
         }
         let _ = TerminateProcess(handle, 1);

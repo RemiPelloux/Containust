@@ -196,6 +196,8 @@ jobs:
       - name: Build ctst
         run: cargo build -p containust-cli --locked --release
       - name: VM start / stop smoke
+        env:
+          CONTAINUST_VM_BOOT_TIMEOUT_SECS: "240"
         run: |
           set -euo pipefail
           BIN=./target/release/ctst

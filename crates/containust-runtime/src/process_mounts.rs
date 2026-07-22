@@ -63,7 +63,7 @@ fn pseudo_mounts() -> [PseudoMount; 6] {
 
 /// Mounts essential pseudo-filesystems after `pivot_root`.
 #[cfg(target_os = "linux")]
-pub(crate) fn mount_pseudo_filesystems() -> std::io::Result<()> {
+pub fn mount_pseudo_filesystems() -> std::io::Result<()> {
     use nix::mount::mount;
 
     for (path, src, fstype, flags, opts) in pseudo_mounts() {
