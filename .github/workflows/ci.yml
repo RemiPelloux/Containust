@@ -101,6 +101,8 @@ jobs:
             docs/PERFORMANCE.md \
             docs/FEATURE_FREEZE.md \
             docs/BETA_RC.md \
+            docs/SUPPORT_POLICY.md \
+            docs/GA_CHECKLIST.md \
             docs/CONTRIBUTING.md \
             docs/CLI_REFERENCE.md \
             docs/SDK_GUIDE.md \

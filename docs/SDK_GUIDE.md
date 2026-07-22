@@ -1,6 +1,6 @@
 # Containust SDK Reference
 
-**Crate:** `containust-sdk` v0.9.0-beta.1
+**Crate:** `containust-sdk` v1.0.0
 **Rust Edition:** 2024 | **MSRV:** 1.88.0
 **License:** MIT / Apache-2.0
 

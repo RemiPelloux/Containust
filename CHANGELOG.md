@@ -10,6 +10,16 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-07-22
+
+### Added
+
+- GA support policy (`docs/SUPPORT_POLICY.md`) and release checklist (`docs/GA_CHECKLIST.md`).
+
+### Changed
+
+- First general-availability release; SemVer stability policy applies to the SDK and documented surfaces.
+
 ## [0.9.0-beta.1] — 2026-07-22
 
 ### Added
