@@ -13,7 +13,9 @@
 ///
 /// The probe must not panic; it communicates failure by returning
 /// `false`, which becomes the child's exit code.
-pub(crate) fn forked_probe_succeeds(probe: impl FnOnce() -> bool) -> bool {
+// `pub` inside a private module keeps clippy::redundant_pub_crate happy;
+// visibility is still crate-only because the module itself is private.
+pub fn forked_probe_succeeds(probe: impl FnOnce() -> bool) -> bool {
     use nix::sys::wait::{WaitStatus, waitpid};
     use nix::unistd::{ForkResult, fork};
 

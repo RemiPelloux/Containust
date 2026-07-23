@@ -91,6 +91,7 @@ fn unpack_one<R: Read>(entry: &mut tar::Entry<'_, R>, target: &Path) -> Result<(
     match header.entry_type() {
         tar::EntryType::Regular | tar::EntryType::Continuous => {
             write_regular_file(entry, target, &dest)?;
+            apply_entry_mode(&dest, header.mode().unwrap_or(0o644))?;
         }
         tar::EntryType::Directory => {
             assert_dest_confined(target, &dest)?;
@@ -98,6 +99,7 @@ fn unpack_one<R: Read>(entry: &mut tar::Entry<'_, R>, target: &Path) -> Result<(
                 path: dest.clone(),
                 source,
             })?;
+            apply_entry_mode(&dest, header.mode().unwrap_or(0o755))?;
         }
         tar::EntryType::Symlink => {
             let link = entry.link_name().map_err(|source| ContainustError::Io {
@@ -177,6 +179,29 @@ fn write_regular_file<R: Read>(
     Ok(())
 }
 
+/// Applies the archive mode bits to an extracted file or directory.
+///
+/// Setuid, setgid, and sticky bits are always stripped — no setuid
+/// binaries are allowed inside a container rootfs (see security rules).
+#[cfg(unix)]
+fn apply_entry_mode(dest: &Path, mode: u32) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let sanitized = mode & 0o777;
+    std::fs::set_permissions(dest, std::fs::Permissions::from_mode(sanitized)).map_err(|source| {
+        ContainustError::Io {
+            path: dest.to_path_buf(),
+            source,
+        }
+    })
+}
+
+/// Windows has no Unix mode bits; extraction keeps filesystem defaults.
+#[cfg(not(unix))]
+fn apply_entry_mode(_dest: &Path, _mode: u32) -> Result<()> {
+    Ok(())
+}
+
 fn create_symlink(link: &Path, root: &Path, dest: &Path) -> Result<()> {
     if let Some(parent) = dest.parent() {
         assert_dest_confined(root, parent)?;
@@ -223,5 +248,47 @@ mod tests {
     #[test]
     fn sanitize_entry_path_rejects_parent_dir() {
         assert!(sanitize_entry_path(Path::new("../escape")).is_err());
+    }
+
+    #[cfg(unix)]
+    fn tar_with_mode(dir: &Path, mode: u32) -> PathBuf {
+        let tar_path = dir.join("mode.tar");
+        let file = std::fs::File::create(&tar_path).expect("create tar");
+        let mut builder = tar::Builder::new(file);
+        let data = b"#!/bin/sh\n";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_mode(mode);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "bin/app", &data[..])
+            .expect("append entry");
+        builder.finish().expect("finish tar");
+        tar_path
+    }
+
+    #[cfg(unix)]
+    fn extracted_mode(dir: &Path, tar_mode: u32) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+
+        let archive = tar_with_mode(dir, tar_mode);
+        let target = dir.join("out");
+        safe_extract_archive(&archive, &target).expect("extract");
+        let metadata = std::fs::metadata(target.join("bin/app")).expect("metadata");
+        metadata.permissions().mode() & 0o7777
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extract_preserves_executable_bit() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(extracted_mode(dir.path(), 0o755), 0o755);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extract_strips_setuid_and_setgid_bits() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(extracted_mode(dir.path(), 0o6755), 0o755);
     }
 }

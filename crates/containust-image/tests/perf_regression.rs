@@ -16,8 +16,10 @@ use containust_image::reference::ImageReference;
 /// Size of the synthetic payload used for timing gates.
 const PAYLOAD_BYTES: usize = 32 * 1024 * 1024;
 
-/// Generous wall-clock budget for one 32 MiB import (observed ~100 ms).
-const IMPORT_BUDGET: Duration = Duration::from_secs(5);
+/// Generous wall-clock budget for one 32 MiB import (observed ~100 ms on
+/// Linux/macOS; Windows CI runners with Defender scanning have exceeded
+/// 5 s, so the budget only guards against gross regressions).
+const IMPORT_BUDGET: Duration = Duration::from_secs(20);
 
 /// Writes a rootfs with one incompressible `PAYLOAD_BYTES` blob.
 fn build_payload_rootfs(root: &Path) {
