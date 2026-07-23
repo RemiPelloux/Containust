@@ -149,9 +149,12 @@ jobs:
             tar xzf "artifacts/ctst-${target}/ctst-${target}.tar.gz" -C "${workdir}"
             export NFPM_ARCH="${arch}"
             export NFPM_BINARY="${workdir}/ctst"
-            nfpm package -f packaging/nfpm.yaml -p deb \
+            # nfpm does not expand env placeholders in the config; render it.
+            envsubst '${NFPM_ARCH} ${NFPM_VERSION} ${NFPM_BINARY}' \
+              < packaging/nfpm.yaml > "${workdir}/nfpm.yaml"
+            nfpm package -f "${workdir}/nfpm.yaml" -p deb \
               -t "packages/ctst_${NFPM_VERSION}_${arch}.deb"
-            nfpm package -f packaging/nfpm.yaml -p rpm \
+            nfpm package -f "${workdir}/nfpm.yaml" -p rpm \
               -t "packages/ctst-${NFPM_VERSION}-1.${arch}.rpm"
           done
           (cd packages && sha256sum ./* > SHA256SUMS.packages)
