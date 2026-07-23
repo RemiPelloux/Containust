@@ -6,9 +6,9 @@ Every item must be checked (or explicitly deferred with an owner) before the
 ## Wave 1 — Foundation
 
 - [x] **P10.1** Trackers (`work.md`, `roadmap.md`) match HEAD version and sprint state.
-- [ ] **P10.2** Privileged Linux CI job runs the `#[ignore]` core/CLI fixtures as root
+- [x] **P10.2** Privileged Linux CI job runs the `#[ignore]` core/CLI fixtures as root
       (namespaces, cgroups v2, mounts, capabilities, sprint3 offline gate).
-      _Job added; fixture fixes (cgroup rmdir, forked user-ns probes) awaiting green run._
+      Green as of commit `0748199`.
 - [x] **P10.3** Linux port publish path documented in `CLI_REFERENCE.md` and
       `SUPPORT_POLICY.md` (landed with Wave 3).
 
@@ -48,8 +48,8 @@ Every item must be checked (or explicitly deferred with an owner) before the
       submission instructions.
 - [x] **P10.17** Release verification runbook in `RUNBOOKS.md`; `SHA256SUMS`
       signed keylessly with cosign in the release workflow.
-- [ ] **P10.18** `CHANGELOG.md` updated; `SUPPORT_POLICY.md` deferred list pruned;
-      `v1.1.0` tagged with green CI. _Awaiting green CI on main before tagging._
+- [x] **P10.18** `CHANGELOG.md` updated; `SUPPORT_POLICY.md` deferred list pruned;
+      `v1.1.0` tagged with green CI.
 
 ## Verification gates (all waves)
 
@@ -57,4 +57,4 @@ Every item must be checked (or explicitly deferred with an owner) before the
 - [x] `cargo clippy --workspace --all-targets -- -D warnings`
 - [x] `cargo test --workspace`
 - [x] `cargo deny check`
-- [ ] CI matrix green: Linux, macOS, Windows, QEMU smoke, privileged Linux job.
+- [x] CI matrix green: Linux, macOS, Windows, QEMU smoke, privileged Linux job.
