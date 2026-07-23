@@ -3,6 +3,11 @@
 //! Uses a manual `fork` + pipe handshake (not `Command::spawn`) so the
 //! intermediate process can `_exit` after a PID-namespace double-fork
 //! without being misreported as an exec failure.
+//!
+//! Child order when PID ns is enabled: user ns → maps → `CLONE_NEWPID` +
+//! fork (become PID 1) → mount/net/ipc/uts (+ loopback) → pivot → READY →
+//! exec. Proc mounts need CAP_SYS_ADMIN in the user_ns that owns the
+//! current PID namespace, so NEWPID must precede `mount("/proc")`.
 
 #![cfg(target_os = "linux")]
 
@@ -130,13 +135,24 @@ fn child_main(
             return Err(std::io::Error::other("parent did not acknowledge uid maps"));
         }
     }
+    // Mounting procfs requires CAP_SYS_ADMIN in the user_ns that owns the
+    // *current* PID namespace. Enter NEWPID (and become PID 1) before any
+    // other unshare/pivot/mount work so `/proc` is not EPERM.
+    if cfg.namespaces.pid {
+        return enter_pid_then_setup(cfg, pipes, exec);
+    }
     apply_network_namespace(cfg)?;
-    enter_pid_and_exec(cfg, pipes, exec)
+    drop_fd(pipes.tx);
+    drop_fd(pipes.rx);
+    crate::process::configure_child_isolation_after_ns(
+        &cfg.rootfs,
+        &cfg.volumes,
+        cfg.readonly_rootfs,
+    )?;
+    exec_container(exec)
 }
 
 fn apply_network_namespace(cfg: &ChildConfig) -> std::io::Result<()> {
-    // Never fork/exec after CLONE_NEWPID — the first child becomes PID 1.
-    // Unshare non-PID namespaces, bring up loopback, then enter PID ns.
     if let Some(path) = &cfg.join_netns {
         crate::network::join_netns(path)
             .map_err(|e| std::io::Error::other(format!("join netns failed: {e}")))?;
@@ -150,21 +166,11 @@ fn apply_network_namespace(cfg: &ChildConfig) -> std::io::Result<()> {
     Ok(())
 }
 
-fn enter_pid_and_exec(
+fn enter_pid_then_setup(
     cfg: &ChildConfig,
     pipes: ChildPipes,
     exec: &ExecArgs<'_>,
 ) -> std::io::Result<()> {
-    if !cfg.namespaces.pid {
-        drop_fd(pipes.tx);
-        drop_fd(pipes.rx);
-        crate::process::configure_child_isolation_after_ns(
-            &cfg.rootfs,
-            &cfg.volumes,
-            cfg.readonly_rootfs,
-        )?;
-        return exec_container(exec);
-    }
     unshare_pid_only()?;
     // SAFETY: single-threaded; must fork immediately after CLONE_NEWPID.
     match unsafe { fork() } {
@@ -173,18 +179,17 @@ fn enter_pid_and_exec(
             unsafe { libc::_exit(0) }
         }
         Ok(ForkResult::Child) => {
-            // getpid() is 1 inside the new PID ns — read the host PID from
-            // the still-mounted host /proc before pivot_root.
+            // Host PID via still-mounted host /proc before pivot_root.
             let host_pid = host_pid_from_proc_self()?;
             write_all_file(&pipes.tx, &[MSG_INIT_PID])?;
             write_all_file(&pipes.tx, &host_pid.to_le_bytes())?;
+            // Now PID 1: safe to fork helpers (e.g. `ip`) and mount procfs.
+            apply_network_namespace(cfg)?;
             crate::process::configure_child_isolation_after_ns(
                 &cfg.rootfs,
                 &cfg.volumes,
                 cfg.readonly_rootfs,
             )?;
-            // Signal only after pivot/caps succeed so the parent fail-closes
-            // instead of returning a soon-to-be-dead PID.
             write_all_file(&pipes.tx, &[MSG_READY])?;
             drop_fd(pipes.tx);
             drop_fd(pipes.rx);
