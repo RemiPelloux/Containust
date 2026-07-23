@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 /// and nested containers). A fresh proc mount created in the **init** user
 /// namespace satisfies the check so the container can mount its own proc.
 #[cfg(target_os = "linux")]
-pub(crate) const PROC_ANCHOR_PATH: &str = "/run/containust/proc-anchor";
+pub const PROC_ANCHOR_PATH: &str = "/run/containust/proc-anchor";
 
 #[cfg(target_os = "linux")]
 type PseudoMount = (
@@ -83,7 +83,7 @@ fn pseudo_mounts() -> [PseudoMount; 6] {
 /// Returns an error when the directory cannot be created or the mount fails
 /// for a reason other than the anchor already being mounted.
 #[cfg(target_os = "linux")]
-pub(crate) fn ensure_visible_proc_anchor() -> std::io::Result<()> {
+pub fn ensure_visible_proc_anchor() -> std::io::Result<()> {
     use nix::errno::Errno;
     use nix::mount::{MsFlags, mount};
 

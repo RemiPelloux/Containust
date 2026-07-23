@@ -36,27 +36,13 @@ const MSG_READY: u8 = 4;
 /// Spawns with user and/or PID namespace support.
 pub fn spawn_with_user_pid(config: &ProcessConfig) -> Result<u32> {
     validate_spawn_inputs(config)?;
-    if config.namespaces.user {
-        // Init-userns visible proc so userns children can mount their own.
-        crate::process_mounts::ensure_visible_proc_anchor().map_err(|source| {
-            ContainustError::Io {
-                path: Path::new(crate::process_mounts::PROC_ANCHOR_PATH).to_path_buf(),
-                source,
-            }
-        })?;
-    }
+    ensure_proc_anchor_if_user_ns(&config.namespaces)?;
     let (parent_rx, child_tx) = pipe_pair()?;
     let (child_rx, parent_tx) = pipe_pair()?;
     let log_fds = open_log_fds(config)?;
     let argv = c_strings(&config.command)?;
     let envp = build_envp(config)?;
-    let child_cfg = ChildConfig {
-        rootfs: config.rootfs.clone(),
-        volumes: config.volumes.clone(),
-        readonly_rootfs: config.readonly_rootfs,
-        namespaces: config.namespaces.clone(),
-        join_netns: config.join_netns.clone(),
-    };
+    let child_cfg = child_config_from(config);
 
     // SAFETY: child never returns into the parent Rust stack.
     let fork_result = unsafe { fork() }.map_err(|e| ContainustError::Config {
@@ -94,6 +80,28 @@ pub fn spawn_with_user_pid(config: &ProcessConfig) -> Result<u32> {
             // SAFETY: exec only returns on failure.
             unsafe { libc::_exit(1) };
         }
+    }
+}
+
+/// Mounts a visible proc anchor before forking into a user namespace.
+fn ensure_proc_anchor_if_user_ns(namespaces: &NamespaceConfig) -> Result<()> {
+    if !namespaces.user {
+        return Ok(());
+    }
+    // Init-userns visible proc so userns children can mount their own.
+    crate::process_mounts::ensure_visible_proc_anchor().map_err(|source| ContainustError::Io {
+        path: Path::new(crate::process_mounts::PROC_ANCHOR_PATH).to_path_buf(),
+        source,
+    })
+}
+
+fn child_config_from(config: &ProcessConfig) -> ChildConfig {
+    ChildConfig {
+        rootfs: config.rootfs.clone(),
+        volumes: config.volumes.clone(),
+        readonly_rootfs: config.readonly_rootfs,
+        namespaces: config.namespaces.clone(),
+        join_netns: config.join_netns.clone(),
     }
 }
 
