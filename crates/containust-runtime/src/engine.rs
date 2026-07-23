@@ -221,8 +221,9 @@ impl Engine {
             .transpose()?;
 
         let image = resolve_deploy_image(self.data_dir(), self.offline, comp)?;
-        let mut namespaces =
-            containust_core::namespace::NamespaceConfig::default().with_user_and_pid();
+        // User/PID ns use the pipe-synced spawn path; default remains off
+        // until the privileged offline gate validates opt-in (P11.2).
+        let mut namespaces = containust_core::namespace::NamespaceConfig::default();
         if !ports.is_empty() {
             // Published ports share the host network namespace (identity
             // mapping), like `docker run --network host`. veth/NAT-based

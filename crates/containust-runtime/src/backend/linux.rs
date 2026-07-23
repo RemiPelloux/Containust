@@ -378,8 +378,10 @@ impl LinuxNativeBackend {
             .map_err(|message| ContainustError::Config { message })?;
         let readonly_rootfs = entry.readonly_rootfs;
         let volumes = entry.volumes.clone();
-        let mut namespaces =
-            containust_core::namespace::NamespaceConfig::default().with_user_and_pid();
+        let mut namespaces = containust_core::namespace::NamespaceConfig::default();
+        if std::env::var_os("CONTAINUST_ENABLE_USER_PID_NS").is_some() {
+            namespaces = namespaces.with_user_and_pid();
+        }
         if !entry.ports.is_empty() {
             // Published ports share the host network namespace (identity
             // mapping) — see docs/SUPPORT_POLICY.md.
