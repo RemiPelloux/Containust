@@ -132,7 +132,3 @@ pub(crate) fn read_exact_file(file: &mut std::fs::File, buf: &mut [u8]) -> Resul
 pub(crate) fn drop_fd(file: std::fs::File) {
     drop(file);
 }
-
-pub(crate) fn raw_fd(file: &impl AsRawFd) -> i32 {
-    file.as_raw_fd()
-}
