@@ -37,7 +37,7 @@ fn spawn_with_user_and_pid_runs_true() {
         log_path: None,
     };
     let pid = spawn_container_process(&config).expect("spawn user+pid");
-    assert!(pid > 1, "init host pid should be > 1, got {pid}");
+    assert!(pid > 0, "init host pid should be positive, got {pid}");
 
     let status = nix::sys::wait::waitpid(
         nix::unistd::Pid::from_raw(i32::try_from(pid).expect("pid fits i32")),

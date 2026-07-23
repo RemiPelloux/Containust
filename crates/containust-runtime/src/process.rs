@@ -175,7 +175,7 @@ fn configure_child_isolation(
     configure_child_isolation_after_ns(rootfs, volumes, readonly_rootfs)
 }
 
-/// Mount / pivot_root / capability drop after namespaces already exist.
+/// Mount / `pivot_root` / capability drop after namespaces already exist.
 #[cfg(target_os = "linux")]
 pub(crate) fn configure_child_isolation_after_ns(
     rootfs: &Path,

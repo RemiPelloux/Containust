@@ -12,9 +12,7 @@ use nix::unistd::{dup2_stderr, dup2_stdin, dup2_stdout, pipe, read, write};
 
 use crate::process::ProcessConfig;
 
-pub(crate) fn open_log_fds(
-    config: &ProcessConfig,
-) -> Result<Option<(std::fs::File, std::fs::File)>> {
+pub fn open_log_fds(config: &ProcessConfig) -> Result<Option<(std::fs::File, std::fs::File)>> {
     let Some(log_path) = &config.log_path else {
         return Ok(None);
     };
@@ -39,9 +37,7 @@ pub(crate) fn open_log_fds(
     Ok(Some((stdout, stderr)))
 }
 
-pub(crate) fn redirect_stdio(
-    log_fds: Option<(std::fs::File, std::fs::File)>,
-) -> std::io::Result<()> {
+pub fn redirect_stdio(log_fds: Option<(std::fs::File, std::fs::File)>) -> std::io::Result<()> {
     let devnull = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -54,7 +50,7 @@ pub(crate) fn redirect_stdio(
     Ok(())
 }
 
-pub(crate) fn c_strings(args: &[String]) -> Result<Vec<CString>> {
+pub fn c_strings(args: &[String]) -> Result<Vec<CString>> {
     args.iter()
         .map(|s| {
             CString::new(s.as_str()).map_err(|_| ContainustError::Config {
@@ -64,7 +60,7 @@ pub(crate) fn c_strings(args: &[String]) -> Result<Vec<CString>> {
         .collect()
 }
 
-pub(crate) fn build_envp(config: &ProcessConfig) -> Result<Vec<CString>> {
+pub fn build_envp(config: &ProcessConfig) -> Result<Vec<CString>> {
     let mut env = vec![
         "PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_string(),
         "HOME=/root".to_string(),
@@ -76,7 +72,7 @@ pub(crate) fn build_envp(config: &ProcessConfig) -> Result<Vec<CString>> {
     c_strings(&env)
 }
 
-pub(crate) fn pipe_pair() -> Result<(std::fs::File, std::fs::File)> {
+pub fn pipe_pair() -> Result<(std::fs::File, std::fs::File)> {
     let (read_fd, write_fd) = pipe().map_err(|e| ContainustError::Config {
         message: format!("pipe failed: {e}"),
     })?;
@@ -86,7 +82,7 @@ pub(crate) fn pipe_pair() -> Result<(std::fs::File, std::fs::File)> {
     Ok((read, write))
 }
 
-pub(crate) fn write_all_file(file: &impl AsFd, buf: &[u8]) -> std::io::Result<()> {
+pub fn write_all_file(file: &impl AsFd, buf: &[u8]) -> std::io::Result<()> {
     let mut offset = 0;
     while offset < buf.len() {
         match write(file, &buf[offset..]) {
@@ -104,7 +100,7 @@ pub(crate) fn write_all_file(file: &impl AsFd, buf: &[u8]) -> std::io::Result<()
     Ok(())
 }
 
-pub(crate) fn read_one_file(file: &impl AsFd) -> std::io::Result<u8> {
+pub fn read_one_file(file: &impl AsFd) -> std::io::Result<u8> {
     let mut buf = [0_u8; 1];
     loop {
         match read(file, &mut buf) {
@@ -121,7 +117,7 @@ pub(crate) fn read_one_file(file: &impl AsFd) -> std::io::Result<u8> {
     }
 }
 
-pub(crate) fn read_exact_file(file: &mut std::fs::File, buf: &mut [u8]) -> Result<()> {
+pub fn read_exact_file(file: &mut std::fs::File, buf: &mut [u8]) -> Result<()> {
     file.read_exact(buf).map_err(|source| ContainustError::Io {
         path: Path::new("spawn-sync-pipe").to_path_buf(),
         source,
@@ -129,6 +125,6 @@ pub(crate) fn read_exact_file(file: &mut std::fs::File, buf: &mut [u8]) -> Resul
 }
 
 /// Drops a file descriptor by consuming the `File` (preferred over raw close).
-pub(crate) fn drop_fd(file: std::fs::File) {
+pub fn drop_fd(file: std::fs::File) {
     drop(file);
 }

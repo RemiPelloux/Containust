@@ -12,7 +12,7 @@ use std::path::Path;
 
 use containust_common::error::{ContainustError, Result};
 use containust_core::namespace::NamespaceConfig;
-use nix::unistd::{ForkResult, Pid, execvp, fork};
+use nix::unistd::{ForkResult, execvp, fork};
 
 use crate::process::ProcessConfig;
 use crate::process_spawn_io::{
@@ -25,7 +25,7 @@ const MSG_MAPS_DONE: u8 = 2;
 const MSG_INIT_PID: u8 = 3;
 
 /// Spawns with user and/or PID namespace support.
-pub(crate) fn spawn_with_user_pid(config: &ProcessConfig) -> Result<u32> {
+pub fn spawn_with_user_pid(config: &ProcessConfig) -> Result<u32> {
     validate_spawn_inputs(config)?;
     let (parent_rx, child_tx) = pipe_pair()?;
     let (child_rx, parent_tx) = pipe_pair()?;
@@ -59,7 +59,15 @@ pub(crate) fn spawn_with_user_pid(config: &ProcessConfig) -> Result<u32> {
         ForkResult::Child => {
             drop_fd(parent_rx);
             drop_fd(parent_tx);
-            if let Err(err) = child_main(&child_cfg, child_tx, child_rx, log_fds, &argv, &envp) {
+            let pipes = ChildPipes {
+                tx: child_tx,
+                rx: child_rx,
+            };
+            let exec = ExecArgs {
+                argv: &argv,
+                envp: &envp,
+            };
+            if let Err(err) = child_main(&child_cfg, pipes, log_fds, exec) {
                 let _ = writeln!(std::io::stderr(), "containust spawn child failed: {err}");
                 // SAFETY: child must not unwind into the parent address space.
                 unsafe { libc::_exit(1) };
@@ -75,6 +83,16 @@ struct ChildConfig {
     volumes: Vec<String>,
     readonly_rootfs: bool,
     namespaces: NamespaceConfig,
+}
+
+struct ChildPipes {
+    tx: std::fs::File,
+    rx: std::fs::File,
+}
+
+struct ExecArgs<'a> {
+    argv: &'a [CString],
+    envp: &'a [CString],
 }
 
 fn validate_spawn_inputs(config: &ProcessConfig) -> Result<()> {
@@ -96,41 +114,37 @@ fn validate_spawn_inputs(config: &ProcessConfig) -> Result<()> {
 
 fn child_main(
     cfg: &ChildConfig,
-    tx: std::fs::File,
-    rx: std::fs::File,
+    pipes: ChildPipes,
     log_fds: Option<(std::fs::File, std::fs::File)>,
-    argv: &[CString],
-    envp: &[CString],
+    exec: ExecArgs<'_>,
 ) -> std::io::Result<()> {
     redirect_stdio(log_fds)?;
     if cfg.namespaces.user {
         containust_core::namespace::user::create_user_namespace()
             .map_err(|e| std::io::Error::other(format!("user namespace failed: {e}")))?;
-        write_all_file(&tx, &[MSG_NEED_MAPS])?;
-        if read_one_file(&rx)? != MSG_MAPS_DONE {
+        write_all_file(&pipes.tx, &[MSG_NEED_MAPS])?;
+        if read_one_file(&pipes.rx)? != MSG_MAPS_DONE {
             return Err(std::io::Error::other("parent did not acknowledge uid maps"));
         }
     }
     unshare_remaining(&cfg.namespaces)?;
-    enter_pid_and_exec(cfg, tx, rx, argv, envp)
+    enter_pid_and_exec(cfg, pipes, exec)
 }
 
 fn enter_pid_and_exec(
     cfg: &ChildConfig,
-    tx: std::fs::File,
-    rx: std::fs::File,
-    argv: &[CString],
-    envp: &[CString],
+    pipes: ChildPipes,
+    exec: ExecArgs<'_>,
 ) -> std::io::Result<()> {
     if !cfg.namespaces.pid {
-        drop_fd(tx);
-        drop_fd(rx);
+        drop_fd(pipes.tx);
+        drop_fd(pipes.rx);
         crate::process::configure_child_isolation_after_ns(
             &cfg.rootfs,
             &cfg.volumes,
             cfg.readonly_rootfs,
         )?;
-        return exec_container(argv, envp);
+        return exec_container(exec);
     }
     // SAFETY: child is still single-threaded.
     match unsafe { fork() } {
@@ -139,26 +153,36 @@ fn enter_pid_and_exec(
             unsafe { libc::_exit(0) }
         }
         Ok(ForkResult::Child) => {
-            let host_pid = u32::try_from(Pid::this().as_raw()).unwrap_or(u32::MAX);
-            write_all_file(&tx, &[MSG_INIT_PID])?;
-            write_all_file(&tx, &host_pid.to_le_bytes())?;
-            drop_fd(tx);
-            drop_fd(rx);
+            // getpid() is 1 inside the new PID ns — read the host PID from
+            // the still-mounted host /proc before pivot_root.
+            let host_pid = host_pid_from_proc_self()?;
+            write_all_file(&pipes.tx, &[MSG_INIT_PID])?;
+            write_all_file(&pipes.tx, &host_pid.to_le_bytes())?;
+            drop_fd(pipes.tx);
+            drop_fd(pipes.rx);
             crate::process::configure_child_isolation_after_ns(
                 &cfg.rootfs,
                 &cfg.volumes,
                 cfg.readonly_rootfs,
             )?;
-            exec_container(argv, envp)
+            exec_container(exec)
         }
         Err(err) => Err(std::io::Error::other(format!("pid-ns fork failed: {err}"))),
     }
 }
 
-fn exec_container(argv: &[CString], envp: &[CString]) -> std::io::Result<()> {
-    apply_env(envp);
-    let refs: Vec<&std::ffi::CStr> = argv.iter().map(CString::as_c_str).collect();
-    match execvp(&refs[0], &refs) {
+/// Host PID via `/proc/self` while the host procfs is still mounted.
+fn host_pid_from_proc_self() -> std::io::Result<u32> {
+    let link = std::fs::read_link("/proc/self")?;
+    let text = link.to_string_lossy();
+    text.parse::<u32>()
+        .map_err(|e| std::io::Error::other(format!("parse /proc/self ({text}): {e}")))
+}
+
+fn exec_container(exec: ExecArgs<'_>) -> std::io::Result<()> {
+    apply_env(exec.envp);
+    let refs: Vec<&std::ffi::CStr> = exec.argv.iter().map(CString::as_c_str).collect();
+    match execvp(refs[0], &refs) {
         Ok(infallible) => match infallible {},
         Err(err) => Err(std::io::Error::other(format!("execvp failed: {err}"))),
     }
