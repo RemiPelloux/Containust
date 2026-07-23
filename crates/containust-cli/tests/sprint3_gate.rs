@@ -212,14 +212,18 @@ fn write_busybox_ctst(path: &Path, image: &str) {
 
 #[cfg(target_os = "linux")]
 fn import_busybox_online(online_dir: &Path) -> (PathBuf, String) {
-    let busybox = Path::new("/bin/busybox");
-    assert!(
-        busybox.exists(),
-        "install busybox-static to run the privileged gate fixture"
-    );
+    use std::os::unix::fs::PermissionsExt;
+
+    let busybox = ["/bin/busybox", "/usr/bin/busybox"]
+        .iter()
+        .map(Path::new)
+        .find(|p| p.exists())
+        .expect("install busybox-static to run the privileged gate fixture");
     let rootfs = online_dir.join("rootfs");
     std::fs::create_dir_all(rootfs.join("bin")).expect("mkdir bin");
-    let _ = std::fs::copy(busybox, rootfs.join("bin/busybox")).expect("copy busybox");
+    let dst = rootfs.join("bin/busybox");
+    let _ = std::fs::copy(busybox, &dst).expect("copy busybox");
+    std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755)).expect("chmod busybox");
     let online_ctst = online_dir.join("app.ctst");
     write_busybox_ctst(&online_ctst, &format!("file://{}", rootfs.display()));
     let _ = run_checked(ctst().arg("build").arg(&online_ctst));
@@ -261,13 +265,27 @@ fn gate_offline_run_starts_container_from_catalog() {
     let airgap_ctst = stage_airgap_project(&airgap_dir, &online_project, &digest);
     std::fs::remove_dir_all(&online_dir).expect("remove online project");
 
-    let _ = run_checked(
-        ctst()
-            .arg("--offline")
-            .arg("run")
-            .arg("--detach")
-            .arg(&airgap_ctst),
-    );
+    let run = ctst()
+        .arg("--offline")
+        .arg("run")
+        .arg("--detach")
+        .arg(&airgap_ctst)
+        .output()
+        .expect("spawn ctst run");
+    if !run.status.success() {
+        let logs = std::fs::read_dir(airgap_dir.join(".containust/logs"))
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|e| std::fs::read_to_string(e.path()).ok())
+            .collect::<Vec<_>>()
+            .join("\n---\n");
+        panic!(
+            "ctst run failed\nstdout: {}\nstderr: {}\nlogs: {logs}",
+            String::from_utf8_lossy(&run.stdout),
+            String::from_utf8_lossy(&run.stderr)
+        );
+    }
     let ps = run_checked(ctst().current_dir(&airgap_dir).arg("ps").arg("--all"));
     let stdout = String::from_utf8_lossy(&ps.stdout);
     assert!(stdout.contains("app"), "stdout: {stdout}");

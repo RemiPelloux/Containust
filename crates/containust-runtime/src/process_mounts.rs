@@ -70,10 +70,9 @@ pub fn mount_pseudo_filesystems() -> std::io::Result<()> {
     for (path, src, fstype, flags, opts) in pseudo_mounts() {
         let _ = std::fs::create_dir_all(path);
         if let Err(err) = mount(Some(src), path, Some(fstype), flags, opts) {
-            // `/dev/pts` is optional for non-TTY workloads and is the most
-            // common failure inside single-UID user namespaces.
-            if path == "/dev/pts" {
-                tracing::warn!(error = %err, "optional mount /dev/pts skipped");
+            // Optional inside single-UID user namespaces / non-TTY workloads.
+            if path == "/dev/pts" || path == "/sys" {
+                tracing::warn!(error = %err, "optional mount {path} skipped");
                 continue;
             }
             return Err(std::io::Error::other(format!("mount {path} failed: {err}")));

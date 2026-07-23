@@ -23,6 +23,7 @@ use crate::process_spawn_io::{
 const MSG_NEED_MAPS: u8 = 1;
 const MSG_MAPS_DONE: u8 = 2;
 const MSG_INIT_PID: u8 = 3;
+const MSG_READY: u8 = 4;
 
 /// Spawns with user and/or PID namespace support.
 pub fn spawn_with_user_pid(config: &ProcessConfig) -> Result<u32> {
@@ -177,13 +178,16 @@ fn enter_pid_and_exec(
             let host_pid = host_pid_from_proc_self()?;
             write_all_file(&pipes.tx, &[MSG_INIT_PID])?;
             write_all_file(&pipes.tx, &host_pid.to_le_bytes())?;
-            drop_fd(pipes.tx);
-            drop_fd(pipes.rx);
             crate::process::configure_child_isolation_after_ns(
                 &cfg.rootfs,
                 &cfg.volumes,
                 cfg.readonly_rootfs,
             )?;
+            // Signal only after pivot/caps succeed so the parent fail-closes
+            // instead of returning a soon-to-be-dead PID.
+            write_all_file(&pipes.tx, &[MSG_READY])?;
+            drop_fd(pipes.tx);
+            drop_fd(pipes.rx);
             exec_container(exec)
         }
         Err(err) => Err(std::io::Error::other(format!("pid-ns fork failed: {err}"))),
@@ -262,9 +266,34 @@ fn parent_handshake(
         }
         let mut pid_buf = [0_u8; 4];
         read_exact_file(&mut parent_rx, &mut pid_buf)?;
-        return Ok(u32::from_le_bytes(pid_buf));
+        let init_pid = u32::from_le_bytes(pid_buf);
+        read_exact_file(&mut parent_rx, &mut tag)?;
+        if tag[0] != MSG_READY {
+            return Err(handshake_err("READY", tag[0]));
+        }
+        ensure_init_alive(init_pid)?;
+        return Ok(init_pid);
     }
     Ok(spawn_pid)
+}
+
+fn ensure_init_alive(pid: u32) -> Result<()> {
+    let Ok(raw) = i32::try_from(pid) else {
+        return Err(ContainustError::Config {
+            message: format!("invalid container init pid {pid}"),
+        });
+    };
+    // Brief settle so a failed exec after READY is visible.
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    match nix::sys::signal::kill(nix::unistd::Pid::from_raw(raw), None) {
+        Ok(()) => Ok(()),
+        Err(_) => Err(ContainustError::Config {
+            message: format!(
+                "container init pid {pid} exited immediately after spawn \
+                 (pivot_root, mounts, or exec failed inside the namespace)"
+            ),
+        }),
+    }
 }
 
 fn unshare_non_pid(namespaces: &NamespaceConfig, include_net: bool) -> std::io::Result<()> {
