@@ -4,11 +4,11 @@
 
 use std::ffi::CString;
 use std::io::Read;
-use std::os::fd::{FromRawFd, IntoRawFd};
+use std::os::fd::{AsFd, FromRawFd, IntoRawFd};
 use std::path::Path;
 
 use containust_common::error::{ContainustError, Result};
-use nix::unistd::{close, dup2_stderr, dup2_stdin, dup2_stdout, pipe, read, write};
+use nix::unistd::{dup2_stderr, dup2_stdin, dup2_stdout, pipe, read, write};
 
 use crate::process::ProcessConfig;
 
@@ -86,10 +86,10 @@ pub(crate) fn pipe_pair() -> Result<(std::fs::File, std::fs::File)> {
     Ok((read, write))
 }
 
-pub(crate) fn write_all_fd(fd: i32, buf: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_all_file(file: &impl AsFd, buf: &[u8]) -> std::io::Result<()> {
     let mut offset = 0;
     while offset < buf.len() {
-        match write(fd, &buf[offset..]) {
+        match write(file, &buf[offset..]) {
             Ok(0) => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::WriteZero,
@@ -104,10 +104,10 @@ pub(crate) fn write_all_fd(fd: i32, buf: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn read_one(fd: i32) -> std::io::Result<u8> {
+pub(crate) fn read_one_file(file: &impl AsFd) -> std::io::Result<u8> {
     let mut buf = [0_u8; 1];
     loop {
-        match read(fd, &mut buf) {
+        match read(file, &mut buf) {
             Ok(0) => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::UnexpectedEof,
@@ -128,6 +128,11 @@ pub(crate) fn read_exact_file(file: &mut std::fs::File, buf: &mut [u8]) -> Resul
     })
 }
 
-pub(crate) fn close_fd(fd: i32) {
-    close(fd).ok();
+/// Drops a file descriptor by consuming the `File` (preferred over raw close).
+pub(crate) fn drop_fd(file: std::fs::File) {
+    drop(file);
+}
+
+pub(crate) fn raw_fd(file: &impl AsRawFd) -> i32 {
+    file.as_raw_fd()
 }

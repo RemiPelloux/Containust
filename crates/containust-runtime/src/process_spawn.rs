@@ -8,7 +8,6 @@
 
 use std::ffi::CString;
 use std::io::Write;
-use std::os::fd::AsRawFd;
 use std::path::Path;
 
 use containust_common::error::{ContainustError, Result};
@@ -17,8 +16,8 @@ use nix::unistd::{ForkResult, Pid, execvp, fork};
 
 use crate::process::ProcessConfig;
 use crate::process_spawn_io::{
-    build_envp, c_strings, close_fd, open_log_fds, pipe_pair, read_exact_file, read_one,
-    redirect_stdio, write_all_fd,
+    build_envp, c_strings, drop_fd, open_log_fds, pipe_pair, read_exact_file, read_one_file,
+    redirect_stdio, write_all_file,
 };
 
 const MSG_NEED_MAPS: u8 = 1;
@@ -47,8 +46,8 @@ pub(crate) fn spawn_with_user_pid(config: &ProcessConfig) -> Result<u32> {
 
     match fork_result {
         ForkResult::Parent { child } => {
-            drop(child_tx);
-            drop(child_rx);
+            drop_fd(child_tx);
+            drop_fd(child_rx);
             let spawn_pid = u32::try_from(child.as_raw()).unwrap_or(u32::MAX);
             let init_pid = parent_handshake(parent_rx, parent_tx, spawn_pid, &config.namespaces)?;
             if config.namespaces.pid {
@@ -58,16 +57,9 @@ pub(crate) fn spawn_with_user_pid(config: &ProcessConfig) -> Result<u32> {
             Ok(init_pid)
         }
         ForkResult::Child => {
-            drop(parent_rx);
-            drop(parent_tx);
-            if let Err(err) = child_main(
-                &child_cfg,
-                child_tx.as_raw_fd(),
-                child_rx.as_raw_fd(),
-                log_fds,
-                &argv,
-                &envp,
-            ) {
+            drop_fd(parent_rx);
+            drop_fd(parent_tx);
+            if let Err(err) = child_main(&child_cfg, child_tx, child_rx, log_fds, &argv, &envp) {
                 let _ = writeln!(std::io::stderr(), "containust spawn child failed: {err}");
                 // SAFETY: child must not unwind into the parent address space.
                 unsafe { libc::_exit(1) };
@@ -104,8 +96,8 @@ fn validate_spawn_inputs(config: &ProcessConfig) -> Result<()> {
 
 fn child_main(
     cfg: &ChildConfig,
-    tx: i32,
-    rx: i32,
+    tx: std::fs::File,
+    rx: std::fs::File,
     log_fds: Option<(std::fs::File, std::fs::File)>,
     argv: &[CString],
     envp: &[CString],
@@ -114,8 +106,8 @@ fn child_main(
     if cfg.namespaces.user {
         containust_core::namespace::user::create_user_namespace()
             .map_err(|e| std::io::Error::other(format!("user namespace failed: {e}")))?;
-        write_all_fd(tx, &[MSG_NEED_MAPS])?;
-        if read_one(rx)? != MSG_MAPS_DONE {
+        write_all_file(&tx, &[MSG_NEED_MAPS])?;
+        if read_one_file(&rx)? != MSG_MAPS_DONE {
             return Err(std::io::Error::other("parent did not acknowledge uid maps"));
         }
     }
@@ -125,14 +117,14 @@ fn child_main(
 
 fn enter_pid_and_exec(
     cfg: &ChildConfig,
-    tx: i32,
-    rx: i32,
+    tx: std::fs::File,
+    rx: std::fs::File,
     argv: &[CString],
     envp: &[CString],
 ) -> std::io::Result<()> {
     if !cfg.namespaces.pid {
-        close_fd(tx);
-        close_fd(rx);
+        drop_fd(tx);
+        drop_fd(rx);
         crate::process::configure_child_isolation_after_ns(
             &cfg.rootfs,
             &cfg.volumes,
@@ -148,10 +140,10 @@ fn enter_pid_and_exec(
         }
         Ok(ForkResult::Child) => {
             let host_pid = u32::try_from(Pid::this().as_raw()).unwrap_or(u32::MAX);
-            write_all_fd(tx, &[MSG_INIT_PID])?;
-            write_all_fd(tx, &host_pid.to_le_bytes())?;
-            close_fd(tx);
-            close_fd(rx);
+            write_all_file(&tx, &[MSG_INIT_PID])?;
+            write_all_file(&tx, &host_pid.to_le_bytes())?;
+            drop_fd(tx);
+            drop_fd(rx);
             crate::process::configure_child_isolation_after_ns(
                 &cfg.rootfs,
                 &cfg.volumes,
@@ -166,7 +158,10 @@ fn enter_pid_and_exec(
 fn exec_container(argv: &[CString], envp: &[CString]) -> std::io::Result<()> {
     apply_env(envp);
     let refs: Vec<&std::ffi::CStr> = argv.iter().map(CString::as_c_str).collect();
-    execvp(&refs[0], &refs).map_err(|e| std::io::Error::other(format!("execvp failed: {e}")))
+    match execvp(&refs[0], &refs) {
+        Ok(infallible) => match infallible {},
+        Err(err) => Err(std::io::Error::other(format!("execvp failed: {err}"))),
+    }
 }
 
 fn apply_env(envp: &[CString]) {
@@ -203,8 +198,6 @@ fn parent_handshake(
     spawn_pid: u32,
     namespaces: &NamespaceConfig,
 ) -> Result<u32> {
-    use std::io::Write;
-
     let mut tag = [0_u8; 1];
     read_exact_file(&mut parent_rx, &mut tag)?;
     if namespaces.user {
