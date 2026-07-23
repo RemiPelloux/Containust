@@ -71,6 +71,7 @@ impl Container {
             readonly_rootfs: true,
             volumes: Vec::new(),
             namespaces: containust_core::namespace::NamespaceConfig::default(),
+            log_path: self.log_path.clone(),
         })?;
         self.pid = Some(pid);
         self.rootfs_path = Some(rootfs.to_path_buf());

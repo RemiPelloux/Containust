@@ -23,6 +23,12 @@ pub struct ProcessConfig {
     pub volumes: Vec<String>,
     /// Namespace isolation policy.
     pub namespaces: NamespaceConfig,
+    /// Log file receiving the container's stdout/stderr.
+    ///
+    /// `None` inherits the parent's stdio (foreground debugging only);
+    /// backends set this so detached containers do not hold the CLI's
+    /// output pipes open.
+    pub log_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -115,7 +121,36 @@ fn prepare_child_command(config: &ProcessConfig) -> Result<std::process::Command
     for (key, value) in &config.env {
         let _ = command.env(key, value);
     }
+    let _ = command.stdin(std::process::Stdio::null());
+    if let Some(log_path) = &config.log_path {
+        let log_file = open_log_sink(log_path)?;
+        let stderr_file = log_file.try_clone().map_err(|source| ContainustError::Io {
+            path: log_path.clone(),
+            source,
+        })?;
+        let _ = command.stdout(log_file);
+        let _ = command.stderr(stderr_file);
+    }
     Ok(command)
+}
+
+/// Opens the container log file for appending, creating parents as needed.
+#[cfg(target_os = "linux")]
+fn open_log_sink(log_path: &Path) -> Result<std::fs::File> {
+    if let Some(parent) = log_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|source| ContainustError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .map_err(|source| ContainustError::Io {
+            path: log_path.to_path_buf(),
+            source,
+        })
 }
 
 #[cfg(target_os = "linux")]

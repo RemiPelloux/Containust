@@ -91,6 +91,7 @@ fn unpack_one<R: Read>(entry: &mut tar::Entry<'_, R>, target: &Path) -> Result<(
     match header.entry_type() {
         tar::EntryType::Regular | tar::EntryType::Continuous => {
             write_regular_file(entry, target, &dest)?;
+            #[cfg(unix)]
             apply_entry_mode(&dest, header.mode().unwrap_or(0o644))?;
         }
         tar::EntryType::Directory => {
@@ -99,6 +100,7 @@ fn unpack_one<R: Read>(entry: &mut tar::Entry<'_, R>, target: &Path) -> Result<(
                 path: dest.clone(),
                 source,
             })?;
+            #[cfg(unix)]
             apply_entry_mode(&dest, header.mode().unwrap_or(0o755))?;
         }
         tar::EntryType::Symlink => {
@@ -194,12 +196,6 @@ fn apply_entry_mode(dest: &Path, mode: u32) -> Result<()> {
             source,
         }
     })
-}
-
-/// Windows has no Unix mode bits; extraction keeps filesystem defaults.
-#[cfg(not(unix))]
-fn apply_entry_mode(_dest: &Path, _mode: u32) -> Result<()> {
-    Ok(())
 }
 
 fn create_symlink(link: &Path, root: &Path, dest: &Path) -> Result<()> {

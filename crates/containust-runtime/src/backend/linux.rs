@@ -378,6 +378,12 @@ impl LinuxNativeBackend {
             .map_err(|message| ContainustError::Config { message })?;
         let readonly_rootfs = entry.readonly_rootfs;
         let volumes = entry.volumes.clone();
+        let mut namespaces = containust_core::namespace::NamespaceConfig::default();
+        if !entry.ports.is_empty() {
+            // Published ports share the host network namespace (identity
+            // mapping) — see docs/SUPPORT_POLICY.md.
+            namespaces.network = false;
+        }
         let rootfs = match &entry.rootfs_path {
             Some(path) => PathBuf::from(path),
             None => prepare_rootfs(&self.data_dir, &image, id)?,
@@ -395,7 +401,8 @@ impl LinuxNativeBackend {
             rootfs,
             readonly_rootfs,
             volumes,
-            namespaces: containust_core::namespace::NamespaceConfig::default(),
+            namespaces,
+            log_path: Some(crate::logs::log_path(&self.data_dir, id.as_str())),
         })
     }
 
