@@ -28,7 +28,7 @@ fn spawn_with_user_and_pid_runs_sleep() {
         .find(|p| p.exists())
         .expect("need busybox-static (apt install busybox-static)");
     let dst = bin.join("busybox");
-    std::fs::copy(&busybox, &dst).expect("copy busybox");
+    let _ = std::fs::copy(&busybox, &dst).expect("copy busybox");
     std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755)).expect("chmod");
 
     let config = ProcessConfig {
