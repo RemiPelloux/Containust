@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Docs — Containust</title>
+    <meta
+      name="description"
+      content="Containust documentation: install ctst, write .ctst compositions, run daemon-less containers."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="docs.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true"><div class="grain"></div></div>
+
+    <header class="top">
+      <a class="mark" href="../index.html">
+        <span class="mark-glyph" aria-hidden="true"></span>
+        Containust
+        <span class="mark-sub">Docs</span>
+      </a>
+      <div class="top-actions">
+        <label class="search-wrap">
+          <span class="visually-hidden" hidden>Search this page</span>
+          <input type="search" data-doc-search placeholder="Search this page…" />
+        </label>
+        <button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-label="Open navigation">☰</button>
+        <a class="btn btn-ghost" href="https://github.com/RemiPelloux/Containust" rel="noopener noreferrer">GitHub</a>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="side" aria-label="Documentation">
+        <div class="nav-group">
+          <p class="nav-label">Start</p>
+          <a class="active" href="index.html">Get started</a>
+          <a href="cli.html">CLI reference</a>
+          <a href="language.html">.ctst language</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Guides</p>
+          <a href="migrate.html">Docker migration</a>
+          <a href="index.html#offline">Air-gapped / offline</a>
+          <a href="index.html#platforms">Platforms</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Product</p>
+          <a href="../index.html">Landing page</a>
+          <a href="../../docs/README.md">Markdown map</a>
+        </div>
+      </aside>
+
+      <main class="content">
+        <p class="crumb"><a href="../index.html">Home</a> / Docs</p>
+
+        <header class="doc-hero">
+          <p class="eyebrow">Version 1.1.0</p>
+          <h1>Get started with Containust</h1>
+          <p class="lede">
+            Daemon-less containers for local, sovereign, and air-gapped work.
+            Install <code>ctst</code>, declare a stack in <code>.ctst</code>, run.
+          </p>
+        </header>
+
+        <div class="cards">
+          <a class="card" href="#install" data-searchable="install binary release homebrew">
+            <h3>Install</h3>
+            <p>Verified release binaries, packages, or cargo.</p>
+          </a>
+          <a class="card" href="#first-run" data-searchable="first container quick start pull run">
+            <h3>First run</h3>
+            <p>Five commands from empty host to a running container.</p>
+          </a>
+          <a class="card" href="language.html" data-searchable="ctst language component connect">
+            <h3>.ctst language</h3>
+            <p>Components, connections, exposes, healthchecks.</p>
+          </a>
+          <a class="card" href="migrate.html" data-searchable="docker compose migration convert">
+            <h3>From Docker</h3>
+            <p>Map Compose YAML to Containust and convert stacks.</p>
+          </a>
+        </div>
+
+        <h2 id="mental-model">Mental model</h2>
+        <ul data-searchable="daemon state catalog offline">
+          <li><strong>No daemon.</strong> Each <code>ctst</code> command talks to the kernel (Linux) or a QEMU VM and writes state under <code>.containust/</code>.</li>
+          <li><strong>Compositions are <code>.ctst</code> files.</strong> Declare <code>COMPONENT</code>s and <code>CONNECT</code> edges — a smaller grammar than Compose.</li>
+          <li><strong>Images are content-addressed.</strong> Pulls land as <code>image://name@sha256:…</code>. Offline runs use only the local catalog.</li>
+          <li><strong>Reconciliation is on demand.</strong> Restart and healthcheck policies apply when you invoke <code>ctst ps</code> or <code>ctst run</code>.</li>
+        </ul>
+
+        <h2 id="install">Install</h2>
+        <p data-searchable="install release tarball sha256">Prefer a verified release binary:</p>
+        <div class="codeblock">
+          <pre><code>VERSION=1.1.0
+TARGET=x86_64-unknown-linux-gnu   # or aarch64-*-gnu, *-apple-darwin, …
+curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz"
+curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz.sha256"
+sha256sum -c "ctst-${TARGET}.tar.gz.sha256"
+tar xzf "ctst-${TARGET}.tar.gz"
+sudo install -m 755 ctst /usr/local/bin/ctst
+ctst --version</code></pre>
+        </div>
+
+        <div class="table-wrap" data-searchable="deb rpm homebrew cargo install">
+          <table>
+            <thead>
+              <tr>
+                <th>Channel</th>
+                <th>Command</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Debian / Ubuntu</td>
+                <td><code>sudo dpkg -i ctst_1.1.0_amd64.deb</code></td>
+              </tr>
+              <tr>
+                <td>Fedora / RHEL</td>
+                <td><code>sudo rpm -i ctst-1.1.0-1.amd64.rpm</code></td>
+              </tr>
+              <tr>
+                <td>Homebrew</td>
+                <td><code>brew install --formula ./Formula/ctst.rb</code></td>
+              </tr>
+              <tr>
+                <td>From source</td>
+                <td><code>cargo install --path crates/containust-cli</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          <strong>macOS / Windows</strong> need QEMU 7+ (<code>brew install qemu</code> or the Windows installer).
+          First run downloads Alpine VM assets into <code>~/.containust/cache/</code>.
+        </div>
+
+        <h2 id="first-run">First container</h2>
+        <ol class="steps" data-searchable="pull alpine plan build run logs">
+          <li>Pull a small image into the local catalog</li>
+          <li>Write a composition (or use <code>examples/alpine_preset.ctst</code>)</li>
+          <li>Validate and import images</li>
+          <li>Run, inspect, tear down</li>
+        </ol>
+        <div class="codeblock">
+          <pre><code>ctst pull alpine:3.21
+
+cat > hello.ctst <<'EOF'
+COMPONENT app {
+    image   = "preset://alpine"
+    command = ["/bin/busybox", "echo", "hello from Containust"]
+}
+EOF
+
+ctst plan hello.ctst
+ctst build hello.ctst
+ctst run hello.ctst
+# or: ctst run hello.ctst --detach
+
+ctst ps --all
+ctst logs app
+ctst stop app && ctst rm app</code></pre>
+        </div>
+        <p>
+          <code>preset://alpine</code> downloads a pinned Alpine minirootfs (~4&nbsp;MiB) on first use.
+          Use <code>ctst pull</code> for arbitrary Docker Hub / GHCR images.
+        </p>
+
+        <h2 id="workflow">Everyday workflow</h2>
+        <div class="table-wrap" data-searchable="plan build pull images ps logs exec convert vm">
+          <table>
+            <thead>
+              <tr>
+                <th>Goal</th>
+                <th>Command</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>See deploy order</td>
+                <td><code>ctst plan stack.ctst</code></td>
+              </tr>
+              <tr>
+                <td>Import / resolve images</td>
+                <td><code>ctst build stack.ctst</code></td>
+              </tr>
+              <tr>
+                <td>Pull OCI image</td>
+                <td><code>ctst pull nginx:alpine</code></td>
+              </tr>
+              <tr>
+                <td>Start stack</td>
+                <td><code>ctst run stack.ctst --detach</code></td>
+              </tr>
+              <tr>
+                <td>List / logs / exec</td>
+                <td><code>ctst ps --all</code> · <code>ctst logs app --follow</code> · <code>ctst exec app -- /bin/sh</code></td>
+              </tr>
+              <tr>
+                <td>Stop / remove</td>
+                <td><code>ctst stop app</code> then <code>ctst rm app</code></td>
+              </tr>
+              <tr>
+                <td>Convert Compose</td>
+                <td><code>ctst convert docker-compose.yml &gt; stack.ctst</code></td>
+              </tr>
+              <tr>
+                <td>Warm VM (macOS/Windows)</td>
+                <td><code>ctst vm start</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="images">Images</h2>
+        <div class="table-wrap" data-searchable="preset oci file tar image digest catalog">
+          <table>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Example</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Preset</td>
+                <td><code>preset://alpine</code></td>
+              </tr>
+              <tr>
+                <td>OCI pull</td>
+                <td><code>ctst pull redis:7</code> → use printed <code>image://…@sha256:…</code></td>
+              </tr>
+              <tr>
+                <td>Local dir / tar</td>
+                <td><code>file:///opt/images/api</code> · <code>tar:///opt/images/api.tar</code></td>
+              </tr>
+              <tr>
+                <td>Catalog pin</td>
+                <td><code>image://library/alpine@sha256:…</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="codeblock">
+          <pre><code>export CONTAINUST_REGISTRY_TOKEN=…          # bearer
+# or CONTAINUST_REGISTRY_USER / CONTAINUST_REGISTRY_PASSWORD
+# or ~/.docker/config.json
+ctst pull ghcr.io/myorg/private:1.2.3</code></pre>
+        </div>
+
+        <h2 id="offline">Air-gapped / offline</h2>
+        <div class="codeblock">
+          <pre><code># Networked machine
+ctst pull alpine:3.21
+ctst build stack.ctst
+# Copy .containust/images and .containust/layers
+
+# Air-gapped host
+ctst --offline run stack.ctst --detach</code></pre>
+        </div>
+        <p>
+          <code>--offline</code> (or <code>CONTAINUST_OFFLINE=1</code>) rejects any remote fetch before connecting.
+        </p>
+
+        <h2 id="compose-sketch">Multi-service sketch</h2>
+        <div class="codeblock">
+          <pre><code>COMPONENT db {
+    image   = "image://library/postgres@sha256:…"
+    port    = 5432
+    env     = { POSTGRES_PASSWORD = "secret" }
+    volumes = ["/data/pg:/var/lib/postgresql/data"]
+    restart = "always"
+}
+
+COMPONENT api {
+    image   = "file:///opt/images/api"
+    port    = 8080
+    ports   = ["8080"]
+    memory  = "256MiB"
+    restart = "on-failure"
+}
+
+CONNECT api -> db
+EXPOSE 8080</code></pre>
+        </div>
+        <p>
+          <code>CONNECT</code> injects <code>DB_HOST</code>, <code>DB_PORT</code>, and related env vars into
+          <code>api</code>. Volumes are host:container bind mounts.
+        </p>
+
+        <h2 id="platforms">Platforms</h2>
+        <div class="table-wrap" data-searchable="linux macos windows qemu namespaces cgroups">
+          <table>
+            <thead>
+              <tr>
+                <th>Host</th>
+                <th>Backend</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Linux 5.10+</td>
+                <td>Namespaces + cgroups v2</td>
+                <td>Root or delegated userns recommended</td>
+              </tr>
+              <tr>
+                <td>macOS</td>
+                <td>QEMU + agent</td>
+                <td><code>brew install qemu</code>; assets cached under <code>~/.containust/cache/</code></td>
+              </tr>
+              <tr>
+                <td>Windows</td>
+                <td>QEMU + agent</td>
+                <td>Same asset cache under the user profile</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="troubleshoot">Troubleshooting</h2>
+        <div class="table-wrap" data-searchable="offline port failed permission registry stale">
+          <table>
+            <thead>
+              <tr>
+                <th>Symptom</th>
+                <th>Try</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>offline mode rejects remote source</code></td>
+                <td>Drop <code>--offline</code>, or pre-pull / copy catalog layers</td>
+              </tr>
+              <tr>
+                <td>Port bind fails</td>
+                <td>Free the host port; stop conflicting forwarders / QEMU hostfwd</td>
+              </tr>
+              <tr>
+                <td>Container <code>failed</code> after <code>--detach</code></td>
+                <td><code>ctst logs &lt;name&gt;</code> — binary missing or command exited</td>
+              </tr>
+              <tr>
+                <td>Permission denied on Linux</td>
+                <td>Confirm cgroup v2 and namespace privileges</td>
+              </tr>
+              <tr>
+                <td>Private registry 401</td>
+                <td>Set <code>CONTAINUST_REGISTRY_*</code> or refresh Docker config</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <nav class="pager">
+          <a class="next" href="cli.html">
+            <span>Next</span>
+            CLI reference
+          </a>
+        </nav>
+      </main>
+
+      <aside class="toc" data-toc aria-label="On this page"></aside>
+    </div>
+
+    <footer class="foot">
+      Containust docs ·
+      <a href="../index.html">Landing</a> ·
+      <a href="../../docs/HowToUse.md">Markdown source</a>
+    </footer>
+
+    <script src="docs.js"></script>
+  </body>
+</html>

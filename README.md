@@ -9,7 +9,8 @@ daemon. Native Linux isolation; QEMU on macOS and Windows.
 [![Release](https://img.shields.io/github/v/release/RemiPelloux/Containust)](https://github.com/RemiPelloux/Containust/releases/latest)
 [![License](https://img.shields.io/badge/license-Commercial-blue.svg)](LICENSE)
 
-**GA `1.1.0`** · [Landing page](site/index.html) · [How to use](docs/HowToUse.md) · [Docs map](docs/README.md)
+**GA `1.1.0`** · Sprint 11 Waves 1–2 on `main` (→ `1.2.0`) ·
+[Landing](site/index.html) · [Docs](site/docs/) · [Roadmap](roadmap.md)
 
 ---
 
@@ -19,7 +20,11 @@ daemon. Native Linux isolation; QEMU on macOS and Windows.
 - **Declarative `.ctst`** — `COMPONENT`, `CONNECT`, `EXPOSE`, restart, healthcheck
 - **Local-first images** — `file://`, `tar://`, `preset://`, digest-pinned `ctst pull`
 - **Air-gapped ready** — `--offline` rejects the network before connect
+- **Linux isolation** — user + PID namespaces default-on; remappable `EXPOSE`;
+  named networks and `/etc/hosts` peer DNS foundations
 - **Rust SDK** — parser, graph, and runtime APIs without the CLI
+- **Source-available** — [commercial license](LICENSE); evaluation free,
+  production needs a paid license ([COMMERCIAL.md](COMMERCIAL.md))
 
 ## Install
 
@@ -90,8 +95,9 @@ Full reference: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 | Path | Role |
 | --- | --- |
 | [site/](site/) | Product landing page |
-| [docs/HowToUse.md](docs/HowToUse.md) | Day-to-day operator guide |
-| [docs/README.md](docs/README.md) | Full documentation map |
+| [site/docs/](site/docs/) | HTML documentation (start here) |
+| [docs/HowToUse.md](docs/HowToUse.md) | Operator guide (markdown source) |
+| [docs/README.md](docs/README.md) | Full markdown documentation map |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Crate layers |
 | [roadmap.md](roadmap.md) | Sprint roadmap |
 

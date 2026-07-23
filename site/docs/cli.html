@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CLI reference — Containust Docs</title>
+    <meta name="description" content="ctst command reference: plan, build, run, pull, ps, logs, convert, vm." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="docs.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true"><div class="grain"></div></div>
+
+    <header class="top">
+      <a class="mark" href="../index.html">
+        <span class="mark-glyph" aria-hidden="true"></span>
+        Containust
+        <span class="mark-sub">Docs</span>
+      </a>
+      <div class="top-actions">
+        <label class="search-wrap">
+          <input type="search" data-doc-search placeholder="Search this page…" />
+        </label>
+        <button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-label="Open navigation">☰</button>
+        <a class="btn btn-ghost" href="https://github.com/RemiPelloux/Containust" rel="noopener noreferrer">GitHub</a>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="side" aria-label="Documentation">
+        <div class="nav-group">
+          <p class="nav-label">Start</p>
+          <a href="index.html">Get started</a>
+          <a class="active" href="cli.html">CLI reference</a>
+          <a href="language.html">.ctst language</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Guides</p>
+          <a href="migrate.html">Docker migration</a>
+          <a href="index.html#offline">Air-gapped / offline</a>
+          <a href="index.html#platforms">Platforms</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Product</p>
+          <a href="../index.html">Landing page</a>
+          <a href="../../docs/CLI_REFERENCE.md">Full markdown</a>
+        </div>
+      </aside>
+
+      <main class="content">
+        <p class="crumb"><a href="index.html">Docs</a> / CLI</p>
+
+        <header class="doc-hero">
+          <p class="eyebrow">ctst 1.1.0</p>
+          <h1>CLI reference</h1>
+          <p class="lede">
+            One binary. No background daemon. On Linux it talks to the kernel;
+            on macOS and Windows it uses a lightweight QEMU VM.
+          </p>
+        </header>
+
+        <div class="codeblock">
+          <pre><code>ctst [OPTIONS] &lt;COMMAND&gt; [ARGS...]</code></pre>
+        </div>
+
+        <h2 id="global">Global options</h2>
+        <div class="table-wrap" data-searchable="offline state-file CONTAINUST_OFFLINE CONTAINUST_STATE_FILE">
+          <table>
+            <thead>
+              <tr>
+                <th>Flag</th>
+                <th>Description</th>
+                <th>Env</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>--offline</code></td>
+                <td>Block all outbound network during build and run</td>
+                <td><code>CONTAINUST_OFFLINE=1</code></td>
+              </tr>
+              <tr>
+                <td><code>--state-file &lt;PATH&gt;</code></td>
+                <td>State index path (default project-local)</td>
+                <td><code>CONTAINUST_STATE_FILE</code></td>
+              </tr>
+              <tr>
+                <td><code>--help</code> / <code>--version</code></td>
+                <td>Help and version</td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Logging uses <code>CONTAINUST_LOG</code> with
+          <a href="https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html" rel="noopener noreferrer">tracing filter directives</a>
+          (e.g. <code>info</code>, <code>containust_runtime=debug</code>).
+        </p>
+
+        <h2 id="lifecycle">Lifecycle</h2>
+
+        <h3 id="plan">ctst plan</h3>
+        <p data-searchable="plan validate graph">Parse and validate a composition; print deploy order without importing images.</p>
+        <div class="codeblock">
+          <pre><code>ctst plan [FILE]
+# default FILE: containust.ctst</code></pre>
+        </div>
+
+        <h3 id="build">ctst build</h3>
+        <p data-searchable="build import dry-run layers catalog">Import every declared image into the content-addressed catalog.</p>
+        <div class="codeblock">
+          <pre><code>ctst build [OPTIONS] [FILE]
+  --dry-run    Plan imports without writing layers</code></pre>
+        </div>
+
+        <h3 id="run">ctst run</h3>
+        <p data-searchable="run detach start stack">Start the component graph. Foreground by default; use <code>--detach</code> for background.</p>
+        <div class="codeblock">
+          <pre><code>ctst run [OPTIONS] [FILE]
+  --detach     Run in the background
+ctst run stack.ctst --detach</code></pre>
+        </div>
+
+        <h3 id="stop-rm">ctst stop / ctst rm</h3>
+        <div class="codeblock">
+          <pre><code>ctst stop &lt;NAME|ID&gt;
+ctst rm [&lt;NAME|ID&gt;] [--force]</code></pre>
+        </div>
+
+        <h2 id="images-cmd">Images</h2>
+
+        <h3 id="pull">ctst pull</h3>
+        <p data-searchable="pull oci docker hub ghcr digest">Pull an OCI image into the local catalog and print a digest-pinned URI.</p>
+        <div class="codeblock">
+          <pre><code>ctst pull alpine:3.21
+# image://library/alpine@sha256:…</code></pre>
+        </div>
+
+        <h3 id="images">ctst images</h3>
+        <div class="codeblock">
+          <pre><code>ctst images
+ctst images --presets</code></pre>
+        </div>
+
+        <h2 id="inspect">Inspect</h2>
+        <div class="table-wrap" data-searchable="ps logs exec follow">
+          <table>
+            <thead>
+              <tr>
+                <th>Command</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>ctst ps [--all]</code></td>
+                <td>List containers; reconciles restart/health policies</td>
+              </tr>
+              <tr>
+                <td><code>ctst logs &lt;NAME&gt; [--follow]</code></td>
+                <td>Read detached stdout/stderr</td>
+              </tr>
+              <tr>
+                <td><code>ctst exec &lt;NAME&gt; -- &lt;CMD…&gt;</code></td>
+                <td>Run a command inside a running container</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="convert">ctst convert</h2>
+        <p data-searchable="convert docker-compose yaml">Translate Docker Compose YAML into a <code>.ctst</code> draft.</p>
+        <div class="codeblock">
+          <pre><code>ctst convert docker-compose.yml &gt; stack.ctst</code></pre>
+        </div>
+
+        <h2 id="vm">ctst vm</h2>
+        <p data-searchable="vm start stop qemu macos windows">QEMU lifecycle helpers for macOS and Windows.</p>
+        <div class="codeblock">
+          <pre><code>ctst vm start
+ctst vm stop</code></pre>
+        </div>
+
+        <div class="callout">
+          <strong>Need every flag?</strong>
+          The exhaustive reference lives in
+          <a href="../../docs/CLI_REFERENCE.md">docs/CLI_REFERENCE.md</a>.
+        </div>
+
+        <nav class="pager">
+          <a href="index.html"><span>Previous</span> Get started</a>
+          <a class="next" href="language.html"><span>Next</span> .ctst language</a>
+        </nav>
+      </main>
+
+      <aside class="toc" data-toc aria-label="On this page"></aside>
+    </div>
+
+    <footer class="foot">
+      Containust docs ·
+      <a href="../index.html">Landing</a> ·
+      <a href="../../docs/CLI_REFERENCE.md">Markdown source</a>
+    </footer>
+    <script src="docs.js"></script>
+  </body>
+</html>

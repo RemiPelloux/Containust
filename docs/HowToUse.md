@@ -1,7 +1,8 @@
 # How to Use Containust
 
-Day-to-day operator guide. Prefer this over the long references until you need
-them — then open the [docs map](README.md).
+Day-to-day operator guide. Prefer the [HTML docs site](../site/docs/) for
+browsing; this file is the markdown source. Long references live in the
+[docs map](README.md).
 
 **Version:** 1.1.0
 

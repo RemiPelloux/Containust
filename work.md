@@ -1,7 +1,8 @@
 # Containust — Sprint Tracker
 
 > **Goal**: Ship Containust as a production-ready container runtime, lighter and more reliable than Docker.
-> **Version**: `1.1.0` (Sprint 11 in progress → `1.2.0`)
+> **Version**: `1.1.0` (Sprint 11 Waves 1–2 on `main` → `1.2.0`)
+> **License**: Containust Commercial License (source-available; see `COMMERCIAL.md`)
 > **Standards**: 90%+ test coverage for library crates, zero clippy warnings, `cargo deny` green, no banned patterns.
 
 ## Completed
@@ -26,13 +27,16 @@ Tracked in `roadmap.md` (P10.1–P10.18) and gated by `docs/process/PROD_CHECKLI
 
 ## Sprint 11 — Isolation depth + networking (`1.2.0`)
 
-See `roadmap.md` (P11.1–P11.9). Operator guide: `docs/HowToUse.md`.
+See `roadmap.md` (P11.1–P11.9). Operator guide: `docs/HowToUse.md`. HTML docs: `site/docs/`.
 
-- **Wave 1** — ✅ user/PID namespaces default-on; privileged `spawn_user_pid` +
-  offline gate; HowToUse / SUPPORT_POLICY updated.
+- **Wave 1** — ✅ user/PID namespaces default-on; READY handshake; visible proc
+  anchor for masked hosts; privileged `spawn_user_pid` + offline gate green.
 - **Wave 2** — ✅ `EXPOSE` remapping (Linux forwarder + VM hostfwd); named
   shared networks; `/etc/hosts` DNS foundations; state schema 4.
-- **Wave 3** — Homebrew tap automation; winget submission; optional OCI provenance.
+- **Docs / license** — ✅ landing + HTML docs site; commercial license +
+  `LicenseRef-Containust-Commercial` in `cargo deny`.
+- **Wave 3** — Homebrew tap automation; winget submission; optional OCI provenance
+  (gates `v1.2.0` tag).
 
 ## Deferred (Sprint 12+)
 

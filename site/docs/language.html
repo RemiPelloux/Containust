@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>.ctst language — Containust Docs</title>
+    <meta name="description" content="Containust .ctst composition language: COMPONENT, CONNECT, EXPOSE, healthcheck, restart." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="docs.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true"><div class="grain"></div></div>
+
+    <header class="top">
+      <a class="mark" href="../index.html">
+        <span class="mark-glyph" aria-hidden="true"></span>
+        Containust
+        <span class="mark-sub">Docs</span>
+      </a>
+      <div class="top-actions">
+        <label class="search-wrap">
+          <input type="search" data-doc-search placeholder="Search this page…" />
+        </label>
+        <button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-label="Open navigation">☰</button>
+        <a class="btn btn-ghost" href="https://github.com/RemiPelloux/Containust" rel="noopener noreferrer">GitHub</a>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="side" aria-label="Documentation">
+        <div class="nav-group">
+          <p class="nav-label">Start</p>
+          <a href="index.html">Get started</a>
+          <a href="cli.html">CLI reference</a>
+          <a class="active" href="language.html">.ctst language</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Guides</p>
+          <a href="migrate.html">Docker migration</a>
+          <a href="index.html#offline">Air-gapped / offline</a>
+          <a href="index.html#platforms">Platforms</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Product</p>
+          <a href="../index.html">Landing page</a>
+          <a href="../../docs/CTST_LANG.md">Full markdown</a>
+        </div>
+      </aside>
+
+      <main class="content">
+        <p class="crumb"><a href="index.html">Docs</a> / Language</p>
+
+        <header class="doc-hero">
+          <p class="eyebrow">Composition language</p>
+          <h1>The .ctst format</h1>
+          <p class="lede">
+            Declarative, LLM-friendly, statically analyzable. Uppercase keywords,
+            local-first image sources, secure defaults.
+          </p>
+        </header>
+
+        <h2 id="example">Annotated example</h2>
+        <div class="codeblock">
+          <pre><code>IMPORT "templates/postgres.ctst" AS pg
+
+COMPONENT api {
+    image   = "file:///opt/images/myapp-api"
+    port    = 8080
+    memory  = "256MiB"
+    cpu     = "1024"
+    env     = {
+        RUST_LOG     = "info"
+        DATABASE_URL = "postgres://${db.host}:${db.port}/app"
+    }
+    command  = ["./server", "--bind", "0.0.0.0:8080"]
+    readonly = true
+}
+
+COMPONENT db FROM pg {
+    port   = 5432
+    volume = "/data/pg:/var/lib/postgresql/data"
+    env    = { POSTGRES_PASSWORD = "${secret.db_pass}" }
+}
+
+CONNECT api -> db
+EXPOSE 8080</code></pre>
+        </div>
+        <div class="codeblock">
+          <pre><code>ctst plan stack.ctst
+ctst build stack.ctst
+ctst run stack.ctst --detach</code></pre>
+        </div>
+
+        <h2 id="principles">Design principles</h2>
+        <div class="table-wrap" data-searchable="declarative llm local-first secure">
+          <table>
+            <thead>
+              <tr>
+                <th>Principle</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Declarative</td>
+                <td>Describe what you want; the runtime orders and wires</td>
+              </tr>
+              <tr>
+                <td>LLM-friendly</td>
+                <td>Minimal syntax, consistent structure, uppercase keywords</td>
+              </tr>
+              <tr>
+                <td>Statically analyzable</td>
+                <td>Types, references, cycles, unused imports before create</td>
+              </tr>
+              <tr>
+                <td>Local-first</td>
+                <td><code>file://</code> / <code>tar://</code> preferred; remote is opt-in</td>
+              </tr>
+              <tr>
+                <td>Secure by default</td>
+                <td>Read-only rootfs, dropped capabilities, secret isolation</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="component">COMPONENT</h2>
+        <p data-searchable="component image port memory env command">
+          Each service is a <code>COMPONENT</code> block. Common fields:
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Example</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>image</code></td>
+                <td><code>"preset://alpine"</code>, <code>"file:///…"</code>, <code>"image://…@sha256:…"</code></td>
+              </tr>
+              <tr>
+                <td><code>port</code> / <code>ports</code></td>
+                <td><code>8080</code> · <code>["8080", "8443"]</code></td>
+              </tr>
+              <tr>
+                <td><code>memory</code> / <code>cpu</code></td>
+                <td><code>"256MiB"</code> · <code>"1024"</code> (shares)</td>
+              </tr>
+              <tr>
+                <td><code>env</code></td>
+                <td><code>{ KEY = "value" }</code></td>
+              </tr>
+              <tr>
+                <td><code>command</code> / <code>entrypoint</code></td>
+                <td><code>["./server", "--bind", "0.0.0.0:8080"]</code></td>
+              </tr>
+              <tr>
+                <td><code>volumes</code></td>
+                <td><code>["/host/data:/var/lib/data"]</code></td>
+              </tr>
+              <tr>
+                <td><code>restart</code></td>
+                <td><code>"never"</code> · <code>"on-failure"</code> · <code>"always"</code></td>
+              </tr>
+              <tr>
+                <td><code>readonly</code></td>
+                <td>Default <code>true</code></td>
+              </tr>
+              <tr>
+                <td><code>network</code></td>
+                <td><code>"none"</code> (default) · <code>"bridge"</code> · named net</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="connect">CONNECT</h2>
+        <p data-searchable="connect dependency host port connection string">
+          <code>CONNECT api -&gt; db</code> means <code>api</code> depends on <code>db</code>.
+          Containust starts <code>db</code> first and injects <code>DB_HOST</code>,
+          <code>DB_PORT</code>, and <code>DB_CONNECTION_STRING</code> into <code>api</code>.
+        </p>
+
+        <h2 id="expose">EXPOSE</h2>
+        <div class="codeblock">
+          <pre><code>EXPOSE 8080          # identity publish
+EXPOSE 80:8080       # host 80 → container 8080</code></pre>
+        </div>
+        <ul>
+          <li><strong>Linux (identity, no network):</strong> host netns; bind directly</li>
+          <li><strong>Linux (remap / named network):</strong> private or shared netns + userspace forwarder</li>
+          <li><strong>macOS / Windows:</strong> QEMU <code>hostfwd</code></li>
+        </ul>
+
+        <h2 id="healthcheck">Healthcheck</h2>
+        <div class="codeblock">
+          <pre><code>COMPONENT api {
+    image = "image://library/myapi@sha256:…"
+    port  = 8080
+    healthcheck = {
+        command      = ["wget", "-qO-", "http://127.0.0.1:8080/health"]
+        interval     = "10s"
+        timeout      = "3s"
+        retries      = 3
+        start_period = "5s"
+    }
+    restart = "on-failure"
+}</code></pre>
+        </div>
+        <p>
+          Policies are enforced when you run <code>ctst ps</code> or <code>ctst run</code>
+          — there is no background supervisor daemon.
+        </p>
+
+        <h2 id="templates">IMPORT / FROM</h2>
+        <p data-searchable="import from template inheritance">
+          Reuse blocks with <code>IMPORT "path.ctst" AS alias</code> and
+          <code>COMPONENT name FROM alias { … }</code> to override fields.
+        </p>
+
+        <h2 id="comments">Comments</h2>
+        <p>Single-line only: <code>// …</code></p>
+
+        <div class="callout">
+          <strong>Full grammar</strong> — types, secrets interpolation, and edge cases are in
+          <a href="../../docs/CTST_LANG.md">docs/CTST_LANG.md</a>.
+        </div>
+
+        <nav class="pager">
+          <a href="cli.html"><span>Previous</span> CLI reference</a>
+          <a class="next" href="migrate.html"><span>Next</span> Docker migration</a>
+        </nav>
+      </main>
+
+      <aside class="toc" data-toc aria-label="On this page"></aside>
+    </div>
+
+    <footer class="foot">
+      Containust docs ·
+      <a href="../index.html">Landing</a> ·
+      <a href="../../docs/CTST_LANG.md">Markdown source</a>
+    </footer>
+    <script src="docs.js"></script>
+  </body>
+</html>

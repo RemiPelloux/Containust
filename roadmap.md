@@ -4,14 +4,15 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at GA **`1.1.0`** (Sprint 10 complete): installable/signed packages, OCI pulls, and runtime enforcement of ports / restart / healthcheck.
+Containust is at GA **`1.1.0`** (Sprint 10 complete) with **Sprint 11 Waves 1–2 landed on `main`** toward **`1.2.0`**: user/PID namespace spawn, remappable ports, named networks, and DNS foundations. License is the proprietary [Containust Commercial License](LICENSE) (source-available; see [COMMERCIAL.md](COMMERCIAL.md)).
 
-- Workspace suite: **607** deterministic tests pass; **20** privileged fixtures are ignored locally and run as root in the `privileged-linux` CI job.
-- CI green on Linux, macOS, Windows, QEMU smoke, privileged Linux, format/clippy/deny/coverage.
+- CI green on Linux, macOS, Windows, QEMU smoke, privileged Linux (including `spawn_user_pid` + offline gate under default-on userns), format/clippy/deny/coverage.
 - Release `v1.1.0` publishes tarballs/zips for five targets, `.deb`/`.rpm`, aggregated `SHA256SUMS`, and cosign keyless signature.
 - Images: `file://`, `tar://`, `preset://alpine|busybox`, `oci://` / `ctst pull` (Hub + GHCR, auth, digest-pin, `--offline` fail-closed), catalog as `image://…@sha256:`.
-- Runtime: identity port publish, restart policies, healthchecks (state schema 3); detached containers write to per-container log files.
-- Still deferred (Sprint 11+): PID/user-ns spawn wiring, veth/NAT port remap, multi-network/DNS, rolling updates, volume drivers, remote orchestration, Apple notarization / Authenticode.
+- Runtime: user + PID namespaces default-on on Linux; `EXPOSE host:container` remap (userspace forwarder / VM `hostfwd`); named networks + `/etc/hosts` peers; restart/healthcheck; state schema **4**.
+- Docs: product landing + HTML docs site under [`site/`](site/); operator guide [`docs/HowToUse.md`](docs/HowToUse.md).
+- Still open for Sprint 11 Wave 3 / `v1.2.0` tag: Homebrew tap automation, winget submission, optional OCI provenance.
+- Deferred (Sprint 12+): rolling updates, volume drivers, remote orchestration, Apple notarization / Authenticode.
 
 ## Release train
 
@@ -235,7 +236,9 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 - [ ] **P11.8 winget submission.** Publish the Windows zip via winget-pkgs for `1.2.0`.
 - [ ] **P11.9 OCI provenance.** Optional signed-image / provenance metadata checks (fail-closed when requested).
 
-**Exit gate:** remapped ports work on Linux CI; user/PID ns spawn green in privileged CI; docs and SUPPORT_POLICY updated; tag `v1.2.0`.
+**Wave 1–2 status: complete on `main`.** Privileged Linux CI green for user/PID spawn and offline gate; remapped ports + named networks shipped; docs site + HowToUse/SUPPORT_POLICY updated; commercial license + `cargo deny` SPDX wired.
+
+**Exit gate for `v1.2.0`:** Wave 3 (P11.7–P11.9) or explicit deferral note; CHANGELOG cut; tag `v1.2.0` on green CI.
 
 ## Later feature backlog
 

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Docker migration — Containust Docs</title>
+    <meta name="description" content="Migrate from Docker Compose to Containust .ctst compositions." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="docs.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true"><div class="grain"></div></div>
+
+    <header class="top">
+      <a class="mark" href="../index.html">
+        <span class="mark-glyph" aria-hidden="true"></span>
+        Containust
+        <span class="mark-sub">Docs</span>
+      </a>
+      <div class="top-actions">
+        <label class="search-wrap">
+          <input type="search" data-doc-search placeholder="Search this page…" />
+        </label>
+        <button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-label="Open navigation">☰</button>
+        <a class="btn btn-ghost" href="https://github.com/RemiPelloux/Containust" rel="noopener noreferrer">GitHub</a>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="side" aria-label="Documentation">
+        <div class="nav-group">
+          <p class="nav-label">Start</p>
+          <a href="index.html">Get started</a>
+          <a href="cli.html">CLI reference</a>
+          <a href="language.html">.ctst language</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Guides</p>
+          <a class="active" href="migrate.html">Docker migration</a>
+          <a href="index.html#offline">Air-gapped / offline</a>
+          <a href="index.html#platforms">Platforms</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Product</p>
+          <a href="../index.html">Landing page</a>
+          <a href="../../docs/MIGRATION_FROM_DOCKER.md">Full markdown</a>
+        </div>
+      </aside>
+
+      <main class="content">
+        <p class="crumb"><a href="index.html">Docs</a> / Migrate</p>
+
+        <header class="doc-hero">
+          <p class="eyebrow">Guide</p>
+          <h1>From Docker Compose</h1>
+          <p class="lede">
+            Same mental verbs — plan, build, run — without a privileged daemon.
+            Convert with <code>ctst convert</code>, then tighten image pins.
+          </p>
+        </header>
+
+        <h2 id="philosophy">What changes</h2>
+        <div class="table-wrap" data-searchable="daemon dockerd local-first offline readonly">
+          <table>
+            <thead>
+              <tr>
+                <th>Aspect</th>
+                <th>Docker Compose</th>
+                <th>Containust</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Daemon</td>
+                <td><code>dockerd</code> as root</td>
+                <td>No daemon — syscalls + state file</td>
+              </tr>
+              <tr>
+                <td>Images</td>
+                <td>Online-first Hub pulls</td>
+                <td>Local-first; remote opt-in + digests</td>
+              </tr>
+              <tr>
+                <td>Rootfs</td>
+                <td>Writable by default</td>
+                <td>Read-only by default</td>
+              </tr>
+              <tr>
+                <td>Dependencies</td>
+                <td><code>depends_on</code> + manual env</td>
+                <td><code>CONNECT</code> with injected host/port</td>
+              </tr>
+              <tr>
+                <td>Air-gap</td>
+                <td>Manual</td>
+                <td>First-class <code>--offline</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="convert">Convert in one command</h2>
+        <div class="codeblock">
+          <pre><code>ctst convert docker-compose.yml &gt; stack.ctst
+ctst plan stack.ctst
+# Pin images (pull + replace tags with image://…@sha256:…)
+ctst pull nginx:alpine
+ctst build stack.ctst
+ctst run stack.ctst --detach</code></pre>
+        </div>
+        <div class="callout">
+          <strong>Review the draft.</strong>
+          The converter maps structure; you still choose local vs registry sources
+          and tighten secrets / volumes for production.
+        </div>
+
+        <h2 id="cheat-sheet">Syntax cheat sheet</h2>
+        <div class="table-wrap" data-searchable="services image ports volumes depends_on restart healthcheck">
+          <table>
+            <thead>
+              <tr>
+                <th>Compose</th>
+                <th>.ctst</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>services:</code></td>
+                <td><code>COMPONENT name { }</code></td>
+              </tr>
+              <tr>
+                <td><code>image: nginx:1.25</code></td>
+                <td><code>image = "tar:///opt/images/nginx.tar"</code> or digest pin</td>
+              </tr>
+              <tr>
+                <td><code>ports: ["8080:80"]</code></td>
+                <td><code>port = 80</code> + <code>EXPOSE 8080:80</code></td>
+              </tr>
+              <tr>
+                <td><code>volumes: ["./data:/data"]</code></td>
+                <td><code>volume = "./data:/data"</code> or <code>volumes = […]</code></td>
+              </tr>
+              <tr>
+                <td><code>environment:</code></td>
+                <td><code>env = { K = "V" }</code></td>
+              </tr>
+              <tr>
+                <td><code>depends_on: [db]</code></td>
+                <td><code>CONNECT app -&gt; db</code></td>
+              </tr>
+              <tr>
+                <td><code>restart: unless-stopped</code></td>
+                <td><code>restart = "always"</code></td>
+              </tr>
+              <tr>
+                <td><code>healthcheck:</code></td>
+                <td><code>healthcheck = { command = […] }</code></td>
+              </tr>
+              <tr>
+                <td><code>mem_limit: 512m</code></td>
+                <td><code>memory = "512MiB"</code></td>
+              </tr>
+              <tr>
+                <td><code>read_only: true</code></td>
+                <td><code>readonly = true</code> (already the default)</td>
+              </tr>
+              <tr>
+                <td><code>docker compose up</code></td>
+                <td><code>ctst run stack.ctst</code></td>
+              </tr>
+              <tr>
+                <td><code>docker compose ps</code></td>
+                <td><code>ctst ps</code></td>
+              </tr>
+              <tr>
+                <td><code>docker exec -it app sh</code></td>
+                <td><code>ctst exec app -- /bin/sh</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="before-after">Before / after</h2>
+        <h3 id="compose-yaml">Compose</h3>
+        <div class="codeblock">
+          <pre><code>services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+  api:
+    image: ghcr.io/acme/api:1.2
+    environment:
+      DATABASE_URL: postgres://db:5432/app
+    depends_on:
+      - db
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: secret</code></pre>
+        </div>
+        <h3 id="ctst-result">.ctst</h3>
+        <div class="codeblock">
+          <pre><code>COMPONENT db {
+    image = "image://library/postgres@sha256:…"
+    port  = 5432
+    env   = { POSTGRES_PASSWORD = "secret" }
+}
+
+COMPONENT api {
+    image = "image://ghcr.io/acme/api@sha256:…"
+    env   = { DATABASE_URL = "postgres://${db.host}:${db.port}/app" }
+}
+
+COMPONENT web {
+    image = "image://library/nginx@sha256:…"
+    port  = 80
+    ports = ["8080"]
+}
+
+CONNECT api -> db
+CONNECT web -> api
+EXPOSE 8080:80</code></pre>
+        </div>
+
+        <nav class="pager">
+          <a href="language.html"><span>Previous</span> .ctst language</a>
+          <a class="next" href="index.html"><span>Back</span> Get started</a>
+        </nav>
+      </main>
+
+      <aside class="toc" data-toc aria-label="On this page"></aside>
+    </div>
+
+    <footer class="foot">
+      Containust docs ·
+      <a href="../index.html">Landing</a> ·
+      <a href="../../docs/MIGRATION_FROM_DOCKER.md">Markdown source</a>
+    </footer>
+    <script src="docs.js"></script>
+  </body>
+</html>

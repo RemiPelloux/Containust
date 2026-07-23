@@ -13,6 +13,8 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 ### Added
 
 - Product landing page in [`site/`](site/) (open `site/index.html`).
+- HTML documentation site in [`site/docs/`](site/docs/) (get started, CLI,
+  language, migrate).
 - Docs map [`docs/README.md`](docs/README.md); process checklists under `docs/process/`.
 - Operator guide [`docs/HowToUse.md`](docs/HowToUse.md) — install, first pull/run,
   everyday commands, ports, offline, troubleshooting.

@@ -6,7 +6,8 @@ Start here, then go deeper only when you need to.
 
 | Doc | When to open it |
 | --- | --- |
-| **[HowToUse.md](HowToUse.md)** | Install, first run, everyday commands |
+| **[../site/docs/](../site/docs/)** | **HTML docs site** — get started, CLI, language, migration |
+| **[HowToUse.md](HowToUse.md)** | Same operator guide as markdown source |
 | **[../site/](../site/)** | Product landing page (open `index.html`) |
 | **[../README.md](../README.md)** | Project overview and quick start |
 
