@@ -163,23 +163,26 @@ ctst --offline run stack.ctst --detach
 
 ### Publish a port
 
-Identity mapping only today (host port == container port):
+Identity publish and host:container remapping are both supported:
 
 ```text
 COMPONENT web {
     image = "image://library/nginx@sha256:…"
     port  = 8080
     ports = ["8080"]
+    network = "bridge"   # optional; default for remaps
 }
 
 EXPOSE 8080
+EXPOSE 80:8080           # host 80 → container 8080
 ```
 
-- **Linux:** the component shares the host network namespace and binds the port
-  directly (needs root or `CAP_NET_BIND_SERVICE` for ports &lt; 1024).
-- **macOS / Windows:** QEMU `hostfwd` to the guest; adding ports to a live VM
-  needs `ctst vm stop` and redeploy.
-- Remapping `EXPOSE 8080:80` fails closed until Sprint 11 networking lands.
+- **Linux (identity, no `network`):** host network namespace; bind directly
+  (root or `CAP_NET_BIND_SERVICE` for ports &lt; 1024).
+- **Linux (remap / named network):** private or shared netns + userspace
+  forwarder; peers on the same network resolve via `/etc/hosts` → `127.0.0.1`.
+- **macOS / Windows:** QEMU `hostfwd` (remap supported); adding ports to a live
+  VM needs `ctst vm stop` and redeploy.
 
 ### Restart policy
 
@@ -264,7 +267,7 @@ ctst vm stop
 | Symptom | What to try |
 | --- | --- |
 | `offline mode rejects remote source` | Drop `--offline`, or pre-pull / copy catalog layers |
-| Port remap rejected | Use the same host and container port, or wait for veth/NAT (Sprint 11) |
+| Port forward bind fails | Free the host port, or stop conflicting forwarders / QEMU hostfwd |
 | Container `failed` right after `--detach` | `ctst logs <name>` — command may have exited; check image has the binary |
 | macOS/Windows hang on first run | Ensure QEMU is installed; check serial/boot logs; increase `CONTAINUST_VM_BOOT_TIMEOUT_SECS` |
 | Permission denied on Linux | Run with sufficient privileges for namespaces/cgroups; confirm cgroup v2 |

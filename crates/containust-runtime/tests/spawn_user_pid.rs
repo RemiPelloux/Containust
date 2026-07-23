@@ -38,6 +38,7 @@ fn spawn_with_user_and_pid_runs_sleep() {
         readonly_rootfs: false,
         volumes: Vec::new(),
         namespaces: NamespaceConfig::default().with_user_and_pid(),
+        join_netns: None,
         log_path: None,
     };
     let pid = spawn_container_process(&config).expect("spawn user+pid");

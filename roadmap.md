@@ -219,15 +219,15 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 ### Wave 1 — Linux spawn isolation
 
-- [x] **P11.1 User + PID namespaces on spawn.** Pipe-synced fork/exec path (`process_spawn.rs`) with uid/gid maps and post-`CLONE_NEWPID` double-fork; opt-in via `CONTAINUST_ENABLE_USER_PID_NS=1` (default-on deferred until gate-green).
-- [~] **P11.2 Privileged CI expand.** `spawn_user_pid` fixture runs under the env opt-in; default-on + offline-gate green is the remaining exit for Wave 1.
+- [x] **P11.1 User + PID namespaces on spawn.** Pipe-synced fork/exec path (`process_spawn.rs`) with uid/gid maps and post-`CLONE_NEWPID` double-fork; **default-on** for Linux deploy/spawn (`/dev/pts` best-effort under userns).
+- [x] **P11.2 Privileged CI expand.** `spawn_user_pid` + offline gate run as root with default-on user/PID namespaces.
 - [x] **P11.3 Docs.** `SUPPORT_POLICY.md` + `docs/HowToUse.md` cover userns/PID spawn; operator guide added.
 
 ### Wave 2 — Port remapping and networks
 
-- [ ] **P11.4 Linux veth/NAT publish.** Honor `EXPOSE host:container` with differing ports (fail-closed today); drop host-net-only identity path as the sole option when remap is requested.
-- [ ] **P11.5 Named networks.** Minimal multi-network model for components (bridge-like) beyond host-net sharing.
-- [ ] **P11.6 DNS foundations.** Resolve component names to container IPs for `CONNECT`ed services (no full mesh yet).
+- [x] **P11.4 Linux port remapping.** `EXPOSE host:container` via userspace TCP forwarder into the container/shared netns (no `CAP_NET_ADMIN`); VM `hostfwd` remap on macOS/Windows; state schema 4.
+- [x] **P11.5 Named networks.** `network = "bridge" | "host" | "none" | <name>` with persisted shared netns per project network.
+- [x] **P11.6 DNS foundations.** Shared-netns peers written into container `/etc/hosts` as `127.0.0.1` for `CONNECT` `_HOST` resolution (no full mesh DNS yet).
 
 ### Wave 3 — Operator polish
 

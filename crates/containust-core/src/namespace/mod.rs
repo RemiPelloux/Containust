@@ -34,8 +34,8 @@ impl Default for NamespaceConfig {
     /// Secure defaults for the Linux spawn path.
     ///
     /// Mount, network, IPC, and UTS are enabled. User and PID namespaces
-    /// are off by default; the Linux backend opts into them via
-    /// [`Self::with_user_and_pid`] once the pipe-sync spawn path is used.
+    /// are off in this base config; the Linux backend enables them via
+    /// [`Self::with_user_and_pid`] on the pipe-sync spawn path (default-on).
     fn default() -> Self {
         Self {
             pid: false,

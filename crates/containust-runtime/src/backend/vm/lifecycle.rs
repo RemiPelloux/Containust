@@ -1,18 +1,20 @@
 //! Cross-process VM lifecycle: pidfile, readiness adopt, graceful stop.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use containust_common::error::{ContainustError, Result};
+use containust_common::types::PortMapping;
 use fs2::FileExt;
-use serde::{Deserialize, Serialize};
 
-use super::ports::{ensure_ports_covered, normalize_forward_ports, probe_available};
+use super::pidfile::{VmPidRecord, clear_pid_record, write_pid_record};
+use super::ports::{ensure_mappings_covered, normalize_forward_mappings, probe_available};
 use super::process::{process_is_alive, terminate_pid, wait_until_dead};
 use super::qemu::{QemuSpawn, find_qemu, spawn_qemu};
 use super::rpc::{VM_AGENT_PORT, is_agent_ready, wait_for_vm_ready};
 
-const PID_FILE_NAME: &str = "qemu.pid.json";
+pub use super::pidfile::read_pid_record;
+
 const LOCK_FILE_NAME: &str = ".vm.lock";
 const FORCE_WAIT: Duration = Duration::from_secs(2);
 
@@ -23,18 +25,6 @@ pub enum VmStartOutcome {
     Started,
     /// An existing agent (and optionally pidfile) was adopted.
     AlreadyRunning,
-}
-
-/// Persisted QEMU process metadata under the VM cache directory.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct VmPidRecord {
-    /// Host PID of the QEMU process.
-    pub pid: u32,
-    /// Agent TCP port forwarded on the host.
-    pub agent_port: u16,
-    /// Container host ports forwarded at QEMU boot (`hostfwd`).
-    #[serde(default)]
-    pub forwarded_ports: Vec<u16>,
 }
 
 /// Exclusive lock for VM start/stop races.
@@ -79,26 +69,14 @@ pub fn ensure_running(
     vm_dir: &Path,
     kernel: &Path,
     initramfs: &Path,
-    ports: &[u16],
+    ports: &[PortMapping],
 ) -> Result<VmStartOutcome> {
     let _lock = VmLock::acquire(vm_dir)?;
     let _ = recover_stale(vm_dir)?;
-    let ports = normalize_forward_ports(ports)?;
+    let ports = normalize_forward_mappings(ports)?;
 
     if is_agent_ready() {
-        if let Some(record) = read_pid_record(vm_dir)? {
-            ensure_ports_covered(&record.forwarded_ports, &ports)?;
-        } else {
-            tracing::warn!("VM agent is ready but pidfile is missing; continuing");
-            if !ports.is_empty() {
-                return Err(ContainustError::Config {
-                    message: "VM agent is reachable without qemu.pid.json; refuse to \
-                         assume hostfwd ownership. Run `ctst vm stop` and restart"
-                        .into(),
-                });
-            }
-        }
-        return Ok(VmStartOutcome::AlreadyRunning);
+        return adopt_running_agent(vm_dir, &ports);
     }
 
     probe_available(&ports)?;
@@ -117,7 +95,8 @@ pub fn ensure_running(
         &VmPidRecord {
             pid,
             agent_port: VM_AGENT_PORT,
-            forwarded_ports: ports,
+            forwarded_ports: ports.iter().map(|m| m.host).collect(),
+            forwarded_mappings: ports,
         },
     )?;
     // Detach: do not wait/kill on Child drop — the pidfile owns lifecycle.
@@ -127,55 +106,48 @@ pub fn ensure_running(
         Ok(()) => Ok(VmStartOutcome::Started),
         Err(error) => {
             let detail = super::qemu::read_stderr_tail(vm_dir);
-            terminate_pid(pid, true);
-            clear_pid_record(vm_dir)?;
-            Err(enrich_boot_error(error, &detail))
+            let _ = stop_running(vm_dir, true);
+            Err(ContainustError::Config {
+                message: format!("{error}; qemu stderr tail:\n{detail}"),
+            })
         }
     }
 }
 
-fn enrich_boot_error(error: ContainustError, detail: &str) -> ContainustError {
-    if detail.is_empty() {
-        return error;
-    }
-    match error {
-        ContainustError::Config { message } => ContainustError::Config {
-            message: format!("{message}{detail}"),
-        },
-        other => other,
-    }
-}
-
-/// Stops the shared VM if running. Idempotent when already stopped.
-///
-/// When `force` is false, sends SIGTERM and waits briefly before SIGKILL.
-///
-/// # Errors
-///
-/// Returns an error when the lifecycle lock or pidfile I/O fails.
-pub fn stop_running(vm_dir: &Path, force: bool) -> Result<()> {
-    let _lock = VmLock::acquire(vm_dir)?;
-    let record = read_pid_record(vm_dir)?;
-    let agent_up = is_agent_ready();
-
-    let Some(record) = record else {
-        if agent_up {
+fn adopt_running_agent(vm_dir: &Path, ports: &[PortMapping]) -> Result<VmStartOutcome> {
+    if let Some(record) = read_pid_record(vm_dir)? {
+        ensure_mappings_covered(&record.effective_mappings(), ports)?;
+    } else {
+        tracing::warn!("VM agent is ready but pidfile is missing; continuing");
+        if !ports.is_empty() {
             return Err(ContainustError::Config {
-                message: "VM agent is reachable but qemu.pid.json is missing; \
-                     refuse to kill an untracked process. Remove the orphan \
-                     manually or recreate the pidfile"
+                message: "VM agent is reachable without qemu.pid.json; refuse to \
+                     assume hostfwd ownership. Run `ctst vm stop` and restart"
                     .into(),
             });
         }
-        tracing::info!("VM already stopped");
+    }
+    Ok(VmStartOutcome::AlreadyRunning)
+}
+
+/// Stops the shared VM if a pidfile (or live agent) is present.
+///
+/// # Errors
+///
+/// Returns an error when stop cannot terminate a tracked process.
+pub fn stop_running(vm_dir: &Path, force: bool) -> Result<()> {
+    let _lock = VmLock::acquire(vm_dir)?;
+    let Some(record) = read_pid_record(vm_dir)? else {
+        if is_agent_ready() {
+            return Err(ContainustError::Config {
+                message: "VM agent is reachable but qemu.pid.json is missing; \
+                     refuse to kill an untracked process. Restart the host or \
+                     identify the QEMU PID manually"
+                    .into(),
+            });
+        }
         return Ok(());
     };
-
-    if !process_is_alive(record.pid) && !agent_up {
-        clear_pid_record(vm_dir)?;
-        tracing::info!("VM already stopped (stale pidfile cleared)");
-        return Ok(());
-    }
 
     terminate_pid(record.pid, force);
     if process_is_alive(record.pid) {
@@ -210,75 +182,12 @@ pub fn recover_stale(vm_dir: &Path) -> Result<bool> {
     Ok(true)
 }
 
-/// Reads the VM pidfile if present.
-///
-/// # Errors
-///
-/// Returns an error when the file exists but cannot be parsed.
-pub fn read_pid_record(vm_dir: &Path) -> Result<Option<VmPidRecord>> {
-    let path = pid_path(vm_dir);
-    if !path.exists() {
-        return Ok(None);
-    }
-    let raw = std::fs::read_to_string(&path).map_err(|source| ContainustError::Io {
-        path: path.clone(),
-        source,
-    })?;
-    let record: VmPidRecord = serde_json::from_str(&raw).map_err(|source| {
-        tracing::error!(path = %path.display(), %source, "invalid VM pidfile");
-        ContainustError::Serialization { source }
-    })?;
-    Ok(Some(record))
-}
-
-fn write_pid_record(vm_dir: &Path, record: &VmPidRecord) -> Result<()> {
-    std::fs::create_dir_all(vm_dir).map_err(|source| ContainustError::Io {
-        path: vm_dir.to_path_buf(),
-        source,
-    })?;
-    let path = pid_path(vm_dir);
-    let body = serde_json::to_string_pretty(record)?;
-    let staging = path.with_extension("json.tmp");
-    std::fs::write(&staging, body).map_err(|source| ContainustError::Io {
-        path: staging.clone(),
-        source,
-    })?;
-    std::fs::rename(&staging, &path).map_err(|source| ContainustError::Io { path, source })?;
-    Ok(())
-}
-
-fn clear_pid_record(vm_dir: &Path) -> Result<()> {
-    let path = pid_path(vm_dir);
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|source| ContainustError::Io { path, source })?;
-    }
-    Ok(())
-}
-
-fn pid_path(vm_dir: &Path) -> PathBuf {
-    vm_dir.join(PID_FILE_NAME)
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
+    use super::super::pidfile::write_pid_record;
     use super::*;
-
-    #[test]
-    fn pid_record_roundtrip_on_disk() {
-        let dir = tempfile::tempdir().unwrap();
-        let record = VmPidRecord {
-            pid: 4242,
-            agent_port: 10809,
-            forwarded_ports: vec![8080, 8443],
-        };
-        write_pid_record(dir.path(), &record).unwrap();
-        let loaded = read_pid_record(dir.path()).unwrap().expect("present");
-        assert_eq!(loaded, record);
-        clear_pid_record(dir.path()).unwrap();
-        assert!(read_pid_record(dir.path()).unwrap().is_none());
-    }
 
     #[test]
     fn recover_stale_clears_dead_pid() {
@@ -289,6 +198,7 @@ mod tests {
                 pid: 4_294_967_294,
                 agent_port: 10809,
                 forwarded_ports: vec![],
+                forwarded_mappings: vec![],
             },
         )
         .unwrap();

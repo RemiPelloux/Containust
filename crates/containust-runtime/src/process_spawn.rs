@@ -37,6 +37,7 @@ pub fn spawn_with_user_pid(config: &ProcessConfig) -> Result<u32> {
         volumes: config.volumes.clone(),
         readonly_rootfs: config.readonly_rootfs,
         namespaces: config.namespaces.clone(),
+        join_netns: config.join_netns.clone(),
     };
 
     // SAFETY: child never returns into the parent Rust stack.
@@ -83,6 +84,7 @@ struct ChildConfig {
     volumes: Vec<String>,
     readonly_rootfs: bool,
     namespaces: NamespaceConfig,
+    join_netns: Option<std::path::PathBuf>,
 }
 
 struct ChildPipes {
@@ -127,8 +129,22 @@ fn child_main(
             return Err(std::io::Error::other("parent did not acknowledge uid maps"));
         }
     }
-    unshare_remaining(&cfg.namespaces)?;
+    apply_network_namespace(cfg)?;
     enter_pid_and_exec(cfg, pipes, exec)
+}
+
+fn apply_network_namespace(cfg: &ChildConfig) -> std::io::Result<()> {
+    if let Some(path) = &cfg.join_netns {
+        crate::network::join_netns(path)
+            .map_err(|e| std::io::Error::other(format!("join netns failed: {e}")))?;
+        let _ = crate::network::ensure_loopback();
+        return unshare_remaining_without_net(&cfg.namespaces);
+    }
+    unshare_remaining(&cfg.namespaces)?;
+    if cfg.namespaces.network {
+        let _ = crate::network::ensure_loopback();
+    }
+    Ok(())
 }
 
 fn enter_pid_and_exec(
@@ -249,6 +265,14 @@ fn parent_handshake(
 }
 
 fn unshare_remaining(namespaces: &NamespaceConfig) -> std::io::Result<()> {
+    unshare_flags(namespaces, true)
+}
+
+fn unshare_remaining_without_net(namespaces: &NamespaceConfig) -> std::io::Result<()> {
+    unshare_flags(namespaces, false)
+}
+
+fn unshare_flags(namespaces: &NamespaceConfig, include_net: bool) -> std::io::Result<()> {
     use nix::sched::{CloneFlags, unshare};
 
     let mut flags = CloneFlags::empty();
@@ -258,7 +282,7 @@ fn unshare_remaining(namespaces: &NamespaceConfig) -> std::io::Result<()> {
     if namespaces.pid {
         flags |= CloneFlags::CLONE_NEWPID;
     }
-    if namespaces.network {
+    if include_net && namespaces.network {
         flags |= CloneFlags::CLONE_NEWNET;
     }
     if namespaces.ipc {

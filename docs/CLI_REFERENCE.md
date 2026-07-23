@@ -241,7 +241,7 @@ Inherits all [global options](#global-options).
 
 ### Ports, Restart Policies, and Healthchecks
 
-- **Published ports** (`ports = [8080]` or top-level `EXPOSE 8080`) use identity mapping — the host port equals the container port. `EXPOSE host:container` with differing ports is rejected at deploy. On Linux, components with published ports share the host network namespace; on macOS/Windows, ports become QEMU `hostfwd` rules bound at VM boot. See [SUPPORT_POLICY.md](SUPPORT_POLICY.md#port-publishing-ports--expose).
+- **Published ports** (`ports = [8080]` or top-level `EXPOSE 8080` / `EXPOSE 80:8080`) support identity and host:container remapping. On Linux, identity publishes without an explicit `network` share the host network namespace; remaps and named/`bridge` networks use a shared/private netns plus a userspace TCP forwarder. On macOS/Windows, ports become QEMU `hostfwd` rules (remap-aware) bound at VM boot. See [SUPPORT_POLICY.md](SUPPORT_POLICY.md#port-publishing-ports--expose).
 - **Restart policies** (`restart = "never" | "on-failure" | "always"`) are enforced without a daemon: every `ctst ps` / `ctst run` reconciliation pass restarts eligible failed containers and increments their restart count.
 - **Healthchecks** run the configured `command` inside the container when a reconciliation pass finds the probe interval elapsed (after `start_period`). After `retries` consecutive failures the container is marked `unhealthy`, and its restart policy is applied (stop + restart, unless the policy is `never`).
 

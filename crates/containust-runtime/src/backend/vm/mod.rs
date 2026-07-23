@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use containust_common::error::{ContainustError, Result};
-use containust_common::types::ContainerId;
+use containust_common::types::{ContainerId, PortMapping};
 
 use super::{
     ContainerBackend, ContainerConfig, ContainerInfo, ReconciliationReport, project_identifier,
@@ -19,6 +19,7 @@ pub mod assets;
 mod assets_fetch;
 pub mod initramfs;
 mod lifecycle;
+mod pidfile;
 mod ports;
 mod process;
 mod protocol;
@@ -117,7 +118,7 @@ impl VMBackend {
     /// # Errors
     ///
     /// Returns an error if QEMU, assets, or readiness polling fails.
-    pub fn ensure_vm_running(&self, ports: &[u16]) -> Result<()> {
+    pub fn ensure_vm_running(&self, ports: &[PortMapping]) -> Result<()> {
         let (kernel, initramfs) = self.ensure_vm_assets()?;
         let outcome = lifecycle::ensure_running(&self.vm_dir, &kernel, &initramfs, ports)?;
         self.sync_forwarded_ports_from_pidfile()?;
@@ -182,11 +183,7 @@ impl ContainerBackend for VMBackend {
     }
 
     fn create(&self, config: &ContainerConfig) -> Result<ContainerId> {
-        let mut ports_to_forward: Vec<u16> = std::iter::once(config.port)
-            .flatten()
-            .chain(config.ports.iter().copied())
-            .collect();
-        ports_to_forward.dedup();
+        let ports_to_forward = vm_forward_mappings(config);
         self.ensure_vm_running(&ports_to_forward)?;
 
         tracing::info!(name = %config.name, "creating container via VM backend");
@@ -279,6 +276,25 @@ impl ContainerBackend for VMBackend {
             ..ReconciliationReport::default()
         })
     }
+}
+
+/// Resolves QEMU hostfwd mappings from container config (remap-aware).
+fn vm_forward_mappings(config: &ContainerConfig) -> Vec<PortMapping> {
+    if !config.port_mappings.is_empty() {
+        return config.port_mappings.clone();
+    }
+    let mut mappings: Vec<PortMapping> = config
+        .ports
+        .iter()
+        .copied()
+        .map(PortMapping::identity)
+        .collect();
+    if let Some(port) = config.port
+        && !mappings.iter().any(|m| m.host == port)
+    {
+        mappings.push(PortMapping::identity(port));
+    }
+    mappings
 }
 
 #[cfg(test)]

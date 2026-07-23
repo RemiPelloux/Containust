@@ -20,17 +20,17 @@ See [`VERSIONING.md`](VERSIONING.md). Summary:
 
 ## Port publishing (`ports` / `EXPOSE`)
 
-Ports are published with identity mapping only (host port == container port).
-`EXPOSE host:container` with differing ports fails closed at deploy.
+`EXPOSE` supports identity (`EXPOSE 8080`) and remapping (`EXPOSE 80:8080`).
 
 | Platform | Publish path | Capability needs |
 |---|---|---|
-| Linux | Component with published ports shares the host network namespace (like `docker run --network host`); the process binds host ports directly | Root (or `CAP_NET_BIND_SERVICE` for ports < 1024) |
-| macOS / Windows | QEMU user-net `hostfwd` rules bound at VM boot; adding ports to a live VM requires `ctst vm stop` + redeploy | None (userspace) |
+| Linux (identity, no explicit `network`) | Host network namespace; process binds host ports directly | Root (or `CAP_NET_BIND_SERVICE` for ports < 1024) |
+| Linux (remap or named/`bridge` network) | Private/shared netns + userspace TCP forwarder (`127.0.0.1:host` → container port) | Root for userns/netns; no `CAP_NET_ADMIN` |
+| macOS / Windows | QEMU user-net `hostfwd` (host→guest remap supported); adding ports to a live VM requires `ctst vm stop` + redeploy | None (userspace) |
 
-veth/NAT-based publishing with host/container remapping on Linux is deferred
-(tracked for a later sprint). Components without published ports keep an
-isolated network namespace on Linux.
+Named networks (`network = "bridge"` or a custom name) share one netns per
+project network. Peer names are written into `/etc/hosts` as `127.0.0.1` so
+`CONNECT` `_HOST` variables resolve on the shared loopback.
 
 ## Issue severity
 
@@ -48,17 +48,14 @@ isolated network namespace on Linux.
 
 ## Linux spawn isolation (user + PID namespaces)
 
-The pipe-synced fork/exec path (uid/gid maps + post-`CLONE_NEWPID`
-double-fork so container init is PID 1) is implemented. Opt in with
-`CONTAINUST_ENABLE_USER_PID_NS=1` while default spawn keeps mount/net/ipc/uts
-only — default-on lands once the privileged offline gate stays green with
-userns enabled (Sprint 11).
+Linux containers enable user + PID namespaces by default (pipe-synced uid/gid
+maps and post-`CLONE_NEWPID` double-fork so container init is PID 1). Root or
+delegated user namespaces are recommended.
 
 ## Explicitly deferred (not supported unless listed above)
 
-- `EXPOSE` host/container port remapping on Linux (veth/NAT publish path)
 - Apple notarization / Windows Authenticode (cosign keyless signs `SHA256SUMS`; see `PACKAGING.md`)
-- Multi-network mesh, DNS / service discovery
+- Full DNS / multi-network mesh (named shared-netns + `/etc/hosts` foundations ship in Sprint 11)
 - Rolling updates / declarative `plan` apply diffs
 - Volume drivers, snapshots, encrypted local storage
 - Remote execution / orchestration
@@ -67,4 +64,4 @@ Shipped since GA (removed from this list): OCI registry pulls with auth
 (`ctst pull`, `1.1.0`), `ports` / `restart` / `healthcheck` enforcement
 (`1.1.0`), GitHub Release binaries + `.deb`/`.rpm` + in-tree Homebrew +
 winget template + cosign-signed checksums (`1.1.0`), Linux user+PID namespace
-spawn wiring (Sprint 11 Wave 1).
+default-on spawn, `EXPOSE` remapping, named networks (`1.2.0` track).

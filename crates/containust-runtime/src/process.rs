@@ -23,6 +23,8 @@ pub struct ProcessConfig {
     pub volumes: Vec<String>,
     /// Namespace isolation policy.
     pub namespaces: NamespaceConfig,
+    /// When set, join this netns instead of `unshare(CLONE_NEWNET)`.
+    pub join_netns: Option<std::path::PathBuf>,
     /// Log file receiving the container's stdout/stderr.
     ///
     /// `None` inherits the parent's stdio (foreground debugging only);

@@ -137,8 +137,8 @@ pub struct QemuSpawn<'a> {
     pub kernel: &'a Path,
     /// Initramfs with the Containust agent.
     pub initramfs: &'a Path,
-    /// Extra hostfwd ports (agent port is always included).
-    pub ports: &'a [u16],
+    /// Extra hostfwd mappings (agent port is always included).
+    pub ports: &'a [containust_common::types::PortMapping],
     /// VM state directory (for stderr capture).
     pub vm_dir: &'a Path,
 }

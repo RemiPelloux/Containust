@@ -38,11 +38,12 @@ See also [CONTRIBUTING.md](CONTRIBUTING.md#release-process).
 
 | Constant | Value | Defined in |
 |---|---|---|
-| `STATE_SCHEMA_VERSION` / `CURRENT_STATE_SCHEMA` | `3` | `containust-common` / `containust-runtime` |
+| `STATE_SCHEMA_VERSION` / `CURRENT_STATE_SCHEMA` | `4` | `containust-common` / `containust-runtime` |
 
-Schema 3 (v1.1.0) adds `ports`, `restart`, `healthcheck`, `health`, and
-`restart_count` to container entries; schema 2 files migrate via serde
-defaults on load.
+Schema 4 (Sprint 11) adds `port_mappings`, `network`, and `forwarder_pids`.
+Schema 3 (v1.1.0) added `ports`, `restart`, `healthcheck`, `health`, and
+`restart_count`. Older files migrate via serde defaults + identity
+`port_mappings` derived from legacy `ports` on load.
 
 - **Older** schemas migrate forward on load.
 - **Newer** schemas are rejected (fail closed).

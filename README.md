@@ -163,7 +163,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the dependency rules and backend desi
 - Runtime data is project-scoped under `.containust/` next to the composition. State is `.containust/state/state.json` (schema v3); logs, rootfs, and the image catalog stay in the same project tree.
 - Linux path: read-only rootfs by default, capability drop, cgroups v2, namespaces — exercised in privileged CI.
 - Remote OCI/HTTPS fetches are digest-pinned, size/timeout capped, and rejected under `--offline`. Registry auth uses env vars or `~/.docker/config.json`; credentials are never logged or written to `state.json`.
-- Published ports use identity mapping (host port == container port). Linux components with ports share the host network; remapping fails closed (veth/NAT is a later milestone).
+- Published ports support identity and `EXPOSE host:container` remapping (Linux userspace forwarder + VM `hostfwd`). Named networks and `/etc/hosts` peer resolution ship in Sprint 11.
 - `ctst stop` retains rootfs and logs; `ctst rm` cleans project-owned resources. Host volume source data is never deleted.
 
 ## Development and audit

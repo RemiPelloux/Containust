@@ -49,9 +49,18 @@ pub struct StateEntry {
     /// Host-to-container bind mounts.
     #[serde(default)]
     pub volumes: Vec<String>,
-    /// Published container ports (host port equals container port).
+    /// Published container ports (legacy identity list).
     #[serde(default)]
     pub ports: Vec<u16>,
+    /// Host→container port publishes (schema 4+).
+    #[serde(default)]
+    pub port_mappings: Vec<containust_common::types::PortMapping>,
+    /// Network mode name (`host`, `none`, `bridge`, or custom).
+    #[serde(default = "default_network")]
+    pub network: String,
+    /// PIDs of userspace port-forwarder helpers.
+    #[serde(default)]
+    pub forwarder_pids: Vec<u32>,
     /// Restart policy applied when the process exits.
     #[serde(default)]
     pub restart: containust_common::types::RestartPolicy,
@@ -74,6 +83,10 @@ pub struct StateEntry {
 
 const fn default_readonly_rootfs() -> bool {
     true
+}
+
+fn default_network() -> String {
+    "bridge".into()
 }
 
 /// Serializable collection of all container state entries.
@@ -247,6 +260,19 @@ fn migrate_state(state: &mut StateFile) -> Result<()> {
             ),
         });
     }
+    for entry in &mut state.containers {
+        if entry.port_mappings.is_empty() && !entry.ports.is_empty() {
+            entry.port_mappings = entry
+                .ports
+                .iter()
+                .copied()
+                .map(containust_common::types::PortMapping::identity)
+                .collect();
+        }
+        if entry.network.is_empty() {
+            entry.network = default_network();
+        }
+    }
     if state.schema_version < CURRENT_STATE_SCHEMA {
         state.schema_version = CURRENT_STATE_SCHEMA;
     }
@@ -396,6 +422,9 @@ mod tests {
             rootfs_path: None,
             log_path: None,
             ports: Vec::new(),
+            port_mappings: Vec::new(),
+            network: "bridge".into(),
+            forwarder_pids: Vec::new(),
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             health: None,
@@ -448,6 +477,9 @@ mod tests {
                 rootfs_path: Some("/var/lib/containust/rootfs/test-1".into()),
                 log_path: None,
                 ports: Vec::new(),
+                port_mappings: Vec::new(),
+                network: "bridge".into(),
+                forwarder_pids: Vec::new(),
                 restart: containust_common::types::RestartPolicy::default(),
                 healthcheck: None,
                 health: None,
@@ -547,7 +579,7 @@ mod tests {
         assert_eq!(migrated.schema_version, CURRENT_STATE_SCHEMA);
         save_state(&path, &migrated).expect("persist migration");
         let persisted = std::fs::read_to_string(path).expect("read persisted");
-        assert!(persisted.contains("\"schema_version\": 3"));
+        assert!(persisted.contains("\"schema_version\": 4"));
     }
 
     #[test]

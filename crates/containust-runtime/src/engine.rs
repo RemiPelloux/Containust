@@ -193,11 +193,11 @@ impl Engine {
                         kind: "component",
                         id: name.clone(),
                     })?;
-            let ports = published_ports(component, &composition.exposes)?;
+            let mappings = published_port_mappings(component, &composition.exposes)?;
             deployed.push(self.deploy_component(
                 component,
                 resolved_by_name.get(name.as_str()).copied(),
-                ports,
+                mappings,
             )?);
         }
         Ok(deployed)
@@ -208,43 +208,11 @@ impl Engine {
         &self,
         comp: &containust_compose::parser::ast::ComponentDecl,
         resolved_comp: Option<&containust_compose::resolver::ResolvedComponent>,
-        ports: Vec<u16>,
+        port_mappings: Vec<containust_common::types::PortMapping>,
     ) -> Result<DeployedComponent> {
         validate_runtime_component(comp)?;
-        let memory_bytes = parse_optional_memory(comp.memory.as_deref())?;
-        let cpu_shares = parse_optional_cpu(comp.cpu.as_deref())?;
-        let restart = parse_restart_policy(comp)?;
-        let healthcheck = comp
-            .healthcheck
-            .as_ref()
-            .map(|decl| parse_healthcheck_spec(&comp.name, decl))
-            .transpose()?;
-
         let image = resolve_deploy_image(self.data_dir(), self.offline, comp)?;
-        // User/PID ns use the pipe-synced spawn path; default remains off
-        // until the privileged offline gate validates opt-in (P11.2).
-        let mut namespaces = containust_core::namespace::NamespaceConfig::default();
-        if !ports.is_empty() {
-            // Published ports share the host network namespace (identity
-            // mapping), like `docker run --network host`. veth/NAT-based
-            // publishing is deferred — see docs/SUPPORT_POLICY.md.
-            namespaces.network = false;
-        }
-        let config = ContainerConfig {
-            name: comp.name.clone(),
-            image,
-            command: effective_command(comp),
-            env: resolved_comp.map_or_else(Vec::new, |r| r.env.clone()),
-            memory_bytes,
-            cpu_shares,
-            readonly_rootfs: comp.readonly.unwrap_or(true),
-            volumes: component_volumes(comp),
-            port: comp.port,
-            ports,
-            restart,
-            healthcheck,
-            namespaces,
-        };
+        let config = build_deploy_config(comp, resolved_comp, image, port_mappings)?;
 
         eprintln!("  Creating container '{}'...", comp.name);
         let id = self.backend.create(&config)?;
@@ -558,60 +526,123 @@ fn validate_runtime_component(
             ),
         });
     }
-    if component
-        .network
-        .as_deref()
-        .is_some_and(|mode| mode != "host")
-    {
-        return Err(ContainustError::Config {
-            message: format!(
-                "component '{}' requests unsupported network mode",
-                component.name
-            ),
-        });
+    if let Some(mode) = component.network.as_deref() {
+        let trimmed = mode.trim();
+        if trimmed.is_empty() {
+            return Err(ContainustError::Config {
+                message: format!("component '{}' has an empty network name", component.name),
+            });
+        }
     }
     Ok(())
 }
 
 /// Merges a component's `ports` list with `EXPOSE` statements targeting it.
 ///
-/// The runtime publishes ports identically on host and container; an
-/// `EXPOSE` with differing host and container ports fails closed.
+/// Supports host:container remapping. Duplicate host ports fail closed.
 ///
 /// # Errors
 ///
-/// Returns an error for host/container remapping, which is unsupported.
-fn published_ports(
+/// Returns an error when host ports collide.
+fn build_deploy_config(
+    comp: &containust_compose::parser::ast::ComponentDecl,
+    resolved_comp: Option<&containust_compose::resolver::ResolvedComponent>,
+    image: String,
+    port_mappings: Vec<containust_common::types::PortMapping>,
+) -> Result<ContainerConfig> {
+    let memory_bytes = parse_optional_memory(comp.memory.as_deref())?;
+    let cpu_shares = parse_optional_cpu(comp.cpu.as_deref())?;
+    let restart = parse_restart_policy(comp)?;
+    let healthcheck = comp
+        .healthcheck
+        .as_ref()
+        .map(|decl| parse_healthcheck_spec(&comp.name, decl))
+        .transpose()?;
+    let network = resolve_deploy_network(comp.network.as_deref(), &port_mappings);
+    let mut namespaces = containust_core::namespace::NamespaceConfig::default().with_user_and_pid();
+    namespaces.network = !network.is_host();
+    let network_name = match &network {
+        crate::network::NetworkMode::Host => "host".into(),
+        crate::network::NetworkMode::None => "none".into(),
+        crate::network::NetworkMode::Shared(name) => name.clone(),
+    };
+    Ok(ContainerConfig {
+        name: comp.name.clone(),
+        image,
+        command: effective_command(comp),
+        env: resolved_comp.map_or_else(Vec::new, |r| r.env.clone()),
+        memory_bytes,
+        cpu_shares,
+        readonly_rootfs: comp.readonly.unwrap_or(true),
+        volumes: component_volumes(comp),
+        port: comp.port,
+        ports: port_mappings.iter().map(|m| m.container).collect(),
+        port_mappings,
+        network: network_name,
+        restart,
+        healthcheck,
+        namespaces,
+    })
+}
+
+fn resolve_deploy_network(
+    declared: Option<&str>,
+    port_mappings: &[containust_common::types::PortMapping],
+) -> crate::network::NetworkMode {
+    let has_remap = port_mappings.iter().any(|m| m.is_remap());
+    // Back-compat: identity-only publishes with no explicit network → host.
+    let network = if declared.is_none() && !port_mappings.is_empty() && !has_remap {
+        crate::network::NetworkMode::Host
+    } else {
+        crate::network::NetworkMode::parse(declared)
+    };
+    if has_remap && network.is_host() {
+        return crate::network::NetworkMode::Shared("bridge".into());
+    }
+    network
+}
+
+fn published_port_mappings(
     comp: &containust_compose::parser::ast::ComponentDecl,
     exposes: &[containust_compose::parser::ast::ExposeDecl],
-) -> Result<Vec<u16>> {
-    let declared: std::collections::HashSet<u16> =
-        comp.port.iter().chain(comp.ports.iter()).copied().collect();
-    let mut ports = comp.ports.clone();
+) -> Result<Vec<containust_common::types::PortMapping>> {
+    use containust_common::types::PortMapping;
+    use std::collections::HashSet;
+
+    let declared: HashSet<u16> = comp.port.iter().chain(comp.ports.iter()).copied().collect();
+    let mut mappings: Vec<PortMapping> = comp
+        .ports
+        .iter()
+        .copied()
+        .map(PortMapping::identity)
+        .collect();
+    let mut host_ports: HashSet<u16> = mappings.iter().map(|m| m.host).collect();
+
     for expose in exposes {
         if !declared.contains(&expose.container_port) {
             continue;
         }
-        if expose.host_port != expose.container_port {
+        let mapping = PortMapping {
+            host: expose.host_port,
+            container: expose.container_port,
+        };
+        if !host_ports.insert(mapping.host) {
             return Err(ContainustError::Config {
                 message: format!(
-                    "EXPOSE {}:{} remaps host port {} to container port {}, which the \
-                     runtime does not support yet. Use `EXPOSE {}` (identity mapping) \
-                     or have the component listen on port {} directly",
-                    expose.host_port,
-                    expose.container_port,
-                    expose.host_port,
-                    expose.container_port,
-                    expose.container_port,
-                    expose.host_port
+                    "duplicate host port {} while publishing component '{}'",
+                    mapping.host, comp.name
                 ),
             });
         }
-        if !ports.contains(&expose.container_port) {
-            ports.push(expose.container_port);
+        mappings.retain(|m| m.container != mapping.container || m.host == mapping.host);
+        if !mappings
+            .iter()
+            .any(|m| m.host == mapping.host && m.container == mapping.container)
+        {
+            mappings.push(mapping);
         }
     }
-    Ok(ports)
+    Ok(mappings)
 }
 
 fn parse_restart_policy(
@@ -1030,7 +1061,7 @@ EXPOSE 3000"#,
     }
 
     #[test]
-    fn deploy_expose_remap_fails_closed() {
+    fn deploy_expose_remap_publishes_mapping() {
         let dir = tempfile::tempdir().expect("tempdir");
         let file = dir.path().join("remap.ctst");
         std::fs::write(
@@ -1045,9 +1076,48 @@ EXPOSE 80:8080"#,
         let state = Arc::new(FakeState::default());
         let engine = fake_engine(Arc::clone(&state), dir.path().join("data"), false);
 
-        let error = engine.deploy(&file).expect_err("remap unsupported");
-        assert!(error.to_string().contains("does not support"));
-        assert!(state.config.lock().expect("config lock").is_none());
+        let _ = engine.deploy(&file).expect("remap deploy");
+        let config = state
+            .config
+            .lock()
+            .expect("config lock")
+            .clone()
+            .expect("config captured");
+        assert_eq!(
+            config.port_mappings,
+            vec![containust_common::types::PortMapping {
+                host: 80,
+                container: 8080,
+            }]
+        );
+        assert!(config.namespaces.network);
+        assert_eq!(config.network, "bridge");
+    }
+
+    #[test]
+    fn deploy_named_network_keeps_shared_netns() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("named-net.ctst");
+        std::fs::write(
+            &file,
+            r#"COMPONENT web {
+    image = "file:///unused"
+    network = "backend"
+}"#,
+        )
+        .expect("write composition");
+        let state = Arc::new(FakeState::default());
+        let engine = fake_engine(Arc::clone(&state), dir.path().join("data"), false);
+
+        let _ = engine.deploy(&file).expect("named network deploy");
+        let config = state
+            .config
+            .lock()
+            .expect("config lock")
+            .clone()
+            .expect("config captured");
+        assert_eq!(config.network, "backend");
+        assert!(config.namespaces.network);
     }
 
     #[test]

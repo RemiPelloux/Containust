@@ -48,8 +48,12 @@ pub struct ContainerConfig {
     pub volumes: Vec<String>,
     /// Primary exposed port.
     pub port: Option<u16>,
-    /// Published container ports (host port equals container port).
+    /// Published container ports (legacy identity list; prefer `port_mappings`).
     pub ports: Vec<u16>,
+    /// Host→container port publishes (supports remapping).
+    pub port_mappings: Vec<containust_common::types::PortMapping>,
+    /// Network mode (`host`, `none`, `bridge`, or a custom name).
+    pub network: String,
     /// Restart policy applied when the process exits.
     pub restart: containust_common::types::RestartPolicy,
     /// Optional health probe configuration.
@@ -277,6 +281,8 @@ mod tests {
             volumes: vec![],
             port: Some(8080),
             ports: Vec::new(),
+            port_mappings: Vec::new(),
+            network: "bridge".into(),
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
@@ -298,6 +304,8 @@ mod tests {
             volumes: Vec::new(),
             port: None,
             ports: Vec::new(),
+            port_mappings: Vec::new(),
+            network: "bridge".into(),
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
@@ -322,6 +330,8 @@ mod tests {
             volumes: vec!["/host:/guest".into()],
             port: Some(3000),
             ports: Vec::new(),
+            port_mappings: Vec::new(),
+            network: "bridge".into(),
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),

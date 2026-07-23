@@ -198,7 +198,7 @@ jobs:
             cargo test -p containust-core --locked -- --ignored --test-threads=1
       - name: Privileged runtime spawn fixtures (root)
         run: |
-          sudo -E env "PATH=$PATH" "CONTAINUST_ENABLE_USER_PID_NS=1" \
+          sudo -E env "PATH=$PATH" \
             cargo test -p containust-runtime --locked --test spawn_user_pid -- --ignored --test-threads=1
       - name: Privileged offline gate (root)
         run: |

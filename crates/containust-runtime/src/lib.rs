@@ -10,7 +10,10 @@ pub mod events;
 pub mod exec;
 pub mod logs;
 pub mod metrics;
+pub mod network;
 pub mod observe;
+#[cfg(target_os = "linux")]
+pub mod port_forward;
 pub mod process;
 mod process_mounts;
 #[cfg(target_os = "linux")]

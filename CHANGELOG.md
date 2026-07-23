@@ -15,12 +15,17 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 - Operator guide [`docs/HowToUse.md`](docs/HowToUse.md) — install, first pull/run,
   everyday commands, ports, offline, troubleshooting.
 - Linux spawn path for **user + PID namespaces** (pipe-synced uid/gid maps and
-  post-`CLONE_NEWPID` double-fork so container init is PID 1).
+  post-`CLONE_NEWPID` double-fork so container init is PID 1); **default-on**.
+- **`EXPOSE host:container` remapping** on Linux (userspace TCP forwarder into
+  the container/shared netns) and on the VM backend (QEMU `hostfwd` remap).
+- **Named networks** (`host` / `none` / `bridge` / custom) with persisted
+  shared netns; peer names in `/etc/hosts` for `CONNECT` resolution.
+- State schema **4**: `port_mappings`, `network`, `forwarder_pids`.
 
 ### Changed
 
-- README, roadmap, support policy, and sprint tracker updated for post-`1.1.0`
-  status; Sprint 11 Wave 1 started (`1.2.0` track).
+- README, roadmap, support policy, and sprint tracker updated for Sprint 11
+  Waves 1–2 (`1.2.0` track).
 
 ## [1.1.0] — 2026-07-23
 

@@ -64,6 +64,9 @@ impl LinuxNativeBackend {
             volumes: config.volumes.clone(),
             rootfs_path: Some(rootfs.to_string_lossy().to_string()),
             ports: config.ports.clone(),
+            port_mappings: config.port_mappings.clone(),
+            network: config.network.clone(),
+            forwarder_pids: Vec::new(),
             restart: config.restart,
             healthcheck: config.healthcheck.clone(),
             health: config
@@ -159,6 +162,15 @@ impl ContainerBackend for LinuxNativeBackend {
                 // fails, keep the PID tracked so the orphan is not lost.
                 entry.state = containust_common::types::ContainerState::Failed;
                 return Ok(Err(fail_closed_after_cgroup_error(entry, pid, error)));
+            }
+            #[cfg(target_os = "linux")]
+            {
+                entry.forwarder_pids = start_entry_forwarders(&self.data_dir, entry, pid)?;
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = pid;
+                entry.forwarder_pids.clear();
             }
             entry.state = containust_common::types::ContainerState::Running;
             entry.pid = Some(pid);
@@ -378,18 +390,20 @@ impl LinuxNativeBackend {
             .map_err(|message| ContainustError::Config { message })?;
         let readonly_rootfs = entry.readonly_rootfs;
         let volumes = entry.volumes.clone();
-        let mut namespaces = containust_core::namespace::NamespaceConfig::default();
-        if std::env::var_os("CONTAINUST_ENABLE_USER_PID_NS").is_some() {
-            namespaces = namespaces.with_user_and_pid();
-        }
-        if !entry.ports.is_empty() {
-            // Published ports share the host network namespace (identity
-            // mapping) — see docs/SUPPORT_POLICY.md.
-            namespaces.network = false;
-        }
+        let mut namespaces =
+            containust_core::namespace::NamespaceConfig::default().with_user_and_pid();
+        let network = crate::network::NetworkMode::parse(Some(entry.network.as_str()));
+        namespaces.network = !network.is_host();
         let rootfs = match &entry.rootfs_path {
             Some(path) => PathBuf::from(path),
             None => prepare_rootfs(&self.data_dir, &image, id)?,
+        };
+        #[cfg(target_os = "linux")]
+        let join_netns = prepare_network_for_start(&self.data_dir, state, &network, &rootfs)?;
+        #[cfg(not(target_os = "linux"))]
+        let join_netns = {
+            let _ = (&network,);
+            None
         };
         if state.containers[index].rootfs_path.is_none() {
             state.containers[index].rootfs_path = Some(rootfs.to_string_lossy().into_owned());
@@ -405,6 +419,7 @@ impl LinuxNativeBackend {
             readonly_rootfs,
             volumes,
             namespaces,
+            join_netns,
             log_path: Some(crate::logs::log_path(&self.data_dir, id.as_str())),
         })
     }
@@ -423,6 +438,11 @@ impl LinuxNativeBackend {
             let is_running = entry.state == containust_common::types::ContainerState::Running;
             if let Some(pid) = entry.pid.filter(|_| is_running) {
                 terminate_process(pid, force);
+            }
+            #[cfg(target_os = "linux")]
+            {
+                crate::port_forward::stop_forwarders(&entry.forwarder_pids);
+                entry.forwarder_pids.clear();
             }
             entry.state = containust_common::types::ContainerState::Stopped;
             entry.pid = None;
@@ -622,6 +642,80 @@ fn fail_closed_after_cgroup_error(
     }
 }
 
+#[cfg(target_os = "linux")]
+fn prepare_network_for_start(
+    data_dir: &Path,
+    state: &crate::state::StateFile,
+    network: &crate::network::NetworkMode,
+    rootfs: &Path,
+) -> Result<Option<PathBuf>> {
+    let join_netns = match network.shared_name() {
+        Some(name) => Some(crate::network::ensure_shared_netns(data_dir, name)?),
+        None => None,
+    };
+    if let Some(name) = network.shared_name() {
+        let peers: Vec<String> = state
+            .containers
+            .iter()
+            .filter(|c| c.network == name)
+            .map(|c| c.name.clone())
+            .collect();
+        crate::network::write_container_hosts(rootfs, &peers)?;
+    }
+    Ok(join_netns)
+}
+
+/// Starts userspace forwarders when the container is not on the host network.
+#[cfg(target_os = "linux")]
+fn start_entry_forwarders(
+    data_dir: &Path,
+    entry: &crate::state::StateEntry,
+    pid: u32,
+) -> Result<Vec<u32>> {
+    if entry.port_mappings.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mode = crate::network::NetworkMode::parse(Some(entry.network.as_str()));
+    if mode.is_host() {
+        return Ok(Vec::new());
+    }
+    let netns = if let Some(name) = mode.shared_name() {
+        crate::network::ensure_shared_netns(data_dir, name)?
+    } else {
+        persist_proc_netns(data_dir, entry.id.as_str(), pid)?
+    };
+    crate::port_forward::start_forwarders(&netns, &entry.port_mappings)
+}
+
+#[cfg(target_os = "linux")]
+fn persist_proc_netns(data_dir: &Path, container_id: &str, pid: u32) -> Result<PathBuf> {
+    let path = data_dir.join("networks").join(container_id).join("ns");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|source| ContainustError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let _ = std::fs::File::create(&path).map_err(|source| ContainustError::Io {
+        path: path.clone(),
+        source,
+    })?;
+    let src = format!("/proc/{pid}/ns/net");
+    let status = std::process::Command::new("mount")
+        .args(["--bind", &src, &path.to_string_lossy()])
+        .status()
+        .map_err(|source| ContainustError::Io {
+            path: PathBuf::from("mount"),
+            source,
+        })?;
+    if !status.success() {
+        return Err(ContainustError::Config {
+            message: format!("failed to bind-mount {src} for port forwarding"),
+        });
+    }
+    Ok(path)
+}
+
 /// Extracts a tar archive into a target directory with path-escape rejection.
 fn extract_tar(archive: &std::path::Path, dst: &std::path::Path) -> Result<()> {
     containust_image::extract::safe_extract_archive(archive, dst)
@@ -785,6 +879,9 @@ mod tests {
                     .into_owned(),
             ),
             ports: Vec::new(),
+            port_mappings: Vec::new(),
+            network: "bridge".into(),
+            forwarder_pids: Vec::new(),
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             health: None,
@@ -1086,6 +1183,8 @@ mod tests {
             volumes: Vec::new(),
             port: None,
             ports: Vec::new(),
+            port_mappings: Vec::new(),
+            network: "bridge".into(),
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),

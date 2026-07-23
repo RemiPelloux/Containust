@@ -37,12 +37,13 @@ fn pseudo_mounts() -> [PseudoMount; 6] {
             MsFlags::MS_NOSUID | MsFlags::MS_STRICTATIME,
             Some("mode=755,size=65536k"),
         ),
+        // Avoid `gid=5` — unmapped in single-UID user namespaces (range 1).
         (
             "/dev/pts",
             "devpts",
             "devpts",
             MsFlags::MS_NOSUID | MsFlags::MS_NOEXEC,
-            Some("newinstance,ptmxmode=0666,mode=0620,gid=5"),
+            Some("newinstance,ptmxmode=0666,mode=0620"),
         ),
         (
             "/dev/shm",
@@ -68,8 +69,15 @@ pub fn mount_pseudo_filesystems() -> std::io::Result<()> {
 
     for (path, src, fstype, flags, opts) in pseudo_mounts() {
         let _ = std::fs::create_dir_all(path);
-        mount(Some(src), path, Some(fstype), flags, opts)
-            .map_err(|e| std::io::Error::other(format!("mount {path} failed: {e}")))?;
+        if let Err(err) = mount(Some(src), path, Some(fstype), flags, opts) {
+            // `/dev/pts` is optional for non-TTY workloads and is the most
+            // common failure inside single-UID user namespaces.
+            if path == "/dev/pts" {
+                tracing::warn!(error = %err, "optional mount /dev/pts skipped");
+                continue;
+            }
+            return Err(std::io::Error::other(format!("mount {path} failed: {err}")));
+        }
     }
 
     for dev in &[

@@ -217,6 +217,32 @@ impl fmt::Display for HealthState {
     }
 }
 
+/// Host-to-container port publish mapping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PortMapping {
+    /// Port bound on the host.
+    pub host: u16,
+    /// Port the container process listens on.
+    pub container: u16,
+}
+
+impl PortMapping {
+    /// Identity mapping (host port equals container port).
+    #[must_use]
+    pub const fn identity(port: u16) -> Self {
+        Self {
+            host: port,
+            container: port,
+        }
+    }
+
+    /// Returns true when host and container ports differ.
+    #[must_use]
+    pub const fn is_remap(self) -> bool {
+        self.host != self.container
+    }
+}
+
 /// Persistent health probe bookkeeping for one container.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HealthRecord {
@@ -330,5 +356,16 @@ mod tests {
         let json = serde_json::to_string(&state).expect("serialize");
         let back: ContainerState = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(state, back);
+    }
+
+    #[test]
+    fn port_mapping_identity_and_remap() {
+        let id = PortMapping::identity(8080);
+        assert!(!id.is_remap());
+        let remap = PortMapping {
+            host: 8080,
+            container: 80,
+        };
+        assert!(remap.is_remap());
     }
 }

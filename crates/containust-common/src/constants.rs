@@ -91,7 +91,7 @@ pub const CTST_EXTENSION: &str = ".ctst";
 /// Current `state.json` schema version.
 ///
 /// Older schemas are migrated on load; newer schemas are rejected (fail closed).
-pub const STATE_SCHEMA_VERSION: u32 = 3;
+pub const STATE_SCHEMA_VERSION: u32 = 4;
 
 /// SHA-256 digest length in hex characters.
 pub const SHA256_HEX_LENGTH: usize = 64;
@@ -113,6 +113,6 @@ mod tests {
     fn state_schema_version_matches_runtime_expectation() {
         // Keep in sync with docs/VERSIONING.md (schema 3: adds ports,
         // restart policy, and healthcheck fields to container entries).
-        assert_eq!(STATE_SCHEMA_VERSION, 3);
+        assert_eq!(STATE_SCHEMA_VERSION, 4);
     }
 }
