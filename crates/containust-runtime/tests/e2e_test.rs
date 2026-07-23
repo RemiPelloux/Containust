@@ -378,6 +378,11 @@ fn pipeline_state_persistence_roundtrip() {
             volumes: Vec::new(),
             rootfs_path: None,
             log_path: None,
+            ports: Vec::new(),
+            restart: containust_common::types::RestartPolicy::default(),
+            healthcheck: None,
+            health: None,
+            restart_count: 0,
             created_at: "2026-01-01T00:00:00Z".into(),
         }],
         ..containust_runtime::state::StateFile::default()
@@ -428,6 +433,11 @@ fn pipeline_state_all_lifecycle_states() {
                 volumes: Vec::new(),
                 rootfs_path: None,
                 log_path: None,
+                ports: Vec::new(),
+                restart: containust_common::types::RestartPolicy::default(),
+                healthcheck: None,
+                health: None,
+                restart_count: 0,
                 created_at: "2026-01-01T00:00:00Z".into(),
             })
             .collect(),

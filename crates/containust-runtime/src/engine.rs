@@ -193,9 +193,12 @@ impl Engine {
                         kind: "component",
                         id: name.clone(),
                     })?;
-            deployed.push(
-                self.deploy_component(component, resolved_by_name.get(name.as_str()).copied())?,
-            );
+            let ports = published_ports(component, &composition.exposes)?;
+            deployed.push(self.deploy_component(
+                component,
+                resolved_by_name.get(name.as_str()).copied(),
+                ports,
+            )?);
         }
         Ok(deployed)
     }
@@ -205,12 +208,26 @@ impl Engine {
         &self,
         comp: &containust_compose::parser::ast::ComponentDecl,
         resolved_comp: Option<&containust_compose::resolver::ResolvedComponent>,
+        ports: Vec<u16>,
     ) -> Result<DeployedComponent> {
         validate_runtime_component(comp)?;
         let memory_bytes = parse_optional_memory(comp.memory.as_deref())?;
         let cpu_shares = parse_optional_cpu(comp.cpu.as_deref())?;
+        let restart = parse_restart_policy(comp)?;
+        let healthcheck = comp
+            .healthcheck
+            .as_ref()
+            .map(|decl| parse_healthcheck_spec(&comp.name, decl))
+            .transpose()?;
 
         let image = resolve_deploy_image(self.data_dir(), self.offline, comp)?;
+        let mut namespaces = containust_core::namespace::NamespaceConfig::default();
+        if !ports.is_empty() {
+            // Published ports share the host network namespace (identity
+            // mapping), like `docker run --network host`. veth/NAT-based
+            // publishing is deferred — see docs/SUPPORT_POLICY.md.
+            namespaces.network = false;
+        }
         let config = ContainerConfig {
             name: comp.name.clone(),
             image,
@@ -221,7 +238,10 @@ impl Engine {
             readonly_rootfs: comp.readonly.unwrap_or(true),
             volumes: component_volumes(comp),
             port: comp.port,
-            namespaces: containust_core::namespace::NamespaceConfig::default(),
+            ports,
+            restart,
+            healthcheck,
+            namespaces,
         };
 
         eprintln!("  Creating container '{}'...", comp.name);
@@ -523,9 +543,6 @@ fn validate_runtime_component(
         (component.workdir.is_some(), "workdir"),
         (component.user.is_some(), "user"),
         (component.hostname.is_some(), "hostname"),
-        (component.restart.is_some(), "restart"),
-        (component.healthcheck.is_some(), "healthcheck"),
-        (!component.ports.is_empty(), "ports"),
     ]
     .into_iter()
     .filter_map(|(present, name)| present.then_some(name))
@@ -552,6 +569,120 @@ fn validate_runtime_component(
         });
     }
     Ok(())
+}
+
+/// Merges a component's `ports` list with `EXPOSE` statements targeting it.
+///
+/// The runtime publishes ports identically on host and container; an
+/// `EXPOSE` with differing host and container ports fails closed.
+///
+/// # Errors
+///
+/// Returns an error for host/container remapping, which is unsupported.
+fn published_ports(
+    comp: &containust_compose::parser::ast::ComponentDecl,
+    exposes: &[containust_compose::parser::ast::ExposeDecl],
+) -> Result<Vec<u16>> {
+    let declared: std::collections::HashSet<u16> =
+        comp.port.iter().chain(comp.ports.iter()).copied().collect();
+    let mut ports = comp.ports.clone();
+    for expose in exposes {
+        if !declared.contains(&expose.container_port) {
+            continue;
+        }
+        if expose.host_port != expose.container_port {
+            return Err(ContainustError::Config {
+                message: format!(
+                    "EXPOSE {}:{} remaps host port {} to container port {}, which the \
+                     runtime does not support yet. Use `EXPOSE {}` (identity mapping) \
+                     or have the component listen on port {} directly",
+                    expose.host_port,
+                    expose.container_port,
+                    expose.host_port,
+                    expose.container_port,
+                    expose.container_port,
+                    expose.host_port
+                ),
+            });
+        }
+        if !ports.contains(&expose.container_port) {
+            ports.push(expose.container_port);
+        }
+    }
+    Ok(ports)
+}
+
+fn parse_restart_policy(
+    component: &containust_compose::parser::ast::ComponentDecl,
+) -> Result<containust_common::types::RestartPolicy> {
+    component.restart.as_deref().map_or_else(
+        || Ok(containust_common::types::RestartPolicy::Never),
+        |value| {
+            containust_common::types::RestartPolicy::parse(value).map_err(|message| {
+                ContainustError::Config {
+                    message: format!("component '{}': {message}", component.name),
+                }
+            })
+        },
+    )
+}
+
+fn parse_healthcheck_spec(
+    component_name: &str,
+    decl: &containust_compose::parser::ast::HealthcheckDecl,
+) -> Result<containust_common::types::HealthcheckSpec> {
+    if decl.command.is_empty() {
+        return Err(ContainustError::Config {
+            message: format!("component '{component_name}': healthcheck command is empty"),
+        });
+    }
+    let defaults = containust_common::types::HealthcheckSpec::default();
+    Ok(containust_common::types::HealthcheckSpec {
+        command: decl.command.clone(),
+        interval_secs: parse_healthcheck_duration(
+            component_name,
+            decl.interval.as_deref(),
+            defaults.interval_secs,
+        )?,
+        timeout_secs: parse_healthcheck_duration(
+            component_name,
+            decl.timeout.as_deref(),
+            defaults.timeout_secs,
+        )?,
+        retries: decl.retries.unwrap_or(defaults.retries),
+        start_period_secs: parse_healthcheck_duration(
+            component_name,
+            decl.start_period.as_deref(),
+            defaults.start_period_secs,
+        )?,
+    })
+}
+
+fn parse_healthcheck_duration(
+    component_name: &str,
+    value: Option<&str>,
+    default_secs: u64,
+) -> Result<u64> {
+    let Some(text) = value else {
+        return Ok(default_secs);
+    };
+    parse_duration_secs(text).ok_or_else(|| ContainustError::Config {
+        message: format!(
+            "component '{component_name}': invalid healthcheck duration '{text}' \
+             (expected e.g. \"30s\", \"1m\", \"1h\")"
+        ),
+    })
+}
+
+/// Parses `"30s"`, `"5m"`, `"1h"`, or a plain seconds integer.
+fn parse_duration_secs(text: &str) -> Option<u64> {
+    const UNITS: [(char, u64); 3] = [('h', 3600), ('m', 60), ('s', 1)];
+    let text = text.trim();
+    let (digits, multiplier) = UNITS
+        .iter()
+        .find_map(|&(suffix, mult)| text.strip_suffix(suffix).map(|digits| (digits, mult)))
+        .unwrap_or((text, 1));
+    digits.trim().parse::<u64>().ok().map(|n| n * multiplier)
 }
 
 fn parse_optional_memory(value: Option<&str>) -> Result<Option<u64>> {
@@ -787,12 +918,12 @@ mod tests {
     #[test]
     fn deploy_rejects_unsupported_runtime_property() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let file = dir.path().join("health.ctst");
+        let file = dir.path().join("workdir.ctst");
         std::fs::write(
             &file,
             r#"COMPONENT app {
     image = "file:///unused"
-    healthcheck = { command = ["true"] }
+    workdir = "/srv"
 }"#,
         )
         .expect("write composition");
@@ -800,8 +931,142 @@ mod tests {
         let engine = fake_engine(Arc::clone(&state), dir.path().join("data"), false);
 
         let error = engine.deploy(&file).expect_err("unsupported property");
-        assert!(error.to_string().contains("healthcheck"));
+        assert!(error.to_string().contains("workdir"));
         assert!(state.config.lock().expect("config lock").is_none());
+    }
+
+    #[test]
+    fn deploy_passes_ports_restart_and_healthcheck() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("policies.ctst");
+        std::fs::write(
+            &file,
+            r#"COMPONENT app {
+    image = "file:///unused"
+    ports = [8080, 9090]
+    restart = "on-failure"
+    healthcheck = {
+        command = ["curl", "-f", "http://localhost:8080/healthz"]
+        interval = "10s"
+        timeout = "3s"
+        retries = 5
+        start_period = "1m"
+    }
+}"#,
+        )
+        .expect("write composition");
+        let state = Arc::new(FakeState::default());
+        let engine = fake_engine(Arc::clone(&state), dir.path().join("data"), false);
+
+        let _ = engine.deploy(&file).expect("deploy");
+        let config = state
+            .config
+            .lock()
+            .expect("config lock")
+            .clone()
+            .expect("config captured");
+
+        assert_eq!(config.ports, vec![8080, 9090]);
+        assert_eq!(
+            config.restart,
+            containust_common::types::RestartPolicy::OnFailure
+        );
+        let healthcheck = config.healthcheck.expect("healthcheck spec");
+        assert_eq!(healthcheck.command[0], "curl");
+        assert_eq!(healthcheck.interval_secs, 10);
+        assert_eq!(healthcheck.timeout_secs, 3);
+        assert_eq!(healthcheck.retries, 5);
+        assert_eq!(healthcheck.start_period_secs, 60);
+    }
+
+    #[test]
+    fn deploy_rejects_invalid_restart_policy_value() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("restart.ctst");
+        std::fs::write(
+            &file,
+            r#"COMPONENT app {
+    image = "file:///unused"
+    restart = "sometimes"
+}"#,
+        )
+        .expect("write composition");
+        let state = Arc::new(FakeState::default());
+        let engine = fake_engine(Arc::clone(&state), dir.path().join("data"), false);
+
+        let error = engine.deploy(&file).expect_err("invalid restart");
+        assert!(error.to_string().contains("restart policy"));
+        assert!(state.config.lock().expect("config lock").is_none());
+    }
+
+    #[test]
+    fn deploy_expose_identity_publishes_port() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("expose.ctst");
+        std::fs::write(
+            &file,
+            r#"COMPONENT web {
+    image = "file:///unused"
+    port = 3000
+}
+EXPOSE 3000"#,
+        )
+        .expect("write composition");
+        let state = Arc::new(FakeState::default());
+        let engine = fake_engine(Arc::clone(&state), dir.path().join("data"), false);
+
+        let _ = engine.deploy(&file).expect("deploy");
+        let config = state
+            .config
+            .lock()
+            .expect("config lock")
+            .clone()
+            .expect("config captured");
+        assert_eq!(config.ports, vec![3000]);
+        // Published ports share the host network namespace on Linux.
+        assert!(!config.namespaces.network);
+    }
+
+    #[test]
+    fn deploy_expose_remap_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("remap.ctst");
+        std::fs::write(
+            &file,
+            r#"COMPONENT web {
+    image = "file:///unused"
+    port = 8080
+}
+EXPOSE 80:8080"#,
+        )
+        .expect("write composition");
+        let state = Arc::new(FakeState::default());
+        let engine = fake_engine(Arc::clone(&state), dir.path().join("data"), false);
+
+        let error = engine.deploy(&file).expect_err("remap unsupported");
+        assert!(error.to_string().contains("does not support"));
+        assert!(state.config.lock().expect("config lock").is_none());
+    }
+
+    #[test]
+    fn deploy_healthcheck_example_no_longer_errors() {
+        let example =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/healthcheck_example.ctst");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = Arc::new(FakeState::default());
+        let engine = fake_engine(Arc::clone(&state), dir.path().join("data"), false);
+
+        let deployed = engine.deploy(&example).expect("example deploys");
+        assert!(!deployed.is_empty());
+    }
+
+    #[test]
+    fn parse_duration_secs_supports_units() {
+        assert_eq!(parse_duration_secs("30s"), Some(30));
+        assert_eq!(parse_duration_secs("5m"), Some(300));
+        assert_eq!(parse_duration_secs("1h"), Some(3600));
+        assert_eq!(parse_duration_secs("45"), Some(45));
+        assert_eq!(parse_duration_secs("abc"), None);
     }
 
     #[test]

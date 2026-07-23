@@ -42,6 +42,45 @@ impl LinuxNativeBackend {
             project_id,
         }
     }
+
+    /// Builds the initial persistent record for a freshly created container.
+    fn new_state_entry(
+        &self,
+        id: &ContainerId,
+        config: &ContainerConfig,
+        rootfs: &Path,
+    ) -> crate::state::StateEntry {
+        crate::state::StateEntry {
+            id: id.clone(),
+            name: config.name.clone(),
+            state: containust_common::types::ContainerState::Created,
+            pid: None,
+            image: config.image.clone(),
+            command: config.command.clone(),
+            env: containust_common::redact::redact_env(&config.env),
+            memory_bytes: config.memory_bytes,
+            cpu_shares: config.cpu_shares,
+            readonly_rootfs: config.readonly_rootfs,
+            volumes: config.volumes.clone(),
+            rootfs_path: Some(rootfs.to_string_lossy().to_string()),
+            ports: config.ports.clone(),
+            restart: config.restart,
+            healthcheck: config.healthcheck.clone(),
+            health: config
+                .healthcheck
+                .as_ref()
+                .map(|_| containust_common::types::HealthRecord::default()),
+            log_path: Some(
+                self.data_dir
+                    .join("logs")
+                    .join(format!("{id}.log"))
+                    .to_string_lossy()
+                    .to_string(),
+            ),
+            restart_count: 0,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        }
+    }
 }
 
 impl Default for LinuxNativeBackend {
@@ -72,28 +111,9 @@ impl ContainerBackend for LinuxNativeBackend {
             config.namespaces.validate_for_spawn()?;
             validate_resource_limits(config.memory_bytes, config.cpu_shares)?;
             let rootfs = prepare_rootfs(&self.data_dir, &config.image, &id)?;
-            state.containers.push(crate::state::StateEntry {
-                id: id.clone(),
-                name: config.name.clone(),
-                state: containust_common::types::ContainerState::Created,
-                pid: None,
-                image: config.image.clone(),
-                command: config.command.clone(),
-                env: containust_common::redact::redact_env(&config.env),
-                memory_bytes: config.memory_bytes,
-                cpu_shares: config.cpu_shares,
-                readonly_rootfs: config.readonly_rootfs,
-                volumes: config.volumes.clone(),
-                rootfs_path: Some(rootfs.to_string_lossy().to_string()),
-                log_path: Some(
-                    self.data_dir
-                        .join("logs")
-                        .join(format!("{id}.log"))
-                        .to_string_lossy()
-                        .to_string(),
-                ),
-                created_at: chrono::Utc::now().to_rfc3339(),
-            });
+            state
+                .containers
+                .push(self.new_state_entry(&id, config, &rootfs));
             Ok(rootfs)
         });
         let rootfs = match store_result {
@@ -230,10 +250,13 @@ impl ContainerBackend for LinuxNativeBackend {
             })?;
         let orphaned_rootfs = cleanup_orphaned_rootfs(&self.data_dir, &tracked_rootfs)?;
         let orphaned_cgroups = cleanup_orphaned_cgroups(&self.project_id, &tracked_ids);
+        let policies = crate::supervise::enforce_policies(&self.state_store, self)?;
         Ok(ReconciliationReport {
             stale_processes,
             orphaned_rootfs,
             orphaned_cgroups,
+            restarted: policies.restarted,
+            unhealthy: policies.unhealthy,
         })
     }
 
@@ -751,6 +774,11 @@ mod tests {
                     .to_string_lossy()
                     .into_owned(),
             ),
+            ports: Vec::new(),
+            restart: containust_common::types::RestartPolicy::default(),
+            healthcheck: None,
+            health: None,
+            restart_count: 0,
             created_at: "2026-01-01T00:00:00Z".into(),
         }
     }
@@ -1047,6 +1075,9 @@ mod tests {
             readonly_rootfs: true,
             volumes: Vec::new(),
             port: None,
+            ports: Vec::new(),
+            restart: containust_common::types::RestartPolicy::default(),
+            healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
         };
 

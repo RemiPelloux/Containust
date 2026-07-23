@@ -31,9 +31,13 @@ impl CgroupManager {
     ///
     /// Returns an error if the cgroup directory cannot be created.
     pub fn create(container_id: &str) -> Result<Self> {
-        let path = PathBuf::from(containust_common::constants::CGROUP_V2_PATH)
-            .join("containust")
-            .join(container_id);
+        let parent = PathBuf::from(containust_common::constants::CGROUP_V2_PATH).join("containust");
+        let path = parent.join(container_id);
+        std::fs::create_dir_all(&parent).map_err(|e| ContainustError::Io {
+            path: parent.clone(),
+            source: e,
+        })?;
+        enable_subtree_controllers(&parent);
         std::fs::create_dir_all(&path).map_err(|e| ContainustError::Io {
             path: path.clone(),
             source: e,
@@ -84,13 +88,35 @@ impl CgroupManager {
     /// Returns an error if the cgroup directory cannot be removed.
     pub fn destroy(&self) -> Result<()> {
         if self.path.exists() {
-            std::fs::remove_dir_all(&self.path).map_err(|e| ContainustError::Io {
+            // Cgroup directories must be removed with plain `rmdir`;
+            // `remove_dir_all` tries to unlink kernel-owned control files
+            // first, which cgroupfs rejects with EPERM.
+            std::fs::remove_dir(&self.path).map_err(|e| ContainustError::Io {
                 path: self.path.clone(),
                 source: e,
             })?;
         }
         tracing::info!(path = %self.path.display(), "cgroup destroyed");
         Ok(())
+    }
+}
+
+/// Enables the cpu, memory, and io controllers for child cgroups.
+///
+/// Best effort: a controller missing from the kernel or the parent cgroup
+/// is logged, and any limit that later requires it fails closed in
+/// [`CgroupManager::apply_limits`].
+#[cfg(target_os = "linux")]
+fn enable_subtree_controllers(parent: &std::path::Path) {
+    let control = parent.join("cgroup.subtree_control");
+    for controller in ["+cpu", "+memory", "+io"] {
+        if let Err(error) = std::fs::write(&control, controller) {
+            tracing::warn!(
+                controller,
+                %error,
+                "cgroup controller unavailable; limits requiring it will fail closed"
+            );
+        }
     }
 }
 
@@ -204,10 +230,14 @@ mod tests {
         let limits = ResourceLimits {
             cpu_shares: Some(256),
             memory_bytes: Some(268_435_456),
-            io_weight: Some(50),
+            // `io.weight` only exists on kernels with BFQ/iocost; probed below
+            // so the fixture is portable across CI kernels.
+            io_weight: None,
         };
-        let result = mgr.apply_limits(&limits);
-        assert!(result.is_ok());
+        mgr.apply_limits(&limits).expect("apply cpu+memory limits");
+        if mgr.path.join("io.weight").exists() {
+            io::set_io_weight(&mgr.path, 50).expect("apply io weight");
+        }
         mgr.destroy().expect("cleanup");
     }
 }

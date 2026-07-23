@@ -93,20 +93,29 @@ pub fn write_uid_gid_map(_pid: u32, _container_id: u32, _host_id: u32, _range: u
 
 #[cfg(test)]
 mod tests {
+    // All fixtures in this module exercise Linux-only syscalls.
+    #[cfg(target_os = "linux")]
     use super::*;
 
+    // User-namespace fixtures run in a forked child: `unshare(CLONE_NEWUSER)`
+    // requires a single-threaded process and the test harness is not one.
+
+    #[cfg(target_os = "linux")]
     #[test]
     #[ignore = "requires root privileges"]
     fn create_user_namespace_succeeds_with_root() {
-        let result = create_user_namespace();
-        assert!(result.is_ok());
+        let ok = crate::testutil::forked_probe_succeeds(|| create_user_namespace().is_ok());
+        assert!(ok, "unshare(CLONE_NEWUSER) failed in single-threaded child");
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     #[ignore = "requires root privileges and proc filesystem"]
     fn write_uid_gid_map_succeeds_with_root() {
-        let result = write_uid_gid_map(0, 0, 1000, 65536);
-        assert!(result.is_ok());
+        let ok = crate::testutil::forked_probe_succeeds(|| {
+            create_user_namespace().is_ok() && write_uid_gid_map(0, 0, 1000, 65536).is_ok()
+        });
+        assert!(ok, "uid/gid map write failed after user namespace creation");
     }
 
     #[cfg(target_os = "linux")]

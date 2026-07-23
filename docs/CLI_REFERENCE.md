@@ -232,7 +232,15 @@ Inherits all [global options](#global-options).
 3. **Topological sort** to determine startup order. Components with no dependencies start in parallel.
 4. **Create containers** — set up namespaces (PID, mount, network, IPC, UTS), cgroups v2 resource limits, and OverlayFS mounts.
 5. **Start processes** in the correct order, injecting connection environment variables from `CONNECT` wiring.
-6. **Update the state file** with container metadata.
+6. **Update the state file** with container metadata, including restart policy, healthcheck spec, and published ports.
+
+### Ports, Restart Policies, and Healthchecks
+
+- **Published ports** (`ports = [8080]` or top-level `EXPOSE 8080`) use identity mapping — the host port equals the container port. `EXPOSE host:container` with differing ports is rejected at deploy. On Linux, components with published ports share the host network namespace; on macOS/Windows, ports become QEMU `hostfwd` rules bound at VM boot. See [SUPPORT_POLICY.md](SUPPORT_POLICY.md#port-publishing-ports--expose).
+- **Restart policies** (`restart = "never" | "on-failure" | "always"`) are enforced without a daemon: every `ctst ps` / `ctst run` reconciliation pass restarts eligible failed containers and increments their restart count.
+- **Healthchecks** run the configured `command` inside the container when a reconciliation pass finds the probe interval elapsed (after `start_period`). After `retries` consecutive failures the container is marked `unhealthy`, and its restart policy is applied (stop + restart, unless the policy is `never`).
+
+Because enforcement is reconciliation-driven (daemonless), probes and restarts happen when a `ctst` command runs — schedule `ctst ps` (cron/systemd timer) for continuous supervision.
 
 ### Startup Behavior
 

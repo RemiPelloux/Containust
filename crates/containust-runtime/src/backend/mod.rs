@@ -48,6 +48,12 @@ pub struct ContainerConfig {
     pub volumes: Vec<String>,
     /// Primary exposed port.
     pub port: Option<u16>,
+    /// Published container ports (host port equals container port).
+    pub ports: Vec<u16>,
+    /// Restart policy applied when the process exits.
+    pub restart: containust_common::types::RestartPolicy,
+    /// Optional health probe configuration.
+    pub healthcheck: Option<containust_common::types::HealthcheckSpec>,
     /// Namespace isolation policy applied at spawn.
     pub namespaces: containust_core::namespace::NamespaceConfig,
 }
@@ -78,6 +84,10 @@ pub struct ReconciliationReport {
     pub orphaned_rootfs: usize,
     /// Cgroup directories with no state entry.
     pub orphaned_cgroups: usize,
+    /// Containers restarted by their restart policy.
+    pub restarted: usize,
+    /// Containers marked unhealthy by their health probe.
+    pub unhealthy: usize,
 }
 
 /// Platform-agnostic container backend.
@@ -266,6 +276,9 @@ mod tests {
             readonly_rootfs: true,
             volumes: vec![],
             port: Some(8080),
+            ports: Vec::new(),
+            restart: containust_common::types::RestartPolicy::default(),
+            healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
         };
         assert_eq!(cfg.name, "test");
@@ -284,6 +297,9 @@ mod tests {
             readonly_rootfs: false,
             volumes: Vec::new(),
             port: None,
+            ports: Vec::new(),
+            restart: containust_common::types::RestartPolicy::default(),
+            healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
         };
         assert_eq!(cfg.name, "minimal");
@@ -305,6 +321,9 @@ mod tests {
             readonly_rootfs: false,
             volumes: vec!["/host:/guest".into()],
             port: Some(3000),
+            ports: Vec::new(),
+            restart: containust_common::types::RestartPolicy::default(),
+            healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
         };
         let cloned = cfg.clone();

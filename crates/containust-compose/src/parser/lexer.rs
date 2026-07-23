@@ -27,6 +27,8 @@ pub enum Token {
     From,
     /// `CONNECT` keyword.
     Connect,
+    /// `EXPOSE` keyword.
+    Expose,
     /// Boolean literal `true`.
     True,
     /// Boolean literal `false`.
@@ -51,6 +53,8 @@ pub enum Token {
     Equals,
     /// `,` comma separator.
     Comma,
+    /// `:` port mapping separator.
+    Colon,
 }
 
 /// Skippable items: whitespace or line comments.
@@ -127,6 +131,7 @@ fn identifier_or_keyword(input: &str) -> IResult<&str, Token> {
         "COMPONENT" => Token::Component,
         "FROM" => Token::From,
         "CONNECT" => Token::Connect,
+        "EXPOSE" => Token::Expose,
         "true" => Token::True,
         "false" => Token::False,
         _ => Token::Identifier(word),
@@ -144,6 +149,7 @@ fn symbol(input: &str) -> IResult<&str, Token> {
         value(Token::BracketClose, char(']')),
         value(Token::Equals, char('=')),
         value(Token::Comma, char(',')),
+        value(Token::Colon, char(':')),
     ))
     .parse(input)
 }

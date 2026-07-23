@@ -49,6 +49,21 @@ pub struct StateEntry {
     /// Host-to-container bind mounts.
     #[serde(default)]
     pub volumes: Vec<String>,
+    /// Published container ports (host port equals container port).
+    #[serde(default)]
+    pub ports: Vec<u16>,
+    /// Restart policy applied when the process exits.
+    #[serde(default)]
+    pub restart: containust_common::types::RestartPolicy,
+    /// Optional health probe configuration.
+    #[serde(default)]
+    pub healthcheck: Option<containust_common::types::HealthcheckSpec>,
+    /// Health probe bookkeeping (present once probes are configured).
+    #[serde(default)]
+    pub health: Option<containust_common::types::HealthRecord>,
+    /// Number of automatic restarts performed by the restart policy.
+    #[serde(default)]
+    pub restart_count: u32,
     /// Rootfs path on disk.
     pub rootfs_path: Option<String>,
     /// Log file path.
@@ -380,6 +395,11 @@ mod tests {
             volumes: Vec::new(),
             rootfs_path: None,
             log_path: None,
+            ports: Vec::new(),
+            restart: containust_common::types::RestartPolicy::default(),
+            healthcheck: None,
+            health: None,
+            restart_count: 0,
             created_at: "2026-01-01T00:00:00Z".into(),
         }
     }
@@ -427,6 +447,11 @@ mod tests {
                 volumes: Vec::new(),
                 rootfs_path: Some("/var/lib/containust/rootfs/test-1".into()),
                 log_path: None,
+                ports: Vec::new(),
+                restart: containust_common::types::RestartPolicy::default(),
+                healthcheck: None,
+                health: None,
+                restart_count: 0,
                 created_at: "2026-01-01T00:00:00Z".into(),
             }],
             ..StateFile::default()
@@ -476,41 +501,11 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("state.json");
 
+        let mut web = test_entry("web");
+        web.state = ContainerState::Running;
+        web.pid = Some(100);
         let state = StateFile {
-            containers: vec![
-                StateEntry {
-                    id: ContainerId::new("c1"),
-                    name: "web".into(),
-                    state: ContainerState::Running,
-                    pid: Some(100),
-                    image: "web:1.0".into(),
-                    command: Vec::new(),
-                    env: Vec::new(),
-                    memory_bytes: None,
-                    cpu_shares: None,
-                    readonly_rootfs: true,
-                    volumes: Vec::new(),
-                    rootfs_path: None,
-                    log_path: None,
-                    created_at: "2026-01-01T00:00:00Z".into(),
-                },
-                StateEntry {
-                    id: ContainerId::new("c2"),
-                    name: "db".into(),
-                    state: ContainerState::Stopped,
-                    pid: None,
-                    image: "postgres:15".into(),
-                    command: Vec::new(),
-                    env: Vec::new(),
-                    memory_bytes: None,
-                    cpu_shares: None,
-                    readonly_rootfs: true,
-                    volumes: Vec::new(),
-                    rootfs_path: None,
-                    log_path: None,
-                    created_at: "2026-01-01T00:00:00Z".into(),
-                },
-            ],
+            containers: vec![web, test_entry("db")],
             ..StateFile::default()
         };
 
@@ -552,7 +547,7 @@ mod tests {
         assert_eq!(migrated.schema_version, CURRENT_STATE_SCHEMA);
         save_state(&path, &migrated).expect("persist migration");
         let persisted = std::fs::read_to_string(path).expect("read persisted");
-        assert!(persisted.contains("\"schema_version\": 2"));
+        assert!(persisted.contains("\"schema_version\": 3"));
     }
 
     #[test]

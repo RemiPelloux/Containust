@@ -14,4 +14,5 @@ pub mod observe;
 pub mod process;
 mod process_mounts;
 pub mod state;
+pub mod supervise;
 pub mod volume;

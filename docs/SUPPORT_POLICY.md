@@ -1,6 +1,6 @@
-# Support Policy (pre-GA draft)
+# Support Policy
 
-Draft for Sprint 9 / G9.3. Binding at `1.0.0`.
+Binding since `1.0.0`. Updated for Sprint 10 (`1.1.0`).
 
 ## Supported platforms
 
@@ -18,6 +18,20 @@ See [`VERSIONING.md`](VERSIONING.md). Summary:
 - **`.ctst`**: additive keywords are MINOR; breaking syntax is MAJOR.
 - **`state.json`**: older schemas migrate; newer schemas fail closed.
 
+## Port publishing (`ports` / `EXPOSE`)
+
+Ports are published with identity mapping only (host port == container port).
+`EXPOSE host:container` with differing ports fails closed at deploy.
+
+| Platform | Publish path | Capability needs |
+|---|---|---|
+| Linux | Component with published ports shares the host network namespace (like `docker run --network host`); the process binds host ports directly | Root (or `CAP_NET_BIND_SERVICE` for ports < 1024) |
+| macOS / Windows | QEMU user-net `hostfwd` rules bound at VM boot; adding ports to a live VM requires `ctst vm stop` + redeploy | None (userspace) |
+
+veth/NAT-based publishing with host/container remapping on Linux is deferred
+(tracked for a later sprint). Components without published ports keep an
+isolated network namespace on Linux.
+
 ## Issue severity
 
 | Severity | Meaning | Response target (best effort) |
@@ -32,8 +46,12 @@ See [`VERSIONING.md`](VERSIONING.md). Summary:
 - Announce in `CHANGELOG.md` and docs at least one MINOR before removal.
 - Removals happen only in MAJOR releases after `1.0.0`.
 
-## Explicitly deferred (not supported at GA unless listed above)
+## Explicitly deferred (not supported unless listed above)
 
-- OCI registry auth / Hub pulls for arbitrary names
+- `EXPOSE` host/container port remapping on Linux (veth/NAT publish path)
 - Homebrew / deb / RPM / winget packages (see `PACKAGING.md`)
 - Code signing / notarization
+
+Shipped since GA (removed from this list): OCI registry pulls with auth
+(`ctst pull`, `1.1.0`), `ports` / `restart` / `healthcheck` enforcement
+(`1.1.0`).

@@ -11,7 +11,9 @@ use std::collections::BTreeMap;
 
 use containust_common::error::{ContainustError, Result};
 
-use self::ast::{ComponentDecl, CompositionFile, ConnectionDecl, HealthcheckDecl, ImportDecl};
+use self::ast::{
+    ComponentDecl, CompositionFile, ConnectionDecl, ExposeDecl, HealthcheckDecl, ImportDecl,
+};
 use self::lexer::Token;
 
 /// Cursor into a token stream for recursive-descent parsing.
@@ -102,9 +104,10 @@ fn parse_file(cursor: &mut TokenCursor<'_>) -> Result<CompositionFile> {
             Token::Import => file.imports.push(parse_import(cursor)?),
             Token::Component => file.components.push(parse_component(cursor)?),
             Token::Connect => file.connections.push(parse_connection(cursor)?),
+            Token::Expose => file.exposes.push(parse_expose(cursor)?),
             other => {
                 return Err(parse_err(format!(
-                    "expected IMPORT, COMPONENT, or CONNECT at top level, got {other:?}"
+                    "expected IMPORT, COMPONENT, CONNECT, or EXPOSE at top level, got {other:?}"
                 )));
             }
         }
@@ -297,6 +300,26 @@ fn parse_healthcheck(cursor: &mut TokenCursor<'_>) -> Result<HealthcheckDecl> {
     Ok(hc)
 }
 
+fn parse_expose(cursor: &mut TokenCursor<'_>) -> Result<ExposeDecl> {
+    cursor.expect_token(&Token::Expose)?;
+    let host_port = expect_port(cursor)?;
+    let container_port = if cursor.peek() == Some(&Token::Colon) {
+        let _ = cursor.advance();
+        expect_port(cursor)?
+    } else {
+        host_port
+    };
+    Ok(ExposeDecl {
+        host_port,
+        container_port,
+    })
+}
+
+fn expect_port(cursor: &mut TokenCursor<'_>) -> Result<u16> {
+    let val = cursor.expect_integer()?;
+    u16::try_from(val).map_err(|_| parse_err(format!("port value out of range: {val}")))
+}
+
 fn parse_connection(cursor: &mut TokenCursor<'_>) -> Result<ConnectionDecl> {
     cursor.expect_token(&Token::Connect)?;
     let from = cursor.expect_identifier()?;
@@ -487,6 +510,31 @@ CONNECT api -> db"#;
         assert_eq!(db.name, "db");
         assert_eq!(db.from_template.as_deref(), Some("pg"));
         assert_eq!(db.port, Some(5432));
+    }
+
+    #[test]
+    fn parse_expose_single_port_maps_identically() {
+        let input = r#"COMPONENT web { image = "web" port = 3000 }
+EXPOSE 3000"#;
+        let file = parse_ctst(input).expect("should parse");
+        assert_eq!(file.exposes.len(), 1);
+        assert_eq!(file.exposes[0].host_port, 3000);
+        assert_eq!(file.exposes[0].container_port, 3000);
+    }
+
+    #[test]
+    fn parse_expose_host_container_pair() {
+        let input = r#"COMPONENT web { image = "web" port = 8080 }
+EXPOSE 80:8080"#;
+        let file = parse_ctst(input).expect("should parse");
+        assert_eq!(file.exposes[0].host_port, 80);
+        assert_eq!(file.exposes[0].container_port, 8080);
+    }
+
+    #[test]
+    fn parse_expose_port_out_of_range_is_rejected() {
+        let input = "EXPOSE 99999";
+        assert!(parse_ctst(input).is_err());
     }
 
     #[test]

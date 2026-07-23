@@ -67,6 +67,33 @@ fn is_local_image(source: &str) -> bool {
 }
 
 #[cfg(test)]
+mod example_tests {
+    use std::path::Path;
+
+    #[test]
+    fn all_bundled_examples_parse_and_validate() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let mut checked = 0;
+        for entry in std::fs::read_dir(dir).expect("examples directory") {
+            let path = entry.expect("dir entry").path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("ctst") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("read example");
+            let result = crate::parser::parse_ctst(&text);
+            assert!(
+                result.is_ok(),
+                "example {} failed to parse: {:?}",
+                path.display(),
+                result.err()
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "no examples found");
+    }
+}
+
+#[cfg(test)]
 mod offline_tests {
     use super::*;
     use crate::parser::ast::{ComponentDecl, CompositionFile, ImportDecl};
@@ -74,6 +101,7 @@ mod offline_tests {
     #[test]
     fn offline_accepts_local_sources() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: vec![ImportDecl {
                 source: "templates/base.ctst".into(),
                 alias: None,
@@ -90,6 +118,7 @@ mod offline_tests {
     #[test]
     fn offline_accepts_catalog_image() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             components: vec![ComponentDecl {
                 image: Some(
                     "image://web@sha256:0000000000000000000000000000000000000000000000000000000000000000"
@@ -105,6 +134,7 @@ mod offline_tests {
     #[test]
     fn offline_accepts_preset_image_at_composition_level() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             components: vec![ComponentDecl {
                 image: Some("preset://alpine".into()),
                 ..ComponentDecl::default()
@@ -117,6 +147,7 @@ mod offline_tests {
     #[test]
     fn offline_rejects_remote_image() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             components: vec![ComponentDecl {
                 image: Some("https://example.test/app.tar".into()),
                 ..ComponentDecl::default()
@@ -129,6 +160,7 @@ mod offline_tests {
     #[test]
     fn offline_rejects_oci_image() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             components: vec![ComponentDecl {
                 image: Some("oci://alpine:3.21".into()),
                 ..ComponentDecl::default()
@@ -141,6 +173,7 @@ mod offline_tests {
     #[test]
     fn offline_rejects_remote_import() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: vec![ImportDecl {
                 source: "http://example.test/base.ctst".into(),
                 alias: None,
@@ -153,6 +186,7 @@ mod offline_tests {
     #[test]
     fn offline_rejects_registry_style_image() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             components: vec![ComponentDecl {
                 image: Some("alpine:3.21".into()),
                 ..ComponentDecl::default()

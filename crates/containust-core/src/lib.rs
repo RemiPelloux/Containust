@@ -18,3 +18,6 @@ pub mod capability;
 pub mod cgroup;
 pub mod filesystem;
 pub mod namespace;
+
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) mod testutil;

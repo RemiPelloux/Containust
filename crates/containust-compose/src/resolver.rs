@@ -103,6 +103,7 @@ mod tests {
         let mut env = BTreeMap::new();
         let _ = env.insert("KEY".into(), "value".into());
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![ComponentDecl {
                 name: "svc".into(),
@@ -125,6 +126,7 @@ mod tests {
     #[test]
     fn resolve_injects_host_and_port() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![
                 ComponentDecl {
@@ -154,6 +156,7 @@ mod tests {
     #[test]
     fn resolve_no_port_injects_only_host() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![
                 ComponentDecl {
@@ -190,6 +193,7 @@ mod tests {
     #[test]
     fn resolve_multiple_connections() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![
                 ComponentDecl {
@@ -233,6 +237,7 @@ mod tests {
     #[test]
     fn resolve_undefined_target_returns_error() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![ComponentDecl {
                 name: "api".into(),
@@ -253,6 +258,7 @@ mod tests {
     #[test]
     fn resolve_undefined_source_returns_error() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![ComponentDecl {
                 name: "db".into(),
@@ -288,6 +294,7 @@ mod tests {
             })
             .collect();
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components,
             connections,

@@ -11,6 +11,8 @@ pub struct CompositionFile {
     pub components: Vec<ComponentDecl>,
     /// Connection declarations.
     pub connections: Vec<ConnectionDecl>,
+    /// Host port publications (`EXPOSE`).
+    pub exposes: Vec<ExposeDecl>,
 }
 
 /// An `IMPORT` declaration.
@@ -80,6 +82,18 @@ pub struct HealthcheckDecl {
     pub start_period: Option<String>,
 }
 
+/// An `EXPOSE` declaration publishing a container port on the host.
+///
+/// `EXPOSE 80:8080` maps host port 80 to container port 8080;
+/// `EXPOSE 3000` maps identically on both sides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ExposeDecl {
+    /// Port bound on the host.
+    pub host_port: u16,
+    /// Port the component listens on.
+    pub container_port: u16,
+}
+
 /// A `CONNECT` declaration linking two components.
 #[derive(Debug, Clone)]
 pub struct ConnectionDecl {
@@ -99,6 +113,7 @@ mod tests {
         assert!(file.imports.is_empty());
         assert!(file.components.is_empty());
         assert!(file.connections.is_empty());
+        assert!(file.exposes.is_empty());
     }
 
     #[test]

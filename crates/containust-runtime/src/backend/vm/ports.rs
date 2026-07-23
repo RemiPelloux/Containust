@@ -145,20 +145,21 @@ mod tests {
 
     #[test]
     fn probe_available_free_ephemeral_succeeds() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let port = listener.local_addr().expect("addr").port();
-        drop(listener);
-        // Agent port may be in use on the developer machine — probe only the ephemeral.
-        // Use normalize + direct bind check path via a port we know is free.
-        match TcpListener::bind(("127.0.0.1", port)) {
-            Ok(l) => drop(l),
-            Err(_) => return,
-        }
-        // Re-bind succeeded after drop; probe_available also checks agent — skip if agent busy.
+        // Agent port may be in use on the developer machine — skip if busy.
         if TcpListener::bind(("127.0.0.1", VM_AGENT_PORT)).is_err() {
             return;
         }
-        probe_available(&[port]).expect("free ports");
+        // Freeing an ephemeral port and re-probing it races with other
+        // processes; retry over several candidates before giving up.
+        for _ in 0..10 {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+            let port = listener.local_addr().expect("addr").port();
+            drop(listener);
+            if probe_available(&[port]).is_ok() {
+                return;
+            }
+        }
+        panic!("no ephemeral port was probeable after 10 attempts");
     }
 
     #[test]

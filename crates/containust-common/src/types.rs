@@ -126,6 +126,118 @@ impl fmt::Display for ContainerState {
     }
 }
 
+/// Restart policy applied when a container's process exits.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RestartPolicy {
+    /// Never restart automatically (default).
+    #[default]
+    Never,
+    /// Restart only after an abnormal exit.
+    OnFailure,
+    /// Always restart after any exit.
+    Always,
+}
+
+impl RestartPolicy {
+    /// Parses the `.ctst` restart property value.
+    ///
+    /// # Errors
+    ///
+    /// Returns the offending value when it is not one of
+    /// `never`, `on-failure`, or `always`.
+    pub fn parse(value: &str) -> std::result::Result<Self, String> {
+        match value.trim() {
+            "never" | "no" => Ok(Self::Never),
+            "on-failure" => Ok(Self::OnFailure),
+            "always" => Ok(Self::Always),
+            other => Err(format!(
+                "invalid restart policy '{other}' (expected never, on-failure, or always)"
+            )),
+        }
+    }
+}
+
+impl fmt::Display for RestartPolicy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Never => write!(f, "never"),
+            Self::OnFailure => write!(f, "on-failure"),
+            Self::Always => write!(f, "always"),
+        }
+    }
+}
+
+/// Health probe configuration attached to a container.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HealthcheckSpec {
+    /// Command executed inside the container.
+    pub command: Vec<String>,
+    /// Seconds between probe executions.
+    pub interval_secs: u64,
+    /// Probe timeout in seconds.
+    pub timeout_secs: u64,
+    /// Consecutive failures before the container is unhealthy.
+    pub retries: u32,
+    /// Grace period after start before probes count.
+    pub start_period_secs: u64,
+}
+
+impl Default for HealthcheckSpec {
+    fn default() -> Self {
+        Self {
+            command: Vec::new(),
+            interval_secs: 30,
+            timeout_secs: 30,
+            retries: 3,
+            start_period_secs: 0,
+        }
+    }
+}
+
+/// Observed health of a container.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HealthState {
+    /// Probes have not yet produced a verdict.
+    Starting,
+    /// The most recent probe succeeded.
+    Healthy,
+    /// The failure threshold was exceeded.
+    Unhealthy,
+}
+
+impl fmt::Display for HealthState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Starting => write!(f, "starting"),
+            Self::Healthy => write!(f, "healthy"),
+            Self::Unhealthy => write!(f, "unhealthy"),
+        }
+    }
+}
+
+/// Persistent health probe bookkeeping for one container.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HealthRecord {
+    /// Latest verdict.
+    pub state: HealthState,
+    /// Consecutive probe failures.
+    pub consecutive_failures: u32,
+    /// ISO-8601 timestamp of the last executed probe.
+    pub last_probe_at: Option<String>,
+}
+
+impl Default for HealthRecord {
+    fn default() -> Self {
+        Self {
+            state: HealthState::Starting,
+            consecutive_failures: 0,
+            last_probe_at: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

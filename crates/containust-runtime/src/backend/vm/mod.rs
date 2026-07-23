@@ -182,7 +182,11 @@ impl ContainerBackend for VMBackend {
     }
 
     fn create(&self, config: &ContainerConfig) -> Result<ContainerId> {
-        let ports_to_forward: Vec<u16> = std::iter::once(config.port).flatten().collect();
+        let mut ports_to_forward: Vec<u16> = std::iter::once(config.port)
+            .flatten()
+            .chain(config.ports.iter().copied())
+            .collect();
+        ports_to_forward.dedup();
         self.ensure_vm_running(&ports_to_forward)?;
 
         tracing::info!(name = %config.name, "creating container via VM backend");
@@ -198,6 +202,7 @@ impl ContainerBackend for VMBackend {
                 "readonly_rootfs": config.readonly_rootfs,
                 "volumes": config.volumes,
                 "port": config.port,
+                "ports": config.ports,
             }),
         )?;
 

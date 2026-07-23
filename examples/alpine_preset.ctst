@@ -1,10 +1,10 @@
-# Minimal Alpine rootfs via a curated preset.
-# First build downloads ~4 MiB from Alpine's CDN and pins the digest.
-# Later builds / --offline runs reuse the local layer store.
-#
-#   ctst images --presets
-#   ctst build examples/alpine_preset.ctst
-#   ctst --offline build examples/alpine_preset.ctst
+// Minimal Alpine rootfs via a curated preset.
+// First build downloads ~4 MiB from Alpine's CDN and pins the digest.
+// Later builds / --offline runs reuse the local layer store.
+//
+//   ctst images --presets
+//   ctst build examples/alpine_preset.ctst
+//   ctst --offline build examples/alpine_preset.ctst
 
 COMPONENT app {
     image   = "preset://alpine"

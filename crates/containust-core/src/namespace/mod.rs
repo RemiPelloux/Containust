@@ -217,20 +217,24 @@ mod tests {
         assert!(config.uts);
     }
 
-    /// Requires root — ignored in CI. Tests that Linux syscall entry is reached.
+    /// Requires root. Runs in a forked child because `CLONE_NEWUSER`
+    /// requires a single-threaded process and the test harness is not one.
+    #[cfg(target_os = "linux")]
     #[test]
     #[ignore = "requires root privileges"]
     fn create_namespaces_all_succeed_with_root() {
-        let config = NamespaceConfig {
-            pid: true,
-            mount: true,
-            network: true,
-            user: true,
-            ipc: true,
-            uts: true,
-        };
-        let result = create_namespaces(&config);
-        assert!(result.is_ok());
+        let ok = crate::testutil::forked_probe_succeeds(|| {
+            let config = NamespaceConfig {
+                pid: true,
+                mount: true,
+                network: true,
+                user: true,
+                ipc: true,
+                uts: true,
+            };
+            create_namespaces(&config).is_ok()
+        });
+        assert!(ok, "unshare of all namespaces failed in forked child");
     }
 
     /// Tests that a config with no namespaces still succeeds (nothing to unshare).

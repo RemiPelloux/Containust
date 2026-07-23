@@ -38,7 +38,11 @@ See also [CONTRIBUTING.md](CONTRIBUTING.md#release-process).
 
 | Constant | Value | Defined in |
 |---|---|---|
-| `STATE_SCHEMA_VERSION` / `CURRENT_STATE_SCHEMA` | `2` | `containust-common` / `containust-runtime` |
+| `STATE_SCHEMA_VERSION` / `CURRENT_STATE_SCHEMA` | `3` | `containust-common` / `containust-runtime` |
+
+Schema 3 (v1.1.0) adds `ports`, `restart`, `healthcheck`, `health`, and
+`restart_count` to container entries; schema 2 files migrate via serde
+defaults on load.
 
 - **Older** schemas migrate forward on load.
 - **Newer** schemas are rejected (fail closed).

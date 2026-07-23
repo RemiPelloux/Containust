@@ -17,9 +17,11 @@
 
 Tracked in `roadmap.md` (P10.1–P10.18) and gated by `docs/PROD_CHECKLIST.md`.
 
-- **Wave 1** — trackers/PROD_CHECKLIST, privileged Linux CI job.
-- **Wave 2** — OCI registry pull (`oci://`), auth, catalog import, `ctst pull`.
-- **Wave 3** — enforce `ports` / `restart` / `healthcheck` at runtime.
+- **Wave 1** — ✅ trackers/PROD_CHECKLIST, privileged Linux CI job (fixture
+  fixes for cgroup rmdir + forked user-namespace probes landed with Wave 3).
+- **Wave 2** — ✅ OCI registry pull (`oci://`), auth, catalog import, `ctst pull`.
+- **Wave 3** — ✅ `ports` / `EXPOSE` (identity mapping), `restart` policies, and
+  `healthcheck` probes enforced through daemonless reconciliation; state schema 3.
 - **Wave 4** — Homebrew/deb/RPM/winget packaging, checksums/signing, `v1.1.0` tag.
 
 ## Deferred (Sprint 11+)

@@ -16,6 +16,7 @@ use super::ast::CompositionFile;
 /// 1. No duplicate component names.
 /// 2. Every CONNECT source and target references a defined component.
 /// 3. Components without a FROM template must declare an `image` property.
+/// 4. EXPOSE host ports are unique and container ports map to a component.
 ///
 /// # Errors
 ///
@@ -25,6 +26,7 @@ pub fn validate(file: &CompositionFile) -> Result<()> {
     check_duplicate_components(file)?;
     check_connection_references(file)?;
     check_image_required(file)?;
+    check_expose_references(file)?;
     Ok(())
 }
 
@@ -74,10 +76,37 @@ fn check_image_required(file: &CompositionFile) -> Result<()> {
     Ok(())
 }
 
+fn check_expose_references(file: &CompositionFile) -> Result<()> {
+    let declared: HashSet<u16> = file
+        .components
+        .iter()
+        .flat_map(|c| c.port.iter().chain(c.ports.iter()).copied())
+        .collect();
+
+    let mut hosts = HashSet::new();
+    for expose in &file.exposes {
+        if !declared.contains(&expose.container_port) {
+            return Err(ContainustError::Config {
+                message: format!(
+                    "EXPOSE {}:{} targets container port {} which no component declares \
+                     via `port` or `ports`",
+                    expose.host_port, expose.container_port, expose.container_port
+                ),
+            });
+        }
+        if !hosts.insert(expose.host_port) {
+            return Err(ContainustError::Config {
+                message: format!("duplicate EXPOSE host port {}", expose.host_port),
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::ast::{ComponentDecl, ConnectionDecl};
+    use crate::parser::ast::{ComponentDecl, ConnectionDecl, ExposeDecl};
 
     fn make_component(name: &str, image: Option<&str>) -> ComponentDecl {
         ComponentDecl {
@@ -104,6 +133,7 @@ mod tests {
     #[test]
     fn validate_valid_file_succeeds() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![
                 make_component("api", Some("api:latest")),
@@ -120,6 +150,7 @@ mod tests {
     #[test]
     fn validate_duplicate_component_name_fails() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![
                 make_component("api", Some("img1")),
@@ -135,6 +166,7 @@ mod tests {
     #[test]
     fn validate_undefined_connect_source_fails() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![make_component("db", Some("postgres"))],
             connections: vec![ConnectionDecl {
@@ -150,6 +182,7 @@ mod tests {
     #[test]
     fn validate_undefined_connect_target_fails() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![make_component("api", Some("api"))],
             connections: vec![ConnectionDecl {
@@ -165,6 +198,7 @@ mod tests {
     #[test]
     fn validate_missing_image_without_from_fails() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![ComponentDecl {
                 name: "broken".into(),
@@ -180,6 +214,7 @@ mod tests {
     #[test]
     fn validate_from_template_without_image_succeeds() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![make_from_component("db", "pg")],
             connections: Vec::new(),
@@ -188,8 +223,60 @@ mod tests {
     }
 
     #[test]
+    fn validate_expose_with_declared_port_succeeds() {
+        let mut web = make_component("web", Some("img"));
+        web.port = Some(8080);
+        let file = CompositionFile {
+            components: vec![web],
+            exposes: vec![ExposeDecl {
+                host_port: 80,
+                container_port: 8080,
+            }],
+            ..CompositionFile::default()
+        };
+        assert!(validate(&file).is_ok());
+    }
+
+    #[test]
+    fn validate_expose_undeclared_container_port_fails() {
+        let file = CompositionFile {
+            components: vec![make_component("web", Some("img"))],
+            exposes: vec![ExposeDecl {
+                host_port: 80,
+                container_port: 8080,
+            }],
+            ..CompositionFile::default()
+        };
+        let err = validate(&file).unwrap_err();
+        assert!(err.to_string().contains("no component declares"));
+    }
+
+    #[test]
+    fn validate_duplicate_expose_host_port_fails() {
+        let mut web = make_component("web", Some("img"));
+        web.ports = vec![8080, 8443];
+        let file = CompositionFile {
+            components: vec![web],
+            exposes: vec![
+                ExposeDecl {
+                    host_port: 80,
+                    container_port: 8080,
+                },
+                ExposeDecl {
+                    host_port: 80,
+                    container_port: 8443,
+                },
+            ],
+            ..CompositionFile::default()
+        };
+        let err = validate(&file).unwrap_err();
+        assert!(err.to_string().contains("duplicate EXPOSE host port"));
+    }
+
+    #[test]
     fn validate_multiple_connections_to_same_target() {
         let file = CompositionFile {
+            exposes: Vec::new(),
             imports: Vec::new(),
             components: vec![
                 make_component("a", Some("img")),
