@@ -2,6 +2,8 @@
 
 Sprint 8 / B8.4. Feature freeze is in effect ([FEATURE_FREEZE.md](FEATURE_FREEZE.md)).
 
+> Archived process checklist — see [docs/README.md](../README.md) for the live doc map.
+
 ## Cut the candidate
 
 1. Workspace version is `0.9.0-beta.1` (or later `0.9.0-beta.N`).

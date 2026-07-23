@@ -1,10 +1,9 @@
 # Containust Tutorials
 
-> Nine hands-on, self-contained tutorials to take you from your first container to production-grade deployments.
+> Longer hands-on walkthroughs. For a short day-to-day guide, use
+> **[HowToUse.md](HowToUse.md)** first.
 
-**CLI binary:** `ctst`  
-**Composition files:** `.ctst`  
-**Rust SDK crate:** `containust-sdk`
+**CLI binary:** `ctst` · **Compositions:** `.ctst` · **SDK:** `containust-sdk`
 
 ---
 

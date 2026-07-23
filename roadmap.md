@@ -159,18 +159,18 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Goal:** freeze the feature surface and prove upgrade compatibility before `1.0.0`.
 
-- [x] **B8.1 Feature freeze.** Policy documented in `docs/FEATURE_FREEZE.md` (enforced from `0.9.0-beta` tag).
+- [x] **B8.1 Feature freeze.** Policy documented in `docs/process/FEATURE_FREEZE.md` (enforced from `0.9.0-beta` tag).
 - [x] **B8.2 Compatibility matrix.** `crates/containust-runtime/tests/compat_matrix.rs` covers state migration, `.ctst` parse/resolve, and error codes.
 - [x] **B8.3 Upgrade rehearsal.** `upgrade_rehearsal` tests + runbook checklist: migrate, interrupted write, rollback preserving logs/catalog.
-- [x] **B8.4 Release candidate.** Version `0.9.0-beta.1` + `docs/BETA_RC.md` clean-machine matrix; tag `v0.9.0-beta.1` to publish artifacts.
+- [x] **B8.4 Release candidate.** Version `0.9.0-beta.1` + `docs/process/BETA_RC.md` clean-machine matrix; tag `v0.9.0-beta.1` to publish artifacts.
 
-**Exit gate: passed for engineering scope.** Operator clean-machine dual-install evidence is recorded per `docs/BETA_RC.md` when cutting the GitHub Release.
+**Exit gate: passed for engineering scope.** Operator clean-machine dual-install evidence is recorded per `docs/process/BETA_RC.md` when cutting the GitHub Release.
 
 ## Sprint 9: `1.0.0` GA
 
 **Goal:** ship only the behavior that is supported, documented, and operationally recoverable.
 
-- [x] **G9.1 Final security sign-off.** Documented in `docs/GA_CHECKLIST.md` (threat model, deny/audit CI, fail-closed offline/digests, unsafe policy).
+- [x] **G9.1 Final security sign-off.** Documented in `docs/process/GA_CHECKLIST.md` (threat model, deny/audit CI, fail-closed offline/digests, unsafe policy).
 - [x] **G9.2 Final performance sign-off.** Parse/resolve + import regression budgets; `docs/PERFORMANCE.md`.
 - [x] **G9.3 Support policy.** `docs/SUPPORT_POLICY.md` (platforms, SemVer, severity, deprecation).
 - [x] **G9.4 GA release.** Workspace `1.0.0`; tag `v1.0.0` publishes checksummed artifacts (signing still deferred per `PACKAGING.md`).
@@ -179,11 +179,11 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 ## Sprint 10: Production-usable v1 (`1.1.0`) — complete
 
-**Goal:** make Containust usable in production without building from source: installable binaries, OCI pulls, and the runtime features the grammar already promises. Gated by `docs/PROD_CHECKLIST.md`.
+**Goal:** make Containust usable in production without building from source: installable binaries, OCI pulls, and the runtime features the grammar already promises. Gated by `docs/process/PROD_CHECKLIST.md`.
 
 ### Wave 1 — Foundation
 
-- [x] **P10.1 Tracker/doc sync.** `work.md`, `roadmap.md`, and `docs/PROD_CHECKLIST.md` reflect the current version and Sprint 10 scope.
+- [x] **P10.1 Tracker/doc sync.** `work.md`, `roadmap.md`, and `docs/process/PROD_CHECKLIST.md` reflect the current version and Sprint 10 scope.
 - [x] **P10.2 Privileged Linux CI.** A `privileged-linux` CI job runs the `#[ignore]` core fixtures and the sprint3 offline gate as root on `ubuntu-latest` (cgroup v2, busybox-static).
 - [x] **P10.3 Port publish docs.** Linux port publish behavior documented in `CLI_REFERENCE.md` / `SUPPORT_POLICY.md`.
 

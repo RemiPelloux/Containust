@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Containust — daemon-less containers</title>
+    <meta
+      name="description"
+      content="Containust is a daemon-less container runtime for local, sovereign, and air-gapped workflows. Compose with .ctst. Run with ctst."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true">
+      <div class="aurora"></div>
+      <div class="grain"></div>
+      <div class="grid"></div>
+    </div>
+
+    <header class="top">
+      <a class="mark" href="#top" aria-label="Containust home">
+        <span class="mark-glyph" aria-hidden="true"></span>
+        Containust
+      </a>
+      <nav class="nav">
+        <a href="#why">Why</a>
+        <a href="#compose">Compose</a>
+        <a href="../docs/HowToUse.md">Docs</a>
+        <a
+          class="nav-cta"
+          href="https://github.com/RemiPelloux/Containust"
+          rel="noopener noreferrer"
+          >GitHub</a
+        >
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <p class="eyebrow reveal">Daemon-less · Local-first · Air-gapped</p>
+        <h1 class="brand reveal">
+          <span class="brand-line">Containust</span>
+        </h1>
+        <p class="lede reveal">
+          Containers without the daemon. Declare a stack in
+          <code>.ctst</code>, pull digest-pinned images, run on Linux — or a
+          lightweight VM on macOS and Windows.
+        </p>
+        <div class="cta-row reveal">
+          <a class="btn btn-primary" href="../docs/HowToUse.md">Get started</a>
+          <a
+            class="btn btn-ghost"
+            href="https://github.com/RemiPelloux/Containust/releases/latest"
+            rel="noopener noreferrer"
+            >Download ctst</a
+          >
+        </div>
+
+        <div class="stage reveal" aria-hidden="true">
+          <svg class="wire" viewBox="0 0 640 220" fill="none">
+            <path
+              class="wire-path"
+              d="M210 110 C 300 110, 340 110, 430 110"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+            <circle class="wire-pulse" cx="210" cy="110" r="4" />
+          </svg>
+          <article class="node node-a">
+            <header>COMPONENT api</header>
+            <pre>image  = "file:///opt/api"
+port   = 8080
+memory = "256MiB"</pre>
+          </article>
+          <article class="node node-b">
+            <header>COMPONENT db</header>
+            <pre>image = "tar:///opt/pg.tar"
+port  = 5432</pre>
+          </article>
+          <p class="connect-label">CONNECT api → db</p>
+        </div>
+      </section>
+
+      <section class="band" id="why">
+        <div class="band-inner">
+          <h2>No long-lived root process.</h2>
+          <p>
+            Each <code>ctst</code> command does the work, writes project state
+            under <code>.containust/</code>, and exits. Offline mode fails closed
+            before any network call. Built for machines that cannot — or must
+            not — run Docker’s daemon.
+          </p>
+        </div>
+      </section>
+
+      <section class="pillars">
+        <article>
+          <h3>Declare</h3>
+          <p>
+            A small grammar: components, connections, exposes, restart, and
+            healthchecks — not a second operating system.
+          </p>
+        </article>
+        <article>
+          <h3>Verify</h3>
+          <p>
+            SHA-256 layers, digest-pinned pulls, and a content-addressed catalog
+            you can copy between air-gapped hosts.
+          </p>
+        </article>
+        <article>
+          <h3>Isolate</h3>
+          <p>
+            Linux namespaces, cgroups v2, and read-only rootfs by default. QEMU
+            when the host is not Linux.
+          </p>
+        </article>
+      </section>
+
+      <section class="compose" id="compose">
+        <div class="compose-copy">
+          <h2>One file. A whole stack.</h2>
+          <p>
+            Plan, build, run, inspect — the same verbs operators already know,
+            without a background service holding privileges.
+          </p>
+          <ol class="steps">
+            <li><code>ctst pull alpine:3.21</code></li>
+            <li><code>ctst run stack.ctst --detach</code></li>
+            <li><code>ctst ps --all</code></li>
+          </ol>
+        </div>
+        <pre class="sheet" tabindex="0"><code>COMPONENT web {
+    image   = "preset://alpine"
+    command = ["/bin/busybox", "httpd", "-f", "-p", "8080"]
+    ports   = ["8080"]
+    restart = "on-failure"
+}
+
+EXPOSE 8080</code></pre>
+      </section>
+
+      <section class="close">
+        <h2>Ship lighter. Stay in control.</h2>
+        <p>Open source. MIT or Apache-2.0. Written in Rust.</p>
+        <div class="cta-row">
+          <a
+            class="btn btn-primary"
+            href="https://github.com/RemiPelloux/Containust"
+            rel="noopener noreferrer"
+            >Star on GitHub</a
+          >
+          <a class="btn btn-ghost" href="../docs/README.md">Documentation</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span>Containust</span>
+      <span class="sep" aria-hidden="true">·</span>
+      <a href="../README.md">Repository</a>
+      <span class="sep" aria-hidden="true">·</span>
+      <a href="../docs/SUPPORT_POLICY.md">Support policy</a>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>

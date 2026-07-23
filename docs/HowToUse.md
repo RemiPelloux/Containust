@@ -1,8 +1,7 @@
 # How to Use Containust
 
-A short operator guide for day-to-day work with `ctst`. For deep dives, see
-[CLI_REFERENCE.md](CLI_REFERENCE.md), [CTST_LANG.md](CTST_LANG.md), and
-[TUTORIALS.md](TUTORIALS.md).
+Day-to-day operator guide. Prefer this over the long references until you need
+them — then open the [docs map](README.md).
 
 **Version:** 1.1.0
 
@@ -106,7 +105,7 @@ Project data lives next to the composition:
 
 ```text
 .containust/
-  state/state.json    # schema v3 lifecycle state
+  state/state.json    # lifecycle state (schema 4)
   logs/<id>.log       # detached stdout/stderr
   images/             # catalog
   layers/<sha256>/    # content-addressed layers
@@ -170,7 +169,7 @@ COMPONENT web {
     image = "image://library/nginx@sha256:…"
     port  = 8080
     ports = ["8080"]
-    network = "bridge"   # optional; default for remaps
+    network = "none"     # private netns (default); use "bridge" / a name to share
 }
 
 EXPOSE 8080

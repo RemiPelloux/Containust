@@ -12,6 +12,8 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ### Added
 
+- Product landing page in [`site/`](site/) (open `site/index.html`).
+- Docs map [`docs/README.md`](docs/README.md); process checklists under `docs/process/`.
 - Operator guide [`docs/HowToUse.md`](docs/HowToUse.md) — install, first pull/run,
   everyday commands, ports, offline, troubleshooting.
 - Linux spawn path for **user + PID namespaces** (pipe-synced uid/gid maps and

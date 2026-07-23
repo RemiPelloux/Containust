@@ -15,9 +15,9 @@
 
 ## Sprint 10 — Production-usable v1 (`1.1.0`) — complete
 
-Tracked in `roadmap.md` (P10.1–P10.18) and gated by `docs/PROD_CHECKLIST.md`.
+Tracked in `roadmap.md` (P10.1–P10.18) and gated by `docs/process/PROD_CHECKLIST.md`.
 
-- **Wave 1** — ✅ trackers/PROD_CHECKLIST, privileged Linux CI job.
+- **Wave 1** — ✅ trackers / prod checklist, privileged Linux CI job.
 - **Wave 2** — ✅ OCI registry pull (`oci://`), auth, catalog import, `ctst pull`.
 - **Wave 3** — ✅ `ports` / `EXPOSE` (identity mapping), `restart` policies, and
   `healthcheck` probes enforced through daemonless reconciliation; state schema 3.

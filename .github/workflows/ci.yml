@@ -99,10 +99,10 @@ jobs:
             docs/PACKAGING.md \
             docs/RUNBOOKS.md \
             docs/PERFORMANCE.md \
-            docs/FEATURE_FREEZE.md \
-            docs/BETA_RC.md \
+            docs/process/FEATURE_FREEZE.md \
+            docs/process/BETA_RC.md \
             docs/SUPPORT_POLICY.md \
-            docs/GA_CHECKLIST.md \
+            docs/process/GA_CHECKLIST.md \
             docs/CONTRIBUTING.md \
             docs/CLI_REFERENCE.md \
             docs/SDK_GUIDE.md \
