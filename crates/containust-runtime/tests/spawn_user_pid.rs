@@ -1,7 +1,9 @@
 //! Privileged spawn fixtures for user + PID namespaces (P11.1 / P11.2).
 
 #![cfg(target_os = "linux")]
+#![allow(clippy::expect_used, clippy::unwrap_used)]
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -14,7 +16,7 @@ use nix::unistd::Pid;
 /// PID is alive (double-fork reparents init, so waitpid is not used).
 #[test]
 #[ignore = "requires root privileges, user namespaces, and busybox-static"]
-fn spawn_with_user_and_pid_runs_true() {
+fn spawn_with_user_and_pid_runs_sleep() {
     let root = tempfile::tempdir().expect("tempdir");
     let bin = root.path().join("bin");
     std::fs::create_dir_all(&bin).expect("bin");
@@ -27,7 +29,6 @@ fn spawn_with_user_and_pid_runs_true() {
         .expect("need busybox-static (apt install busybox-static)");
     let dst = bin.join("busybox");
     std::fs::copy(&busybox, &dst).expect("copy busybox");
-    use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755)).expect("chmod");
 
     let config = ProcessConfig {
