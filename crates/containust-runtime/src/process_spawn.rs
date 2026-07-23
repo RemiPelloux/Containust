@@ -67,7 +67,7 @@ pub fn spawn_with_user_pid(config: &ProcessConfig) -> Result<u32> {
                 argv: &argv,
                 envp: &envp,
             };
-            if let Err(err) = child_main(&child_cfg, pipes, log_fds, exec) {
+            if let Err(err) = child_main(&child_cfg, pipes, log_fds, &exec) {
                 let _ = writeln!(std::io::stderr(), "containust spawn child failed: {err}");
                 // SAFETY: child must not unwind into the parent address space.
                 unsafe { libc::_exit(1) };
@@ -116,7 +116,7 @@ fn child_main(
     cfg: &ChildConfig,
     pipes: ChildPipes,
     log_fds: Option<(std::fs::File, std::fs::File)>,
-    exec: ExecArgs<'_>,
+    exec: &ExecArgs<'_>,
 ) -> std::io::Result<()> {
     redirect_stdio(log_fds)?;
     if cfg.namespaces.user {
@@ -134,7 +134,7 @@ fn child_main(
 fn enter_pid_and_exec(
     cfg: &ChildConfig,
     pipes: ChildPipes,
-    exec: ExecArgs<'_>,
+    exec: &ExecArgs<'_>,
 ) -> std::io::Result<()> {
     if !cfg.namespaces.pid {
         drop_fd(pipes.tx);
@@ -179,7 +179,7 @@ fn host_pid_from_proc_self() -> std::io::Result<u32> {
         .map_err(|e| std::io::Error::other(format!("parse /proc/self ({text}): {e}")))
 }
 
-fn exec_container(exec: ExecArgs<'_>) -> std::io::Result<()> {
+fn exec_container(exec: &ExecArgs<'_>) -> std::io::Result<()> {
     apply_env(exec.envp);
     let refs: Vec<&std::ffi::CStr> = exec.argv.iter().map(CString::as_c_str).collect();
     match execvp(refs[0], &refs) {

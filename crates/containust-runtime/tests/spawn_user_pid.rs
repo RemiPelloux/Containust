@@ -3,12 +3,15 @@
 #![cfg(target_os = "linux")]
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use containust_core::namespace::NamespaceConfig;
 use containust_runtime::process::{ProcessConfig, spawn_container_process};
+use nix::sys::signal::{Signal, kill};
+use nix::unistd::Pid;
 
-/// Builds a minimal rootfs with static busybox and spawns `busybox true`
-/// under user+PID namespaces. Requires root / userns (CI `privileged-linux`).
+/// Spawns `busybox sleep` under user+PID namespaces and verifies the host
+/// PID is alive (double-fork reparents init, so waitpid is not used).
 #[test]
 #[ignore = "requires root privileges, user namespaces, and busybox-static"]
 fn spawn_with_user_and_pid_runs_true() {
@@ -28,7 +31,7 @@ fn spawn_with_user_and_pid_runs_true() {
     std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755)).expect("chmod");
 
     let config = ProcessConfig {
-        command: vec!["/bin/busybox".into(), "true".into()],
+        command: vec!["/bin/busybox".into(), "sleep".into(), "30".into()],
         env: Vec::new(),
         rootfs: root.path().to_path_buf(),
         readonly_rootfs: false,
@@ -39,13 +42,14 @@ fn spawn_with_user_and_pid_runs_true() {
     let pid = spawn_container_process(&config).expect("spawn user+pid");
     assert!(pid > 0, "init host pid should be positive, got {pid}");
 
-    let status = nix::sys::wait::waitpid(
-        nix::unistd::Pid::from_raw(i32::try_from(pid).expect("pid fits i32")),
-        None,
-    )
-    .expect("waitpid");
+    let nix_pid = Pid::from_raw(i32::try_from(pid).expect("pid fits i32"));
+    // Signal 0 probes liveness; the test process is not the parent after
+    // the PID-namespace double-fork, so waitpid would return ECHILD.
+    kill(nix_pid, None).expect("container init should be alive");
+    kill(nix_pid, Signal::SIGKILL).expect("kill container init");
+    std::thread::sleep(Duration::from_millis(50));
     assert!(
-        matches!(status, nix::sys::wait::WaitStatus::Exited(_, 0)),
-        "expected exit 0, got {status:?}"
+        kill(nix_pid, None).is_err(),
+        "container init should be gone after SIGKILL"
     );
 }
