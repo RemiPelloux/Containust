@@ -13,20 +13,29 @@
 - **Sprint 9 (`1.0.0`)** — GA checklist, support policy, security/perf sign-off docs, GA tag.
 - **Patches `1.0.1`–`1.0.5`** — Windows/QEMU CI, TCG accel, VM agent reachability, Windows volumes.
 
-## Sprint 10 — Production-usable v1 (`1.1.0`)
+## Sprint 10 — Production-usable v1 (`1.1.0`) — complete
 
 Tracked in `roadmap.md` (P10.1–P10.18) and gated by `docs/PROD_CHECKLIST.md`.
 
-- **Wave 1** — ✅ trackers/PROD_CHECKLIST, privileged Linux CI job (fixture
-  fixes for cgroup rmdir + forked user-namespace probes landed with Wave 3).
+- **Wave 1** — ✅ trackers/PROD_CHECKLIST, privileged Linux CI job.
 - **Wave 2** — ✅ OCI registry pull (`oci://`), auth, catalog import, `ctst pull`.
 - **Wave 3** — ✅ `ports` / `EXPOSE` (identity mapping), `restart` policies, and
   `healthcheck` probes enforced through daemonless reconciliation; state schema 3.
 - **Wave 4** — ✅ Homebrew/deb/RPM/winget packaging, cosign-signed checksums,
   `v1.1.0` tagged on green CI (Linux, macOS, Windows, QEMU smoke, privileged Linux).
 
-## Deferred (Sprint 11+)
+## Next — Sprint 11 (`1.2.0`)
 
-- PID / user namespace wiring on the spawn path (double-fork + uid maps).
-- Multi-network networking, DNS/service discovery.
-- Rolling updates, volume drivers/snapshots, remote orchestration.
+Isolation depth + networking. See `roadmap.md` Sprint 11 (P11.1–P11.9).
+
+- User + PID namespaces on the Linux spawn path.
+- Linux veth/NAT port remapping (`EXPOSE host:container` with differing ports).
+- Named networks + DNS foundations for CONNECT.
+- Homebrew tap automation, winget submission, optional OCI provenance checks.
+
+## Deferred (Sprint 12+)
+
+- Rolling updates / declarative plan apply diffs.
+- Volume drivers, snapshots, encrypted storage.
+- Remote execution / orchestration.
+- Apple notarization / Windows Authenticode.

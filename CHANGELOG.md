@@ -10,6 +10,11 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+### Changed
+
+- README, roadmap, support policy, and sprint tracker updated for post-`1.1.0`
+  status; Sprint 11 (`1.2.0`) isolation/networking scope sketched in `roadmap.md`.
+
 ## [1.1.0] — 2026-07-23
 
 ### Added

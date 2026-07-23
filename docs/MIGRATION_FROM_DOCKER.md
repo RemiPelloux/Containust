@@ -202,7 +202,7 @@ Things that catch Docker users by surprise:
 |---|---|
 | **No background daemon** | There is no equivalent of `dockerd`. Containers are managed through a state file and direct syscalls. Use `ctst run -d` for detached mode. |
 | **No named volumes** | Docker's named volumes (`pg_data:`) do not exist. Always use explicit host paths (`/data/pg:/var/lib/postgresql/data`). |
-| **No implicit pull** | Images are not pulled from Docker Hub automatically. You must provide local sources via `file://` or `tar://`, or explicitly opt in to `https://`. |
+| **No implicit pull on `run`** | `ctst run` does not auto-pull Hub tags. Pull first with `ctst pull name:tag` (or use `oci://` / local `file://` / `tar://` / `preset://`), then reference the pinned `image://…@sha256:…`. |
 | **Read-only rootfs by default** | Containers start with `readonly = true`. If your app writes to the filesystem (logs, temp files), set `readonly = false` or add a writable `volume`. |
 | **Bridge is the only default network** | Custom network drivers (overlay, macvlan) are not supported. Use `"bridge"`, `"host"`, `"none"`, or named bridge networks. |
 | **CONNECT auto-injects env vars** | When you write `CONNECT api -> db`, the runtime injects `DB_HOST`, `DB_PORT`, and `DB_CONNECTION_STRING` into `api`. Do not duplicate these manually in `env`. |
@@ -216,18 +216,21 @@ Things that catch Docker users by surprise:
 
 ### Can I use my existing Docker images?
 
-Yes. Export them with `docker save` and reference the tar archive:
+Yes. Prefer pulling into the local catalog (digest-pinned):
 
 ```bash
-docker save nginx:1.25 -o /opt/images/nginx.tar
+ctst pull nginx:1.25
+# → image://library/nginx@sha256:...
 ```
 
 ```ctst
 COMPONENT web {
-    image = "tar:///opt/images/nginx.tar"
+    image = "image://library/nginx@sha256:…"
     port  = 80
 }
 ```
+
+Or export with `docker save` and use `tar:///path/to/image.tar` for air-gapped hosts.
 
 ### Can I run Containust alongside Docker?
 

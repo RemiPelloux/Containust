@@ -1,7 +1,7 @@
 # ctst — Containust CLI Reference
 
 **Binary**: `ctst`
-**Version**: 1.0.4
+**Version**: 1.1.0
 **Platform**: Linux (native), macOS (VM backend), Windows (VM backend)
 
 ```
@@ -13,6 +13,11 @@ Containust is a daemon-less, sovereign container runtime written in Rust. The `c
 ---
 
 ## Installation
+
+### From a release (recommended)
+
+See [PACKAGING.md](PACKAGING.md) for tarball, `.deb`/`.rpm`, Homebrew, and winget
+options. Always verify SHA-256 (and optionally cosign) per [RUNBOOKS.md](RUNBOOKS.md).
 
 ### From Source
 
@@ -26,7 +31,7 @@ cargo install --path crates/containust-cli
 
 ```bash
 ctst --version
-# ctst 1.0.4
+# ctst 1.1.0
 ```
 
 ---

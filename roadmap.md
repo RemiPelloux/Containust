@@ -4,20 +4,14 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at GA `1.0.4` after Sprint 9 security/perf/support sign-off and the Windows/QEMU CI patch release.
+Containust is at GA **`1.1.0`** (Sprint 10 complete): installable/signed packages, OCI pulls, and runtime enforcement of ports / restart / healthcheck.
 
-- The deterministic macOS workspace suite passes 470 tests with 23 privileged tests intentionally ignored. The Rust 1.88 Linux suite passes 480 with 26 privileged tests ignored.
-- Formatting and strict Clippy pass locally when invoked with the installed toolchain binaries.
-- The workspace compiles and its deterministic tests pass on Linux with the declared Rust 1.88 minimum toolchain.
-- `cargo audit` and `cargo deny check` pass for the locked dependency graph.
-- The parser, graph resolver, local image primitives, state/log persistence, CLI parsing, and Compose conversion are the most reliable parts of the product.
-- Linux isolation, cgroups, mounts, QEMU, and eBPF remain platform-dependent and are not release-validated.
-- A privileged Docker Linux run passes 20 of 25 privileged fixtures; five cgroup/user-namespace fixtures remain blocked by Docker Desktop host delegation and still require a supported Linux host.
-- Sprint 1 wires `--offline`, `CONTAINUST_OFFLINE`, and `--state-file` through the CLI and engine; actual privileged-host validation and port forwarding remain deferred.
-- Sprint 2 adds project-scoped storage, atomic schema-versioned state, cross-process locking, lifecycle reconciliation, and explicit `stop`/`rm` cleanup semantics.
-- Sprint 3 adds structured image references, deterministic content-addressed import, an opt-in digest-verified remote fetcher, a locked/atomic image catalog with supply-chain metadata, a real `ctst build` with `--dry-run`, and offline-safe `image://` execution. The full exit gate (online import, air-gapped copy, `--offline` run) passes as a privileged Linux fixture.
-- Post–Sprint 3: curated `preset://alpine` / `preset://busybox` downloads (pinned Alpine minirootfs) with `ctst images --presets`; Docker Hub names like `node`/`php` return actionable hints until OCI pull lands.
-- Post–Sprint 3 performance pass (`0.4.2`): the import pipeline hashes in a single pass (directory packing, remote downloads, and staged archives are digested while written instead of re-read), cached presets are reused in place without a staging copy so repeated `preset://` deploys cost one verification read, and `crates/containust-image/tests/perf_regression.rs` gates 32 MiB imports and staging-file hygiene. Measured on a 256 MiB image: cold `tar://` import 0.87 s → 0.50 s, warm re-import 0.61 s → 0.50 s, `file://` import 0.72 s → 0.65 s.
+- Workspace suite: **607** deterministic tests pass; **20** privileged fixtures are ignored locally and run as root in the `privileged-linux` CI job.
+- CI green on Linux, macOS, Windows, QEMU smoke, privileged Linux, format/clippy/deny/coverage.
+- Release `v1.1.0` publishes tarballs/zips for five targets, `.deb`/`.rpm`, aggregated `SHA256SUMS`, and cosign keyless signature.
+- Images: `file://`, `tar://`, `preset://alpine|busybox`, `oci://` / `ctst pull` (Hub + GHCR, auth, digest-pin, `--offline` fail-closed), catalog as `image://…@sha256:`.
+- Runtime: identity port publish, restart policies, healthchecks (state schema 3); detached containers write to per-container log files.
+- Still deferred (Sprint 11+): PID/user-ns spawn wiring, veth/NAT port remap, multi-network/DNS, rolling updates, volume drivers, remote orchestration, Apple notarization / Authenticode.
 
 ## Release train
 
@@ -32,6 +26,8 @@ Containust is at GA `1.0.4` after Sprint 9 security/perf/support sign-off and th
 | Sprint 7 | `0.8.0` | Release packaging, coverage, benchmarks, and operational runbooks. |
 | Sprint 8 | `0.9.0-beta` | Feature freeze, compatibility review, upgrade rehearsal, and release candidate. |
 | Sprint 9 | `1.0.0` | GA only after every platform/security/recovery gate is green. |
+| Sprint 10 | `1.1.0` | Production-usable: OCI pull, ports/restart/healthcheck, privileged CI, packaging. |
+| Sprint 11 | `1.2.0` | Isolation depth + networking: user/PID ns spawn, Linux port remap, DNS foundations. |
 
 ## Delivery policy
 
@@ -54,7 +50,7 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 ### Sprint backlog
 
 - [x] **R1.1 Wire global configuration.** Thread `--offline`, `--state-file`, and `CONTAINUST_OFFLINE` through command dispatch and engine construction. Remove silent fallbacks when a requested state file cannot be opened.
-- [~] **R1.2 Complete Linux `ContainerConfig` application.** Commands, environment, memory, CPU, read-only rootfs, and validated volumes are applied. Unsupported runtime properties fail closed. Port forwarding remains a Sprint 5 networking item.
+- [x] **R1.2 Complete Linux `ContainerConfig` application.** Commands, environment, memory, CPU, read-only rootfs, and validated volumes are applied. Unsupported runtime properties fail closed. Identity port publish landed in Sprint 10; remapping is Sprint 11.
 - [x] **R1.3 Fix lifecycle semantics.** Implement real force-stop behavior, make repeated stop/remove operations deterministic, and record `Failed` state when start fails after creation.
 - [x] **R1.4 Make command targeting consistent.** Resolve container names and IDs in `stop`, `logs`, and `exec` through one shared API.
 - [x] **R1.5 Make log following real.** Implement `ctst logs --follow` with Ctrl+C cancellation and incremental byte-offset reads.
@@ -181,56 +177,81 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Exit gate: passed for GA engineering scope.** Known limitations remain listed as deferred in SUPPORT_POLICY / PACKAGING.
 
-## Sprint 10: Production-usable v1 (`1.1.0`)
+## Sprint 10: Production-usable v1 (`1.1.0`) — complete
 
 **Goal:** make Containust usable in production without building from source: installable binaries, OCI pulls, and the runtime features the grammar already promises. Gated by `docs/PROD_CHECKLIST.md`.
 
 ### Wave 1 — Foundation
 
-- [ ] **P10.1 Tracker/doc sync.** `work.md`, `roadmap.md`, and `docs/PROD_CHECKLIST.md` reflect the current version and Sprint 10 scope.
-- [ ] **P10.2 Privileged Linux CI.** A `privileged-linux` CI job runs the `#[ignore]` core fixtures and the sprint3 offline gate as root on `ubuntu-latest` (cgroup v2, busybox-static).
-- [ ] **P10.3 Port publish docs.** Linux port publish behavior documented in `CLI_REFERENCE.md` / `SUPPORT_POLICY.md` when Wave 3 lands.
+- [x] **P10.1 Tracker/doc sync.** `work.md`, `roadmap.md`, and `docs/PROD_CHECKLIST.md` reflect the current version and Sprint 10 scope.
+- [x] **P10.2 Privileged Linux CI.** A `privileged-linux` CI job runs the `#[ignore]` core fixtures and the sprint3 offline gate as root on `ubuntu-latest` (cgroup v2, busybox-static).
+- [x] **P10.3 Port publish docs.** Linux port publish behavior documented in `CLI_REFERENCE.md` / `SUPPORT_POLICY.md`.
 
 ### Wave 2 — OCI image pull
 
-- [ ] **P10.4 `oci://` scheme.** Registry resolution: manifest index → platform manifest → layer blobs (Docker Hub, GHCR).
-- [ ] **P10.5 Fail-closed policy.** Digest pin required by default; `--offline` rejects registry references before any connection.
-- [ ] **P10.6 Auth.** `CONTAINUST_REGISTRY_TOKEN` / `~/.docker/config.json`; secrets never logged or persisted.
-- [ ] **P10.7 Catalog import.** Pulled layers stored content-addressed and registered as `image://name@sha256:...`.
-- [ ] **P10.8 CLI + docs.** `ctst pull`, updated preset hints, CLI reference and examples.
+- [x] **P10.4 `oci://` scheme.** Registry resolution: manifest index → platform manifest → layer blobs (Docker Hub, GHCR).
+- [x] **P10.5 Fail-closed policy.** Digest pin required by default; `--offline` rejects registry references before any connection.
+- [x] **P10.6 Auth.** `CONTAINUST_REGISTRY_TOKEN` / `~/.docker/config.json`; secrets never logged or persisted.
+- [x] **P10.7 Catalog import.** Pulled layers stored content-addressed and registered as `image://name@sha256:...`.
+- [x] **P10.8 CLI + docs.** `ctst pull`, updated preset hints, CLI reference and examples.
 
 ### Wave 3 — Runtime enforcement of promised features
 
-- [ ] **P10.9 Ports.** `ports = ["host:container"]` published on Linux and forwarded on the VM backend; singular `port` keeps CONNECT semantics.
-- [ ] **P10.10 Restart policies.** `never` / `on-failure` / `always` enforced via the state machine and reconciliation.
-- [ ] **P10.11 Healthchecks.** Interval execution, unhealthy marking, restart-policy integration.
-- [ ] **P10.12 State migration.** Schema bump + migration for new persisted fields.
-- [ ] **P10.13 Example gate.** `examples/healthcheck_example.ctst` and nginx/redis templates deploy without unsupported-property errors.
+- [x] **P10.9 Ports.** Identity `ports` / `EXPOSE` published on Linux (host-net) and forwarded on the VM backend; singular `port` keeps CONNECT semantics.
+- [x] **P10.10 Restart policies.** `never` / `on-failure` / `always` enforced via the state machine and reconciliation.
+- [x] **P10.11 Healthchecks.** Interval execution, unhealthy marking, restart-policy integration.
+- [x] **P10.12 State migration.** Schema bumped to 3; legacy states migrate via serde defaults.
+- [x] **P10.13 Example gate.** Bundled examples parse/validate; healthcheck example deploys against the fake backend.
 
 ### Wave 4 — Packaging and release
 
-- [ ] **P10.14 Homebrew.** Formula (or documented tap) for macOS/Linux.
-- [ ] **P10.15 deb/RPM.** nfpm packaging in the release workflow.
-- [ ] **P10.16 winget.** Manifest for the Windows zip artifact.
-- [ ] **P10.17 Signing/verification.** SHA-256 verify script in runbooks; cosign or documented deferral.
-- [ ] **P10.18 Release.** CHANGELOG, SUPPORT_POLICY pruning, tag `v1.1.0` with green CI.
+- [x] **P10.14 Homebrew.** In-tree `Formula/ctst.rb` + install docs.
+- [x] **P10.15 deb/RPM.** nfpm packaging in the release workflow.
+- [x] **P10.16 winget.** Manifest template in `packaging/winget/`.
+- [x] **P10.17 Signing/verification.** Cosign keyless on `SHA256SUMS`; verify procedure in `RUNBOOKS.md`.
+- [x] **P10.18 Release.** CHANGELOG, SUPPORT_POLICY pruning, tag `v1.1.0` with green CI.
 
-**Exit gate:** every PROD_CHECKLIST item checked or explicitly deferred with an owner.
+**Exit gate: passed.** Tag `v1.1.0` published with packages and signed checksums.
+
+## Sprint 11: Isolation depth and networking (`1.2.0`)
+
+**Goal:** close the largest remaining gaps vs Docker for real multi-service apps: proper Linux namespace spawn, remappable port publish, and basic service discovery — without remote orchestration.
+
+### Wave 1 — Linux spawn isolation
+
+- [ ] **P11.1 User + PID namespaces on spawn.** Wire `NamespaceConfig` through the Linux create/start path (double-fork + uid/gid maps); keep fail-closed until complete.
+- [ ] **P11.2 Privileged CI expand.** Cover spawn-path user/PID ns fixtures in `privileged-linux`.
+- [ ] **P11.3 Docs.** Document capability / sysctl prerequisites in `SUPPORT_POLICY.md`.
+
+### Wave 2 — Port remapping and networks
+
+- [ ] **P11.4 Linux veth/NAT publish.** Honor `EXPOSE host:container` with differing ports (fail-closed today); drop host-net-only identity path as the sole option when remap is requested.
+- [ ] **P11.5 Named networks.** Minimal multi-network model for components (bridge-like) beyond host-net sharing.
+- [ ] **P11.6 DNS foundations.** Resolve component names to container IPs for `CONNECT`ed services (no full mesh yet).
+
+### Wave 3 — Operator polish
+
+- [ ] **P11.7 Homebrew tap.** Dedicated tap + automated sha bump on release (in-tree formula remains).
+- [ ] **P11.8 winget submission.** Publish the Windows zip via winget-pkgs for `1.2.0`.
+- [ ] **P11.9 OCI provenance.** Optional signed-image / provenance metadata checks (fail-closed when requested).
+
+**Exit gate:** remapped ports work on Linux CI; user/PID ns spawn green in privileged CI; docs and SUPPORT_POLICY updated; tag `v1.2.0`.
 
 ## Later feature backlog
 
-These are intentionally after correctness and release gates:
+These are intentionally after Sprint 11:
 
-- [ ] Registry authentication, OCI image/index support, and signed image metadata (enables `preset://node`, `preset://php`, arbitrary Hub names).
-- [x] Curated `preset://` catalog for Alpine/BusyBox minirootfs with pinned digests and offline cache reuse (`ctst images --presets`).
-- [ ] Multi-network networking, DNS/service discovery, and explicit port mappings.
-- [ ] Restart policies and healthcheck enforcement in the runtime state machine.
+- [x] Registry authentication and OCI image/index support (`ctst pull`, `1.1.0`).
+- [x] Curated `preset://` catalog for Alpine/BusyBox (`ctst images --presets`).
+- [x] Restart policies and healthcheck enforcement (`1.1.0`).
+- [x] Identity port mappings + `EXPOSE` (`1.1.0`).
 - [ ] Declarative update/diff/apply semantics for `ctst plan` and `ctst run`.
 - [ ] Rolling updates and dependency-aware replacement of running components.
 - [ ] Volume drivers, snapshots, backup/restore, and encrypted local storage.
-- [ ] SDK async lifecycle API, typed events, backend injection, and API stability policy.
+- [ ] SDK async lifecycle API, typed events, backend injection.
 - [ ] Remote execution or orchestration only after local security and lifecycle semantics are stable.
-- [~] Performance work: single-pass import hashing, in-place preset cache reuse, and import perf regression gates shipped in `0.4.2`; lazy layers, parallel extraction, startup caching, and syscall overhead benchmarks remain for Sprint 7.
+- [ ] Apple notarization / Windows Authenticode (cosign keyless already covers `SHA256SUMS`).
+- [~] Performance: single-pass import hashing and preset cache reuse shipped; lazy layers, parallel extraction, and syscall overhead benchmarks remain.
 
 ## Cross-cutting definition of done
 

@@ -2,39 +2,44 @@
 
 Containust is a daemon-less container runtime and declarative composition tool written in Rust. It is designed for local, sovereign, and air-gapped workflows where a long-running privileged daemon is undesirable.
 
-> **Project status: GA (`1.0.4`).** Supported platforms, versioning, runbooks, and release artifacts are documented. See `docs/SUPPORT_POLICY.md` and `docs/GA_CHECKLIST.md`.
+> **Project status: GA (`1.1.0`).** Installable release packages, OCI pulls (`ctst pull`), and runtime enforcement of `ports` / `restart` / `healthcheck`. See `docs/SUPPORT_POLICY.md` and `docs/PROD_CHECKLIST.md`.
 
 [![CI](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml)
 [![Security audit](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/security.yml)
 [![License](https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-blue.svg)](LICENSE-MIT)
+[![Release](https://img.shields.io/github/v/release/RemiPelloux/Containust)](https://github.com/RemiPelloux/Containust/releases/latest)
 
 ## Why Containust
 
 - **No daemon:** the CLI talks directly to the selected backend and persists state as files.
 - **Declarative composition:** `.ctst` files describe components and `CONNECT` dependencies.
-- **Local-first images:** `file://` directories, `tar://` archives, and curated `preset://alpine` / `preset://busybox` downloads (~4&nbsp;MiB official rootfs) work without Docker Hub.
+- **Local-first images:** `file://`, `tar://`, curated `preset://alpine` / `preset://busybox`, and digest-pinned `oci://` / `ctst pull` from Docker Hub and GHCR.
+- **Runtime policies:** `ports` / `EXPOSE`, restart policies, and healthchecks are enforced (not just parsed).
 - **Rust SDK:** the parser, graph resolver, runtime types, and event APIs are reusable from Rust.
-- **Platform-aware runtime:** native Linux isolation is selected on Linux; QEMU is used on macOS and Windows.
+- **Platform-aware runtime:** native Linux isolation on Linux; QEMU on macOS and Windows.
 
 ## Verified capabilities
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| `.ctst` lexer, parser, and validation | Working | Syntax, properties, imports, health checks, and invalid-input paths are covered. |
+| `.ctst` lexer, parser, and validation | Working | Syntax, properties, imports, `EXPOSE`, health checks, and invalid-input paths are covered. |
 | Dependency graph and auto-wiring | Working | Topological ordering, cycle detection, and connection environment variables are covered. |
-| Local image sources | Working | Existing `file://` directories and `tar://` archives can be resolved and extracted. |
-| Content-addressed image import | Working | `ctst build` deterministically imports directories/archives into `layers/<sha256>/`, records supply-chain metadata, and supports `--dry-run`. |
-| Curated presets | Working | `preset://alpine` / `preset://busybox` (and version pins like `alpine:3.21`) download official minirootfs archives with pinned SHA-256; `ctst images --presets` lists them. Node/PHP/etc. need future OCI Hub pull. |
-| Offline / air-gapped execution | Working | Imported images run from `image://name@sha256:<digest>` with `--offline`; copying `images/` + `layers/` between machines is sufficient. Remote fetch is opt-in, digest-pinned, size-capped, and retried. |
-| Image hashing and catalog | Working | SHA-256 validation; the JSON catalog is lock-guarded, atomically written, deduplicated, and layer-validated. |
-| State and logs | Working | Schema-versioned JSON state uses atomic writes and cross-process locks; per-container logs persist until removal. |
-| Project isolation and reconciliation | Working | Each composition uses project-local state/data; `ctst ps` repairs stale processes and removes project-owned orphan runtime resources. |
-| CLI parsing and Compose conversion | Working | `ctst` subcommands and the supported Compose subset have tests. |
-| Linux isolation backend | Experimental | Linux compilation and non-privileged tests pass at the Rust 1.88 MSRV. Full release validation still requires a delegated cgroups v2 hierarchy, user namespaces, mount permissions, and a valid rootfs. |
-| QEMU backend | Experimental | Requires QEMU and network access for first-run Alpine assets; no cross-platform runtime test runs in this repository. |
-| eBPF observability | Experimental | The API and feature-gated code compile; kernel attachment is not covered by the default test run. |
+| Local image sources | Working | `file://` directories and `tar://` archives resolve and extract safely. |
+| OCI registry pull | Working | `ctst pull` / `oci://` pulls Docker Hub and GHCR images with digest verification and optional auth. |
+| Content-addressed image import | Working | `ctst build` imports into `layers/<sha256>/`, records supply-chain metadata, and supports `--dry-run`. |
+| Curated presets | Working | `preset://alpine` / `preset://busybox` download pinned Alpine minirootfs; other Hub names use `ctst pull`. |
+| Offline / air-gapped execution | Working | Run from `image://name@sha256:<digest>` with `--offline`; copy `images/` + `layers/` between machines. |
+| Ports, restart, healthcheck | Working | Identity port publish (Linux host-net / VM `hostfwd`); daemonless restart + health probes on reconcile. |
+| Image hashing and catalog | Working | SHA-256 validation; lock-guarded atomic catalog with layer validation. |
+| State and logs | Working | Schema v3 JSON state with atomic writes and locks; detached containers log to per-container files. |
+| Project isolation and reconciliation | Working | Project-local state; `ctst ps` repairs stale processes and cleans project-owned orphans. |
+| CLI parsing and Compose conversion | Working | Subcommands and the supported Compose subset have tests. |
+| Linux isolation backend | Working | Privileged CI exercises namespaces, cgroups v2, mounts, and the offline gate as root. |
+| QEMU backend | Working | CI QEMU smoke on macOS; first-run Alpine VM assets cached under `~/.containust/cache/`. |
+| eBPF observability | Experimental | Feature-gated API compiles; kernel attachment is not in the default test run. |
+| Packaging | Working | GitHub Release tarballs/zips, `.deb`/`.rpm`, in-tree Homebrew formula, winget template, cosign-signed `SHA256SUMS`. |
 
-The default macOS test run passes **470 tests** with **23 tests intentionally ignored** because they require root privileges or a host cgroups/mount configuration; the Linux (Rust 1.88) run passes **480 tests** with 26 ignored. Additional feature/platform-gated tests are listed only when their target is enabled. The suite includes a 2,000-component graph regression test to protect planning performance, plus thread and subprocess contention tests for state durability.
+The default workspace suite passes **607 tests** with **20 tests intentionally ignored** (privileged fixtures that also run in the `privileged-linux` CI job). The suite includes a 2,000-component graph regression test and contention tests for state durability.
 
 ## Platform requirements
 
@@ -46,37 +51,43 @@ The default macOS test run passes **470 tests** with **23 tests intentionally ig
 
 Rust 1.88 or newer is required by the workspace manifest. The checked-in toolchain file selects the stable channel.
 
-## Quick start
+## Install
 
-Build and verify the workspace:
+Prefer a verified release binary (see [docs/PACKAGING.md](docs/PACKAGING.md) and [docs/RUNBOOKS.md](docs/RUNBOOKS.md)):
+
+```bash
+# Example: Linux x86_64 tarball
+VERSION=1.1.0
+curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-x86_64-unknown-linux-gnu.tar.gz"
+curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-x86_64-unknown-linux-gnu.tar.gz.sha256"
+sha256sum -c "ctst-x86_64-unknown-linux-gnu.tar.gz.sha256"
+tar xzf "ctst-x86_64-unknown-linux-gnu.tar.gz"
+sudo install -m 755 ctst /usr/local/bin/ctst
+ctst --version
+```
+
+Also available: `.deb` / `.rpm` assets, in-tree Homebrew (`brew install --formula ./Formula/ctst.rb`), and a winget manifest template. Or build from source:
 
 ```bash
 git clone https://github.com/RemiPelloux/Containust.git
 cd Containust
-cargo check --workspace
-cargo test --workspace --lib --tests
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
+cargo install --path crates/containust-cli
 ```
 
-Install the CLI locally:
+## Quick start
+
+Pull an OCI image (digest-pinned into the local catalog):
 
 ```bash
-cargo install --path crates/containust-cli
-ctst --version
-ctst --help
+ctst pull alpine:3.21
+# → image://library/alpine@sha256:...
 ```
 
-Inspect a composition without starting containers:
+Inspect and run a composition:
 
 ```bash
 ctst plan examples/hello.ctst
 ctst build examples/hello.ctst
-```
-
-Run a composition on a host with a supported backend:
-
-```bash
 ctst run examples/hello.ctst --detach
 ctst ps --all
 ctst logs hello
@@ -84,7 +95,7 @@ ctst stop hello
 ctst rm hello
 ```
 
-The Linux backend accepts local rootfs sources such as `file:///absolute/path` and `tar:///absolute/path/image.tar`. Registry-style image names are not pulled by `ctst build`; convert or prepare a local archive first. Use `--offline` (or `CONTAINUST_OFFLINE=1`) to reject remote image/import sources before backend or network access, and `--state-file /path/state.json` (or `CONTAINUST_STATE_FILE`) to select an isolated state, log, image, and runtime-data root.
+Image sources: `file://`, `tar://`, `preset://`, `oci://` / bare `name:tag` via `ctst pull`, and pinned `image://name@sha256:...`. Use `--offline` (or `CONTAINUST_OFFLINE=1`) to reject remote sources before any network access. Use `--state-file` (or `CONTAINUST_STATE_FILE`) for an isolated state/log/image root.
 
 ## The `.ctst` format
 
@@ -113,17 +124,18 @@ CONNECT api -> db
 | --- | --- |
 | `ctst plan [FILE]` | Parse a composition and print deployment order. |
 | `ctst build [FILE]` | Validate the composition and resolve declared image sources. |
-| `ctst run [FILE]` | Create and start components through the selected backend. |
-| `ctst ps [--all]` | List tracked containers. |
+| `ctst pull IMAGE` | Pull an OCI image (Docker Hub / GHCR) into the local catalog. |
+| `ctst run [FILE]` | Create and start components; reconcile restart/healthcheck policies. |
+| `ctst ps [--all]` | List tracked containers (also runs reconciliation). |
 | `ctst exec CONTAINER COMMAND...` | Execute in a running container (Linux uses `nsenter`). |
 | `ctst logs CONTAINER` | Read persisted logs. |
 | `ctst stop [CONTAINER...]` | Stop named/identified containers, or all containers. |
 | `ctst rm [--force] CONTAINER...` | Remove stopped containers and project-owned rootfs, logs, cgroups, and state entries. |
-| `ctst images` | List or remove catalog entries. |
+| `ctst images` | List or remove catalog entries; `--presets` lists curated presets. |
 | `ctst convert COMPOSE.yml` | Convert the supported Docker Compose subset to `.ctst`. |
 | `ctst vm start/stop` | Manage the QEMU backend on non-Linux hosts. |
 
-Run `ctst <command> --help` for command-specific options.
+Run `ctst <command> --help` for command-specific options. Full reference: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
 ## Architecture
 
@@ -146,12 +158,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the dependency rules and backend desi
 ## Storage and security
 
 - Immutable VM assets are cached under `~/.containust/cache/`.
-- Runtime data is project-scoped under `.containust/` next to the selected composition. State is stored in `.containust/state/state.json`; logs, rootfs data, and the image catalog remain isolated within the same project directory.
-- Read-only rootfs, capability dropping, cgroups, and namespace setup are implemented in the Linux path but must be validated on the target host.
-- Remote HTTP(S) sources are recognized by the image layer, but authenticated downloads, digest policy, and resumable caching are planned for Sprint 3.
-- `--offline` and `--state-file` are wired through all stateful CLI commands; `CONTAINUST_STATE_FILE` provides the environment override and invalid or inaccessible paths fail explicitly.
-- `ctst stop` retains rootfs and logs for inspection while clearing the running process/cgroup; `ctst rm` performs permanent project-owned cleanup. Host volume source data is never deleted.
-- Port forwarding and network isolation are intentionally deferred to the cross-platform networking milestone.
+- Runtime data is project-scoped under `.containust/` next to the composition. State is `.containust/state/state.json` (schema v3); logs, rootfs, and the image catalog stay in the same project tree.
+- Linux path: read-only rootfs by default, capability drop, cgroups v2, namespaces — exercised in privileged CI.
+- Remote OCI/HTTPS fetches are digest-pinned, size/timeout capped, and rejected under `--offline`. Registry auth uses env vars or `~/.docker/config.json`; credentials are never logged or written to `state.json`.
+- Published ports use identity mapping (host port == container port). Linux components with ports share the host network; remapping fails closed (veth/NAT is a later milestone).
+- `ctst stop` retains rootfs and logs; `ctst rm` cleans project-owned resources. Host volume source data is never deleted.
 
 ## Development and audit
 
@@ -178,10 +189,13 @@ Privileged namespace, mount, cgroup, and eBPF tests are marked `ignored` and sho
 - [.ctst language reference](docs/CTST_LANG.md)
 - [SDK guide](docs/SDK_GUIDE.md)
 - [Tutorials](docs/TUTORIALS.md)
-- [Error reference](docs/ERRORS.md)
+- [Packaging & install](docs/PACKAGING.md)
+- [Support policy](docs/SUPPORT_POLICY.md)
+- [Operator runbooks](docs/RUNBOOKS.md)
+- [Production checklist](docs/PROD_CHECKLIST.md)
 - [Docker migration](docs/MIGRATION_FROM_DOCKER.md)
 - [Architecture](ARCHITECTURE.md)
-- [Technical specification](docs/SPEC.md)
+- [Roadmap](roadmap.md)
 
 ## License
 

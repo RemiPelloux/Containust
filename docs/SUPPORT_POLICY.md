@@ -49,9 +49,14 @@ isolated network namespace on Linux.
 ## Explicitly deferred (not supported unless listed above)
 
 - `EXPOSE` host/container port remapping on Linux (veth/NAT publish path)
-- Homebrew / deb / RPM / winget packages (see `PACKAGING.md`)
-- Code signing / notarization
+- Apple notarization / Windows Authenticode (cosign keyless signs `SHA256SUMS`; see `PACKAGING.md`)
+- PID / user-namespace wiring on the Linux spawn path
+- Multi-network mesh, DNS / service discovery
+- Rolling updates / declarative `plan` apply diffs
+- Volume drivers, snapshots, encrypted local storage
+- Remote execution / orchestration
 
 Shipped since GA (removed from this list): OCI registry pulls with auth
 (`ctst pull`, `1.1.0`), `ports` / `restart` / `healthcheck` enforcement
-(`1.1.0`).
+(`1.1.0`), GitHub Release binaries + `.deb`/`.rpm` + in-tree Homebrew +
+winget template + cosign-signed checksums (`1.1.0`).
