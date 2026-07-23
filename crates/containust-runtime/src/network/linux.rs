@@ -1,6 +1,7 @@
 //! Linux shared-netns helpers (no `CAP_NET_ADMIN` required).
 
 use std::ffi::CString;
+use std::fmt::Write as _;
 use std::fs::OpenOptions;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
@@ -31,7 +32,7 @@ pub fn ensure_shared_netns(data_dir: &Path, network: &str) -> Result<PathBuf> {
             source,
         })?;
     }
-    OpenOptions::new()
+    let _ns_file = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(false)
@@ -145,7 +146,7 @@ pub fn write_container_hosts(rootfs: &Path, names: &[String]) -> Result<()> {
     let mut body = String::from("127.0.0.1\tlocalhost\n");
     for name in names {
         if name != "localhost" {
-            body.push_str(&format!("127.0.0.1\t{name}\n"));
+            let _ = write!(body, "127.0.0.1\t{name}\n");
         }
     }
     let hosts = etc.join("hosts");

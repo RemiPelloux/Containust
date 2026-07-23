@@ -56,27 +56,26 @@ fn start_one(netns: &Path, mapping: PortMapping) -> Result<u32> {
     match fork_result {
         ForkResult::Parent { child } => Ok(u32::try_from(child.as_raw()).unwrap_or(u32::MAX)),
         ForkResult::Child => {
-            forwarder_loop(listener, &netns, mapping);
+            forwarder_loop(&listener, &netns, mapping);
             // SAFETY: forwarder never returns to parent.
             unsafe { libc::_exit(0) };
         }
     }
 }
 
-fn forwarder_loop(listener: TcpListener, netns: &Path, mapping: PortMapping) {
+fn forwarder_loop(listener: &TcpListener, netns: &Path, mapping: PortMapping) {
     for incoming in listener.incoming() {
         let Ok(client) = incoming else {
             continue;
         };
         // SAFETY: per-connection child; setns requires single-threaded.
         match unsafe { fork() } {
-            Ok(ForkResult::Parent { .. }) => {}
             Ok(ForkResult::Child) => {
                 let _ = relay_one(client, netns, mapping.container);
                 // SAFETY: connection handler exit.
                 unsafe { libc::_exit(0) };
             }
-            Err(_) => {}
+            Ok(ForkResult::Parent { .. }) | Err(_) => {}
         }
     }
 }

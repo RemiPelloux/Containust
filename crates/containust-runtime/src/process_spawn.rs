@@ -134,13 +134,15 @@ fn child_main(
 }
 
 fn apply_network_namespace(cfg: &ChildConfig) -> std::io::Result<()> {
+    // Never fork/exec after CLONE_NEWPID — the first child becomes PID 1.
+    // Unshare non-PID namespaces, bring up loopback, then enter PID ns.
     if let Some(path) = &cfg.join_netns {
         crate::network::join_netns(path)
             .map_err(|e| std::io::Error::other(format!("join netns failed: {e}")))?;
         let _ = crate::network::ensure_loopback();
-        return unshare_remaining_without_net(&cfg.namespaces);
+        return unshare_non_pid(&cfg.namespaces, false);
     }
-    unshare_remaining(&cfg.namespaces)?;
+    unshare_non_pid(&cfg.namespaces, true)?;
     if cfg.namespaces.network {
         let _ = crate::network::ensure_loopback();
     }
@@ -162,7 +164,8 @@ fn enter_pid_and_exec(
         )?;
         return exec_container(exec);
     }
-    // SAFETY: child is still single-threaded.
+    unshare_pid_only()?;
+    // SAFETY: single-threaded; must fork immediately after CLONE_NEWPID.
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => {
             // SAFETY: intermediate exits; grandchild is PID 1 in the ns.
@@ -264,23 +267,12 @@ fn parent_handshake(
     Ok(spawn_pid)
 }
 
-fn unshare_remaining(namespaces: &NamespaceConfig) -> std::io::Result<()> {
-    unshare_flags(namespaces, true)
-}
-
-fn unshare_remaining_without_net(namespaces: &NamespaceConfig) -> std::io::Result<()> {
-    unshare_flags(namespaces, false)
-}
-
-fn unshare_flags(namespaces: &NamespaceConfig, include_net: bool) -> std::io::Result<()> {
+fn unshare_non_pid(namespaces: &NamespaceConfig, include_net: bool) -> std::io::Result<()> {
     use nix::sched::{CloneFlags, unshare};
 
     let mut flags = CloneFlags::empty();
     if namespaces.mount {
         flags |= CloneFlags::CLONE_NEWNS;
-    }
-    if namespaces.pid {
-        flags |= CloneFlags::CLONE_NEWPID;
     }
     if include_net && namespaces.network {
         flags |= CloneFlags::CLONE_NEWNET;
@@ -295,6 +287,12 @@ fn unshare_flags(namespaces: &NamespaceConfig, include_net: bool) -> std::io::Re
         return Ok(());
     }
     unshare(flags).map_err(|e| std::io::Error::other(format!("unshare failed: {e}")))
+}
+
+fn unshare_pid_only() -> std::io::Result<()> {
+    use nix::sched::{CloneFlags, unshare};
+    unshare(CloneFlags::CLONE_NEWPID)
+        .map_err(|e| std::io::Error::other(format!("unshare(CLONE_NEWPID) failed: {e}")))
 }
 
 fn handshake_err(expected: &str, got: u8) -> ContainustError {
