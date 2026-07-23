@@ -1,0 +1,25 @@
+# nfpm configuration for .deb / .rpm packages (P10.15).
+#
+# Built by .github/workflows/release.yml with:
+#   NFPM_VERSION  release version without the leading `v`
+#   NFPM_ARCH     amd64 | arm64
+#   NFPM_BINARY   path to the extracted `ctst` binary
+name: ctst
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${NFPM_VERSION}
+section: admin
+priority: optional
+maintainer: Containust maintainers <maintainers@containust.dev>
+description: |
+  Containust — a lightweight, daemonless container runtime.
+  Ships the `ctst` CLI for building, deploying, and supervising
+  containers described by `.ctst` composition files.
+vendor: Containust
+homepage: https://github.com/RemiPelloux/Containust
+license: MIT OR Apache-2.0
+contents:
+  - src: ${NFPM_BINARY}
+    dst: /usr/bin/ctst
+    file_info:
+      mode: 0755

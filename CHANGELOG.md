@@ -10,6 +10,40 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-07-23
+
+### Added
+
+- **OCI registry pull** (`ctst pull`, `oci://` scheme): manifest index →
+  platform manifest → digest-verified layer blobs, imported into the local
+  content-addressed catalog as `image://name@sha256:...`. Digest pin required
+  by default; `--offline` rejects registries before connecting.
+- Registry auth via `CONTAINUST_REGISTRY_TOKEN`, `CONTAINUST_REGISTRY_USER`/`_PASSWORD`,
+  or `~/.docker/config.json`; credentials never logged or persisted.
+- **`EXPOSE` statement** parsed per the documented grammar; identity port
+  publishing enforced (Linux host-network publish, VM multi-`hostfwd`).
+  Host/container remapping fails closed with an actionable error.
+- **Restart policies** (`never` / `on-failure` / `always`) and **healthchecks**
+  enforced daemonlessly on every reconciliation pass (`ctst ps` / `ctst run`).
+- Privileged Linux CI job running the root-only namespace/cgroup/mount fixtures.
+- Packaging: in-tree Homebrew formula, `.deb`/`.rpm` via nfpm in the release
+  workflow, winget manifest template, cosign-signed `SHA256SUMS`.
+
+### Changed
+
+- State schema bumped to 3 (`ports`, `restart`, `healthcheck`, `health`,
+  `restart_count` on container entries); older states migrate automatically.
+- Preset hints for uncurated images now point at `ctst pull`.
+
+### Fixed
+
+- `CgroupManager::destroy` used `remove_dir_all`, which cgroupfs rejects;
+  now uses plain `rmdir`. Controllers (`cpu`, `memory`, `io`) are enabled in
+  the parent cgroup's `subtree_control` on create.
+- User-namespace test fixtures fork a single-threaded child so
+  `unshare(CLONE_NEWUSER)` can succeed under the test harness.
+- `examples/alpine_preset.ctst` used unsupported `#` comments.
+
 ## [1.0.5] — 2026-07-22
 
 ### Fixed

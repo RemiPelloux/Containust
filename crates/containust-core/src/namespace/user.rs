@@ -113,7 +113,10 @@ mod tests {
     #[ignore = "requires root privileges and proc filesystem"]
     fn write_uid_gid_map_succeeds_with_root() {
         let ok = crate::testutil::forked_probe_succeeds(|| {
-            create_user_namespace().is_ok() && write_uid_gid_map(0, 0, 1000, 65536).is_ok()
+            // After unshare(CLONE_NEWUSER) the process loses CAP_SETUID in
+            // the parent namespace, so it may only map its own euid (root
+            // in CI) with a range of 1.
+            create_user_namespace().is_ok() && write_uid_gid_map(0, 0, 0, 1).is_ok()
         });
         assert!(ok, "uid/gid map write failed after user namespace creation");
     }

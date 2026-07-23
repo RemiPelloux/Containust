@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  # Required for cosign keyless (Sigstore OIDC) signing.
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -113,9 +115,56 @@ jobs:
           name: ctst-${{ matrix.target }}
           path: ctst-${{ matrix.target }}.*
 
+  linux-packages:
+    name: Linux packages (deb/rpm)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ctst-*-linux-gnu
+          path: artifacts
+
+      - name: Install nfpm
+        run: |
+          set -euo pipefail
+          curl -sfL "https://github.com/goreleaser/nfpm/releases/download/v2.43.0/nfpm_2.43.0_Linux_x86_64.tar.gz" \
+            | tar xz nfpm
+          sudo install -m 755 nfpm /usr/local/bin/nfpm
+
+      - name: Build .deb and .rpm packages
+        run: |
+          set -euo pipefail
+          export NFPM_VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p packages
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            case "${target}" in
+              x86_64-*) arch="amd64" ;;
+              aarch64-*) arch="arm64" ;;
+            esac
+            workdir="$(mktemp -d)"
+            tar xzf "artifacts/ctst-${target}/ctst-${target}.tar.gz" -C "${workdir}"
+            export NFPM_ARCH="${arch}"
+            export NFPM_BINARY="${workdir}/ctst"
+            nfpm package -f packaging/nfpm.yaml -p deb \
+              -t "packages/ctst_${NFPM_VERSION}_${arch}.deb"
+            nfpm package -f packaging/nfpm.yaml -p rpm \
+              -t "packages/ctst-${NFPM_VERSION}-1.${arch}.rpm"
+          done
+          (cd packages && sha256sum ./* > SHA256SUMS.packages)
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctst-linux-packages
+          path: packages/*
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, linux-packages]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -135,14 +184,37 @@ jobs:
             (cd "${dir}" && sha256sum -c "$(basename "${sum}")")
           done
 
+      - name: Aggregate checksums
+        run: |
+          set -euo pipefail
+          find artifacts \( -name '*.sha256' -o -name 'SHA256SUMS.packages' \) \
+            -exec cat {} + | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign checksum manifest (cosign keyless)
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes SHA256SUMS \
+            --bundle SHA256SUMS.sigstore.json
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           body: |
-            Verify downloads with the accompanying `.sha256` files.
+            Verify downloads with the accompanying `.sha256` files or the
+            aggregated `SHA256SUMS` (signed keylessly with cosign —
+            `SHA256SUMS.sigstore.json`; see `docs/RUNBOOKS.md` for the
+            verification procedure).
             Each archive includes `build-info.json` (`git_sha`, `built`, `source_date_epoch`).
-            Code signing is not yet attached; see `docs/PACKAGING.md`.
-          files: artifacts/**/*
+            Linux users can install the `.deb` / `.rpm` packages directly;
+            see `docs/PACKAGING.md` for Homebrew and winget instructions.
+          files: |
+            artifacts/**/*
+            SHA256SUMS
+            SHA256SUMS.sigstore.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -151,15 +151,13 @@ mod tests {
         }
         // Freeing an ephemeral port and re-probing it races with other
         // processes; retry over several candidates before giving up.
-        for _ in 0..10 {
+        let probed = (0..10).any(|_| {
             let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
             let port = listener.local_addr().expect("addr").port();
             drop(listener);
-            if probe_available(&[port]).is_ok() {
-                return;
-            }
-        }
-        panic!("no ephemeral port was probeable after 10 attempts");
+            probe_available(&[port]).is_ok()
+        });
+        assert!(probed, "no ephemeral port was probeable after 10 attempts");
     }
 
     #[test]

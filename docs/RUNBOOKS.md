@@ -3,6 +3,34 @@
 Procedures for upgrade, rollback, incidents, cache recovery, and cleanup.
 Companion to [`VERSIONING.md`](VERSIONING.md) and [`PACKAGING.md`](PACKAGING.md).
 
+## Verify a release download
+
+Mandatory before installing any release artifact (P10.17).
+
+```bash
+VERSION="X.Y.Z"
+TARGET="x86_64-unknown-linux-gnu"   # your platform triple
+BASE="https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}"
+
+# 1. Download the artifact and the signed checksum manifest.
+curl -LO "${BASE}/ctst-${TARGET}.tar.gz"
+curl -LO "${BASE}/SHA256SUMS"
+curl -LO "${BASE}/SHA256SUMS.sigstore.json"
+
+# 2. Verify the manifest signature (cosign keyless / Sigstore).
+cosign verify-blob SHA256SUMS \
+  --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp 'https://github.com/RemiPelloux/Containust/\.github/workflows/release\.yml.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# 3. Verify the artifact checksum against the signed manifest.
+grep "ctst-${TARGET}.tar.gz" SHA256SUMS | sha256sum -c -
+```
+
+Abort the install on any verification failure — do not fall back to an
+unverified binary. If `cosign` is unavailable, the per-artifact `.sha256`
+files still provide integrity (but not provenance) checking.
+
 ## Upgrade
 
 1. Note current version: `ctst --version` (includes `git=` / `built=` on release builds).

@@ -40,13 +40,16 @@ Every item must be checked (or explicitly deferred with an owner) before the
 
 ## Wave 4 — Packaging and release
 
-- [ ] **P10.14** Homebrew formula published or stubbed with install docs.
-- [ ] **P10.15** `.deb` / `.rpm` artifacts produced by the release workflow (nfpm).
-- [ ] **P10.16** winget manifest documented for the Windows zip.
-- [ ] **P10.17** SHA-256 verification script in `RUNBOOKS.md`; cosign signing
-      enabled or deferred with an owner.
+- [x] **P10.14** In-tree Homebrew formula (`Formula/ctst.rb`) with install docs
+      in `PACKAGING.md`; dedicated tap + automated sha bump tracked as follow-up.
+- [x] **P10.15** `.deb` / `.rpm` built by the `linux-packages` release job via
+      nfpm (`packaging/nfpm.yaml`).
+- [x] **P10.16** winget manifest template in `packaging/winget/` with
+      submission instructions.
+- [x] **P10.17** Release verification runbook in `RUNBOOKS.md`; `SHA256SUMS`
+      signed keylessly with cosign in the release workflow.
 - [ ] **P10.18** `CHANGELOG.md` updated; `SUPPORT_POLICY.md` deferred list pruned;
-      `v1.1.0` tagged with green CI.
+      `v1.1.0` tagged with green CI. _Awaiting green CI on main before tagging._
 
 ## Verification gates (all waves)
 

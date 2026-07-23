@@ -1,16 +1,32 @@
 # Packaging Channels
 
-Installation paths beyond `cargo install` are tracked here for Sprint 7 (L7.3).
-Each channel is either implemented or explicitly deferred with an owner.
+Installation paths beyond `cargo install`. Updated for Sprint 10
+(P10.14–P10.17). Each channel is either implemented or explicitly deferred
+with an owner.
 
 | Channel | Status | Owner | Notes |
 |---|---|---|---|
 | Source / `cargo install --path crates/containust-cli` | **Supported** | maintainers | Documented in README and CLI_REFERENCE |
-| GitHub Release binaries (`v*` tags) | **Supported** | maintainers | SHA-256 checksums via `.github/workflows/release.yml` |
-| Homebrew formula | **Deferred** | maintainers | Blocked on first tagged `0.8.0+` artifact set; track as follow-up issue |
-| Debian (`.deb`) | **Deferred** | maintainers | Prefer cargo-dist or nfpm after binary layout stabilizes |
-| RPM | **Deferred** | maintainers | Same packaging toolchain as Debian |
-| Windows installer (MSI / winget) | **Deferred** | maintainers | Zip artifacts ship today; winget manifest after `1.0.0` |
+| GitHub Release binaries (`v*` tags) | **Supported** | maintainers | SHA-256 checksums + cosign-signed `SHA256SUMS` via `.github/workflows/release.yml` |
+| Homebrew formula | **Supported (in-tree)** | maintainers | `brew install --formula ./Formula/ctst.rb`; a dedicated tap and automated sha bump are follow-ups |
+| Debian (`.deb`) | **Supported** | maintainers | Built by the `linux-packages` release job with nfpm (`packaging/nfpm.yaml`) |
+| RPM | **Supported** | maintainers | Same nfpm config as Debian |
+| Windows (winget) | **Template ready** | maintainers | Manifest template in `packaging/winget/`; submit to winget-pkgs per release |
+| Windows installer (MSI) | **Deferred** | maintainers | Zip + winget cover Windows installs; MSI only if enterprise demand appears |
+
+## Install from packages
+
+```bash
+# Debian / Ubuntu
+curl -LO https://github.com/RemiPelloux/Containust/releases/download/vX.Y.Z/ctst_X.Y.Z_amd64.deb
+sudo dpkg -i ctst_X.Y.Z_amd64.deb
+
+# Fedora / RHEL
+sudo rpm -i ctst-X.Y.Z-1.amd64.rpm
+
+# Homebrew (macOS / Linux)
+brew install --formula ./Formula/ctst.rb
+```
 
 ## Current recommended install
 
@@ -24,5 +40,10 @@ sudo install -m 755 ctst /usr/local/bin/ctst
 ctst --version
 ```
 
-Code signing (cosign / Apple notarization / Authenticode) is deferred until
-signing secrets and a release identity are provisioned; checksums remain mandatory.
+## Signing
+
+The aggregated `SHA256SUMS` release asset is signed keylessly with cosign
+(Sigstore OIDC, no long-lived secrets) — verify with the procedure in
+[`RUNBOOKS.md`](RUNBOOKS.md#verify-a-release-download). Apple notarization and
+Windows Authenticode remain deferred (owner: maintainers) until a paid signing
+identity is provisioned; SHA-256 verification is mandatory regardless.
