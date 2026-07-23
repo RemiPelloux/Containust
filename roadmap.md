@@ -181,6 +181,42 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Exit gate: passed for GA engineering scope.** Known limitations remain listed as deferred in SUPPORT_POLICY / PACKAGING.
 
+## Sprint 10: Production-usable v1 (`1.1.0`)
+
+**Goal:** make Containust usable in production without building from source: installable binaries, OCI pulls, and the runtime features the grammar already promises. Gated by `docs/PROD_CHECKLIST.md`.
+
+### Wave 1 — Foundation
+
+- [ ] **P10.1 Tracker/doc sync.** `work.md`, `roadmap.md`, and `docs/PROD_CHECKLIST.md` reflect the current version and Sprint 10 scope.
+- [ ] **P10.2 Privileged Linux CI.** A `privileged-linux` CI job runs the `#[ignore]` core fixtures and the sprint3 offline gate as root on `ubuntu-latest` (cgroup v2, busybox-static).
+- [ ] **P10.3 Port publish docs.** Linux port publish behavior documented in `CLI_REFERENCE.md` / `SUPPORT_POLICY.md` when Wave 3 lands.
+
+### Wave 2 — OCI image pull
+
+- [ ] **P10.4 `oci://` scheme.** Registry resolution: manifest index → platform manifest → layer blobs (Docker Hub, GHCR).
+- [ ] **P10.5 Fail-closed policy.** Digest pin required by default; `--offline` rejects registry references before any connection.
+- [ ] **P10.6 Auth.** `CONTAINUST_REGISTRY_TOKEN` / `~/.docker/config.json`; secrets never logged or persisted.
+- [ ] **P10.7 Catalog import.** Pulled layers stored content-addressed and registered as `image://name@sha256:...`.
+- [ ] **P10.8 CLI + docs.** `ctst pull`, updated preset hints, CLI reference and examples.
+
+### Wave 3 — Runtime enforcement of promised features
+
+- [ ] **P10.9 Ports.** `ports = ["host:container"]` published on Linux and forwarded on the VM backend; singular `port` keeps CONNECT semantics.
+- [ ] **P10.10 Restart policies.** `never` / `on-failure` / `always` enforced via the state machine and reconciliation.
+- [ ] **P10.11 Healthchecks.** Interval execution, unhealthy marking, restart-policy integration.
+- [ ] **P10.12 State migration.** Schema bump + migration for new persisted fields.
+- [ ] **P10.13 Example gate.** `examples/healthcheck_example.ctst` and nginx/redis templates deploy without unsupported-property errors.
+
+### Wave 4 — Packaging and release
+
+- [ ] **P10.14 Homebrew.** Formula (or documented tap) for macOS/Linux.
+- [ ] **P10.15 deb/RPM.** nfpm packaging in the release workflow.
+- [ ] **P10.16 winget.** Manifest for the Windows zip artifact.
+- [ ] **P10.17 Signing/verification.** SHA-256 verify script in runbooks; cosign or documented deferral.
+- [ ] **P10.18 Release.** CHANGELOG, SUPPORT_POLICY pruning, tag `v1.1.0` with green CI.
+
+**Exit gate:** every PROD_CHECKLIST item checked or explicitly deferred with an owner.
+
 ## Later feature backlog
 
 These are intentionally after correctness and release gates:

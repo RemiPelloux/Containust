@@ -175,6 +175,32 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
 
+  # Privileged Linux fixtures: namespaces, cgroups v2, mounts, capabilities,
+  # and the sprint3 offline gate. GitHub ubuntu runners boot with cgroup v2
+  # and allow passwordless sudo, so the #[ignore] suite runs as root here.
+  privileged-linux:
+    name: Privileged Linux
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+      - name: Install busybox
+        run: sudo apt-get update && sudo apt-get install -y busybox-static
+      - name: Build test binaries
+        run: cargo test --workspace --locked --no-run
+      - name: Privileged core fixtures (root)
+        run: |
+          sudo -E env "PATH=$PATH" \
+            cargo test -p containust-core --locked -- --ignored --test-threads=1
+      - name: Privileged offline gate (root)
+        run: |
+          sudo -E env "PATH=$PATH" \
+            cargo test -p containust-cli --locked --test sprint3_gate -- --ignored --test-threads=1
+
   # QEMU smoke on macOS (HVF). Downloads pinned Alpine assets on first run.
   qemu-smoke-macos:
     name: QEMU smoke (macOS)
