@@ -194,9 +194,7 @@ fn apply_env(envp: &[CString]) {
             continue;
         };
         // SAFETY: key is a NUL-terminated CString from the process environment.
-        unsafe {
-            libc::unsetenv(key.as_ptr());
-        }
+        let _ = unsafe { libc::unsetenv(key.as_ptr()) };
     }
     for var in envp {
         let bytes = var.as_bytes();
@@ -210,9 +208,7 @@ fn apply_env(envp: &[CString]) {
             continue;
         };
         // SAFETY: k/v are NUL-terminated CStrings built above.
-        unsafe {
-            libc::setenv(k.as_ptr(), v.as_ptr(), 1);
-        }
+        let _ = unsafe { libc::setenv(k.as_ptr(), v.as_ptr(), 1) };
     }
 }
 

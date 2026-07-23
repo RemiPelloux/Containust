@@ -28,8 +28,8 @@ Tracked in `roadmap.md` (P10.1–P10.18) and gated by `docs/PROD_CHECKLIST.md`.
 
 See `roadmap.md` (P11.1–P11.9). Operator guide: `docs/HowToUse.md`.
 
-- **Wave 1** — ✅ user + PID namespaces on Linux spawn (pipe sync + double-fork);
-  privileged CI spawn fixture; `docs/HowToUse.md` + SUPPORT_POLICY.
+- **Wave 1** — ✅ spawn path + HowToUse; 🔄 default-on user/PID ns pending
+  privileged offline-gate green (`CONTAINUST_ENABLE_USER_PID_NS=1` opt-in today).
 - **Wave 2** — Linux veth/NAT port remapping; named networks; DNS foundations.
 - **Wave 3** — Homebrew tap automation; winget submission; optional OCI provenance.
 

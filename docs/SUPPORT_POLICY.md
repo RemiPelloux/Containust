@@ -48,10 +48,11 @@ isolated network namespace on Linux.
 
 ## Linux spawn isolation (user + PID namespaces)
 
-On Linux, `ctst run` opts into user and PID namespaces via a pipe-synced
-fork/exec path (`write_uid_gid_map` + post-`CLONE_NEWPID` double-fork so the
-container init is PID 1). Requires a kernel with user namespaces enabled
-(and typically root or delegated userns for production hosts).
+The pipe-synced fork/exec path (uid/gid maps + post-`CLONE_NEWPID`
+double-fork so container init is PID 1) is implemented. Opt in with
+`CONTAINUST_ENABLE_USER_PID_NS=1` while default spawn keeps mount/net/ipc/uts
+only — default-on lands once the privileged offline gate stays green with
+userns enabled (Sprint 11).
 
 ## Explicitly deferred (not supported unless listed above)
 

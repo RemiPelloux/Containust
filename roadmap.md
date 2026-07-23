@@ -219,8 +219,8 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 ### Wave 1 — Linux spawn isolation
 
-- [x] **P11.1 User + PID namespaces on spawn.** Pipe-synced fork/exec path (`process_spawn.rs`) with uid/gid maps and post-`CLONE_NEWPID` double-fork; Linux backend opts in via `with_user_and_pid()`.
-- [x] **P11.2 Privileged CI expand.** `privileged-linux` runs `process_spawn` ignored fixtures as root.
+- [x] **P11.1 User + PID namespaces on spawn.** Pipe-synced fork/exec path (`process_spawn.rs`) with uid/gid maps and post-`CLONE_NEWPID` double-fork; opt-in via `CONTAINUST_ENABLE_USER_PID_NS=1` (default-on deferred until gate-green).
+- [~] **P11.2 Privileged CI expand.** `spawn_user_pid` fixture runs under the env opt-in; default-on + offline-gate green is the remaining exit for Wave 1.
 - [x] **P11.3 Docs.** `SUPPORT_POLICY.md` + `docs/HowToUse.md` cover userns/PID spawn; operator guide added.
 
 ### Wave 2 — Port remapping and networks
