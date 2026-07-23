@@ -20,14 +20,17 @@ pub enum NetworkMode {
 }
 
 impl NetworkMode {
-    /// Parses a `.ctst` `network` property (default: bridge).
+    /// Parses a `.ctst` `network` property.
+    ///
+    /// Unspecified / empty → private netns (`none`). Explicit `bridge` or a
+    /// custom name selects a shared project netns.
     #[must_use]
     pub fn parse(raw: Option<&str>) -> Self {
         let trimmed = raw.map(str::trim).filter(|s| !s.is_empty());
         match trimmed {
-            None | Some("bridge") => Self::Shared("bridge".into()),
+            None | Some("none") => Self::None,
             Some("host") => Self::Host,
-            Some("none") => Self::None,
+            Some("bridge") => Self::Shared("bridge".into()),
             Some(name) => Self::Shared(name.to_string()),
         }
     }
@@ -53,11 +56,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn network_mode_parse_defaults_to_bridge() {
-        assert_eq!(
-            NetworkMode::parse(None),
-            NetworkMode::Shared("bridge".into())
-        );
+    fn network_mode_parse_defaults_to_private() {
+        assert_eq!(NetworkMode::parse(None), NetworkMode::None);
         assert_eq!(
             NetworkMode::parse(Some("bridge")),
             NetworkMode::Shared("bridge".into())

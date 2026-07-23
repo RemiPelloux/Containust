@@ -146,7 +146,7 @@ pub fn write_container_hosts(rootfs: &Path, names: &[String]) -> Result<()> {
     let mut body = String::from("127.0.0.1\tlocalhost\n");
     for name in names {
         if name != "localhost" {
-            let _ = write!(body, "127.0.0.1\t{name}\n");
+            let _ = writeln!(body, "127.0.0.1\t{name}");
         }
     }
     let hosts = etc.join("hosts");

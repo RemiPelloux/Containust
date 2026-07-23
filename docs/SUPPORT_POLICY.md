@@ -30,7 +30,10 @@ See [`VERSIONING.md`](VERSIONING.md). Summary:
 
 Named networks (`network = "bridge"` or a custom name) share one netns per
 project network. Peer names are written into `/etc/hosts` as `127.0.0.1` so
-`CONNECT` `_HOST` variables resolve on the shared loopback.
+`CONNECT` `_HOST` variables resolve on the shared loopback. Shared networks
+disable per-container user namespaces (the persisted netns is owned by the
+init userns); PID namespaces remain on. Unspecified `network` uses a private
+netns with full user+PID isolation.
 
 ## Issue severity
 

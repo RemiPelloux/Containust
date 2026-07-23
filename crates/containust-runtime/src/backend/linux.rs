@@ -390,10 +390,14 @@ impl LinuxNativeBackend {
             .map_err(|message| ContainustError::Config { message })?;
         let readonly_rootfs = entry.readonly_rootfs;
         let volumes = entry.volumes.clone();
+        let network = crate::network::NetworkMode::parse(Some(entry.network.as_str()));
         let mut namespaces =
             containust_core::namespace::NamespaceConfig::default().with_user_and_pid();
-        let network = crate::network::NetworkMode::parse(Some(entry.network.as_str()));
         namespaces.network = !network.is_host();
+        // Shared netns lives in the init userns — cannot setns after NEWUSER.
+        if network.shared_name().is_some() {
+            namespaces.user = false;
+        }
         let rootfs = match &entry.rootfs_path {
             Some(path) => PathBuf::from(path),
             None => prepare_rootfs(&self.data_dir, &image, id)?,

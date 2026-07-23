@@ -86,7 +86,7 @@ const fn default_readonly_rootfs() -> bool {
 }
 
 fn default_network() -> String {
-    "bridge".into()
+    "none".into()
 }
 
 /// Serializable collection of all container state entries.

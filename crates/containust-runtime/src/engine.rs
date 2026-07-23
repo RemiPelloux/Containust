@@ -559,8 +559,7 @@ fn build_deploy_config(
         .map(|decl| parse_healthcheck_spec(&comp.name, decl))
         .transpose()?;
     let network = resolve_deploy_network(comp.network.as_deref(), &port_mappings);
-    let mut namespaces = containust_core::namespace::NamespaceConfig::default().with_user_and_pid();
-    namespaces.network = !network.is_host();
+    let namespaces = namespaces_for_network(&network);
     let network_name = match &network {
         crate::network::NetworkMode::Host => "host".into(),
         crate::network::NetworkMode::None => "none".into(),
@@ -596,10 +595,29 @@ fn resolve_deploy_network(
     } else {
         crate::network::NetworkMode::parse(declared)
     };
+    // Remap needs a non-host netns for the userspace forwarder; keep it
+    // private so per-container userns remains compatible (shared netns is
+    // owned by the init userns and cannot be joined after CLONE_NEWUSER).
     if has_remap && network.is_host() {
-        return crate::network::NetworkMode::Shared("bridge".into());
+        return crate::network::NetworkMode::None;
     }
     network
+}
+
+/// Namespace policy for a deploy network mode.
+///
+/// Shared project netns files are created in the init user namespace, so
+/// containers that join them must not enter a private userns (setns would
+/// fail closed after the uid-map handshake).
+fn namespaces_for_network(
+    network: &crate::network::NetworkMode,
+) -> containust_core::namespace::NamespaceConfig {
+    let mut namespaces = containust_core::namespace::NamespaceConfig::default().with_user_and_pid();
+    namespaces.network = !network.is_host();
+    if network.shared_name().is_some() {
+        namespaces.user = false;
+    }
+    namespaces
 }
 
 fn published_port_mappings(
@@ -1091,7 +1109,8 @@ EXPOSE 80:8080"#,
             }]
         );
         assert!(config.namespaces.network);
-        assert_eq!(config.network, "bridge");
+        assert!(config.namespaces.user);
+        assert_eq!(config.network, "none");
     }
 
     #[test]
@@ -1118,6 +1137,9 @@ EXPOSE 80:8080"#,
             .expect("config captured");
         assert_eq!(config.network, "backend");
         assert!(config.namespaces.network);
+        // Shared netns is init-userns-owned; userns must stay off for setns.
+        assert!(!config.namespaces.user);
+        assert!(config.namespaces.pid);
     }
 
     #[test]
