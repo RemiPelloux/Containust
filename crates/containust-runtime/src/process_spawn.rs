@@ -5,9 +5,12 @@
 //! without being misreported as an exec failure.
 //!
 //! Child order when PID ns is enabled: user ns → maps → `CLONE_NEWPID` +
-//! fork (become PID 1) → mount/net/ipc/uts (+ loopback) → pivot → READY →
-//! exec. Proc mounts need CAP_SYS_ADMIN in the user_ns that owns the
-//! current PID namespace, so NEWPID must precede `mount("/proc")`.
+//! fork (become PID 1) → mount/net/ipc/uts (+ loopback) → pseudo mounts
+//! under rootfs → pivot → READY → exec. Proc mounts need `CAP_SYS_ADMIN`
+//! in the `user_ns` that owns the current PID namespace. When the host
+//! `/proc` is masked, the parent mounts a visible proc anchor before fork
+//! and the child mounts proc onto the rootfs before pivot so the kernel's
+//! `mount_too_revealing` check still sees that anchor.
 
 #![cfg(target_os = "linux")]
 
@@ -33,6 +36,15 @@ const MSG_READY: u8 = 4;
 /// Spawns with user and/or PID namespace support.
 pub fn spawn_with_user_pid(config: &ProcessConfig) -> Result<u32> {
     validate_spawn_inputs(config)?;
+    if config.namespaces.user {
+        // Init-userns visible proc so userns children can mount their own.
+        crate::process_mounts::ensure_visible_proc_anchor().map_err(|source| {
+            ContainustError::Io {
+                path: Path::new(crate::process_mounts::PROC_ANCHOR_PATH).to_path_buf(),
+                source,
+            }
+        })?;
+    }
     let (parent_rx, child_tx) = pipe_pair()?;
     let (child_rx, parent_tx) = pipe_pair()?;
     let log_fds = open_log_fds(config)?;

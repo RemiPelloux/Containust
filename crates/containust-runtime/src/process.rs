@@ -190,9 +190,11 @@ pub(crate) fn configure_child_isolation_after_ns(
     for volume in volumes {
         bind_volume(volume, rootfs)?;
     }
+    // Mount proc/sys/dev under rootfs *before* pivot so a host proc-anchor
+    // remains visible (userns `mount_too_revealing` check).
+    crate::process_mounts::mount_pseudo_filesystems_at(rootfs)?;
     containust_core::filesystem::pivot_root::pivot_root(rootfs, &rootfs.join(".old_root"))
         .map_err(|e| std::io::Error::other(format!("pivot_root failed: {e}")))?;
-    crate::process_mounts::mount_pseudo_filesystems()?;
     if readonly_rootfs {
         mount(
             None::<&str>,
