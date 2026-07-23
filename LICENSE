@@ -1,0 +1,69 @@
+Containust Commercial License
+Copyright (c) 2026 Remi Pelloux / Containust
+
+All rights reserved.
+
+========================================================================
+
+This software and associated documentation files (the "Software") are
+proprietary. Source code may be viewed in the public repository for
+evaluation. Except as expressly permitted below, no rights are granted.
+
+1. Evaluation (no fee)
+
+   You may download, compile, and use the Software solely for personal
+   or internal evaluation, provided that such use is:
+
+   (a) non-production;
+   (b) not redistributed, sublicensed, or published in modified or
+       unmodified form; and
+   (c) not offered to third parties as a hosted, managed, or
+       multi-tenant service.
+
+2. Restricted activities
+
+   Without a separate paid commercial license from the copyright holder,
+   you may NOT:
+
+   (a) use the Software in production;
+   (b) redistribute, sublicense, sell, lease, or otherwise transfer the
+       Software (source or binary), in whole or in part;
+   (c) offer the Software, or a service whose primary value depends on
+       the Software, as a hosted or managed service to third parties;
+   (d) embed or bundle the Software into a product or service that is
+       distributed or sold to third parties; or
+   (e) remove or alter copyright, license, or proprietary notices.
+
+3. Commercial license
+
+   Production use, redistribution, commercial embedding, and hosted /
+   managed offerings require a paid license. Contact:
+
+       license@containust.dev
+
+   Terms of any paid license supersede this file for the licensed party
+   to the extent they conflict.
+
+4. Contributions
+
+   By submitting a contribution to the public repository, you grant the
+   copyright holder a perpetual, worldwide, royalty-free license to use,
+   modify, and distribute that contribution as part of the Software under
+   this license or any successor chosen by the copyright holder.
+
+5. No warranty
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+   NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR
+   ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+   CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+   WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+6. Prior open-source releases
+
+   Releases previously distributed under MIT and/or Apache-2.0 remain
+   available under those terms for copies obtained from those releases.
+   This Commercial License applies to this version and subsequent
+   versions unless a later release states otherwise.

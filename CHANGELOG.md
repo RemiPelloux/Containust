@@ -28,6 +28,10 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 - README, roadmap, support policy, and sprint tracker updated for Sprint 11
   Waves 1–2 (`1.2.0` track).
+- **License:** switched from MIT/Apache-2.0 dual licensing to the proprietary
+  [Containust Commercial License](LICENSE). Source remains viewable for
+  evaluation; production use and redistribution require a paid license
+  ([COMMERCIAL.md](COMMERCIAL.md)). Prior MIT/Apache releases are unchanged.
 
 ## [1.1.0] — 2026-07-23
 

@@ -3,7 +3,7 @@ name = "containust-ebpf"
 version.workspace = true
 description = "eBPF-based observability: syscall tracing, file monitoring, and network surveillance."
 edition.workspace = true
-license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

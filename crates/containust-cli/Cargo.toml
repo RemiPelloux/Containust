@@ -3,7 +3,7 @@ name = "containust-cli"
 version.workspace = true
 description = "CLI binary (ctst) for the Containust container runtime."
 edition.workspace = true
-license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

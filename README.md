@@ -7,7 +7,7 @@ daemon. Native Linux isolation; QEMU on macOS and Windows.
 
 [![CI](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml/badge.svg)](https://github.com/RemiPelloux/Containust/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/RemiPelloux/Containust)](https://github.com/RemiPelloux/Containust/releases/latest)
-[![License](https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-blue.svg)](LICENSE-MIT)
+[![License](https://img.shields.io/badge/license-Commercial-blue.svg)](LICENSE)
 
 **GA `1.1.0`** · [Landing page](site/index.html) · [How to use](docs/HowToUse.md) · [Docs map](docs/README.md)
 
@@ -108,4 +108,7 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 ## License
 
-[MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+Containust is proprietary and source-available under the
+[Containust Commercial License](LICENSE). Evaluation use is allowed;
+production, redistribution, and commercial embedding require a paid license.
+See [COMMERCIAL.md](COMMERCIAL.md).

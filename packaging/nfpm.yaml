@@ -17,7 +17,7 @@ description: |
   containers described by `.ctst` composition files.
 vendor: Containust
 homepage: https://github.com/RemiPelloux/Containust
-license: MIT OR Apache-2.0
+license: Containust Commercial License
 contents:
   - src: ${NFPM_BINARY}
     dst: /usr/bin/ctst

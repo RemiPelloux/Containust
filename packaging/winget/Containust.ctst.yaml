@@ -5,7 +5,7 @@ PackageVersion: 1.1.0
 PackageLocale: en-US
 Publisher: Containust
 PackageName: ctst
-License: MIT OR Apache-2.0
+License: Containust Commercial License
 ShortDescription: Containust - lightweight, daemonless container runtime CLI.
 PackageUrl: https://github.com/RemiPelloux/Containust
 Installers:
