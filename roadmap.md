@@ -11,7 +11,7 @@ Containust is at GA **`1.1.0`** (Sprint 10 complete) with **Sprint 11 Waves 1–
 - Images: `file://`, `tar://`, `preset://alpine|busybox`, `oci://` / `ctst pull` (Hub + GHCR, auth, digest-pin, `--offline` fail-closed), catalog as `image://…@sha256:`.
 - Runtime: user + PID namespaces default-on on Linux; `EXPOSE host:container` remap (userspace forwarder / VM `hostfwd`); named networks + `/etc/hosts` peers; restart/healthcheck; state schema **4**.
 - Docs: product landing + HTML docs site under [`site/`](site/); operator guide [`docs/HowToUse.md`](docs/HowToUse.md).
-- Still open for Sprint 11 Wave 3 / `v1.2.0` tag: Homebrew tap automation, winget submission, optional OCI provenance.
+- Sprint 11 Wave 3 landed on `main`; cut `v1.2.0` next (version bump + tag; optional tap repo / winget-pkgs PR).
 - Deferred (Sprint 12+): rolling updates, volume drivers, remote orchestration, Apple notarization / Authenticode.
 
 ## Release train
@@ -232,13 +232,13 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 ### Wave 3 — Operator polish
 
-- [ ] **P11.7 Homebrew tap.** Dedicated tap + automated sha bump on release (in-tree formula remains).
-- [ ] **P11.8 winget submission.** Publish the Windows zip via winget-pkgs for `1.2.0`.
-- [ ] **P11.9 OCI provenance.** Optional signed-image / provenance metadata checks (fail-closed when requested).
+- [x] **P11.7 Homebrew tap.** `scripts/bump_packaging.sh` + `release.yml` `packaging-bump` job; tap bootstrap docs in `packaging/homebrew-tap/README.md` (`brew tap RemiPelloux/containust` once the tap repo + `HOMEBREW_TAP_TOKEN` exist).
+- [x] **P11.8 winget submission.** Same bump job refreshes `packaging/winget/Containust.ctst.yaml`; submit path documented in `packaging/winget/README.md` (`wingetcreate submit` after each release PR).
+- [x] **P11.9 OCI provenance.** Opt-in `ctst pull --require-provenance` / `CONTAINUST_REQUIRE_PROVENANCE` runs `cosign verify` fail-closed before layer download.
 
-**Wave 1–2 status: complete on `main`.** Privileged Linux CI green for user/PID spawn and offline gate; remapped ports + named networks shipped; docs site + HowToUse/SUPPORT_POLICY updated; commercial license + `cargo deny` SPDX wired.
+**Waves 1–3 status: complete on `main`.** Remaining for the `v1.2.0` tag: version bump + CHANGELOG cut, create `homebrew-containust` + secret (optional), winget-pkgs PR after first commercial `1.2.0` artifacts.
 
-**Exit gate for `v1.2.0`:** Wave 3 (P11.7–P11.9) or explicit deferral note; CHANGELOG cut; tag `v1.2.0` on green CI.
+**Exit gate for `v1.2.0`:** CHANGELOG cut; workspace version `1.2.0`; tag on green CI; packaging bump PR merges with real sha256.
 
 ## Later feature backlog
 

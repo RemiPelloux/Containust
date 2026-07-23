@@ -31,6 +31,8 @@ pub struct ImportRequest {
     /// When true, `oci://` references may resolve a tag without a
     /// pinned digest (the resolved digest is still recorded).
     pub allow_unpinned: bool,
+    /// When true, require cosign-verified provenance before accepting layers.
+    pub require_provenance: bool,
 }
 
 impl ImportRequest {
@@ -45,6 +47,7 @@ impl ImportRequest {
                 ..FetchPolicy::default()
             },
             allow_unpinned: false,
+            require_provenance: false,
         }
     }
 
@@ -52,6 +55,13 @@ impl ImportRequest {
     #[must_use]
     pub const fn with_unpinned(mut self) -> Self {
         self.allow_unpinned = true;
+        self
+    }
+
+    /// Requires cosign verification of the image signature (P11.9).
+    #[must_use]
+    pub const fn with_require_provenance(mut self) -> Self {
+        self.require_provenance = true;
         self
     }
 }
@@ -168,7 +178,10 @@ fn import_oci_image(
             ),
         });
     }
-    let pulled = crate::oci::pull_image(store, reference, &request.fetch_policy)?;
+    let provenance = crate::oci::ProvenancePolicy {
+        require: request.require_provenance,
+    };
+    let pulled = crate::oci::pull_image(store, reference, &request.fetch_policy, provenance)?;
     let mut layers = Vec::with_capacity(pulled.layers.len());
     let mut size_bytes = 0_u64;
     for blob in &pulled.layers {

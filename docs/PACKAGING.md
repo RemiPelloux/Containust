@@ -8,10 +8,10 @@ with an owner.
 |---|---|---|---|
 | Source / `cargo install --path crates/containust-cli` | **Supported** | maintainers | Documented in README and CLI_REFERENCE |
 | GitHub Release binaries (`v*` tags) | **Supported** | maintainers | SHA-256 checksums + cosign-signed `SHA256SUMS` via `.github/workflows/release.yml` |
-| Homebrew formula | **Supported (in-tree)** | maintainers | `brew install --formula ./Formula/ctst.rb`; a dedicated tap and automated sha bump are follow-ups |
+| Homebrew formula | **Supported** | maintainers | In-tree `Formula/ctst.rb`; dedicated tap `RemiPelloux/containust` + automated sha bump on `v*` (P11.7 — see `packaging/homebrew-tap/README.md`) |
 | Debian (`.deb`) | **Supported** | maintainers | Built by the `linux-packages` release job with nfpm (`packaging/nfpm.yaml`) |
 | RPM | **Supported** | maintainers | Same nfpm config as Debian |
-| Windows (winget) | **Template ready** | maintainers | Manifest template in `packaging/winget/`; submit to winget-pkgs per release |
+| Windows (winget) | **Supported (submit)** | maintainers | Manifest auto-bumped on release (`scripts/bump_packaging.sh`); submit to winget-pkgs per `packaging/winget/README.md` (P11.8) |
 | Windows installer (MSI) | **Deferred** | maintainers | Zip + winget cover Windows installs; MSI only if enterprise demand appears |
 
 ## Install from packages
@@ -24,9 +24,21 @@ sudo dpkg -i ctst_X.Y.Z_amd64.deb
 # Fedora / RHEL
 sudo rpm -i ctst-X.Y.Z-1.amd64.rpm
 
-# Homebrew (macOS / Linux)
+# Homebrew tap (macOS / Linux) — after tap bootstrap
+brew tap RemiPelloux/containust && brew install ctst
+
+# Or from a clone of this repo
 brew install --formula ./Formula/ctst.rb
 ```
+
+### Release packaging bump (P11.7 / P11.8)
+
+On every `v*` tag, `.github/workflows/release.yml` runs `packaging-bump`:
+
+1. `./scripts/bump_packaging.sh <version> SHA256SUMS` refreshes formula sha256 + winget SHA
+2. Opens a PR on Containust with those changes
+3. If `HOMEBREW_TAP_TOKEN` is set, pushes `Formula/ctst.rb` to
+   `RemiPelloux/homebrew-containust` (see `packaging/homebrew-tap/README.md`)
 
 ## Current recommended install
 

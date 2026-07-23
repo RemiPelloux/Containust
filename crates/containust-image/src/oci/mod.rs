@@ -8,7 +8,9 @@
 pub mod auth;
 pub mod manifest;
 pub mod name;
+pub mod provenance;
 pub mod pull;
 
 pub use name::{DEFAULT_REGISTRY, OciName, parse_oci_name};
+pub use provenance::ProvenancePolicy;
 pub use pull::{LayerBlob, PulledImage, pull_image};

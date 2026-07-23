@@ -9,7 +9,7 @@ daemon. Native Linux isolation; QEMU on macOS and Windows.
 [![Release](https://img.shields.io/github/v/release/RemiPelloux/Containust)](https://github.com/RemiPelloux/Containust/releases/latest)
 [![License](https://img.shields.io/badge/license-Commercial-blue.svg)](LICENSE)
 
-**GA `1.1.0`** · Sprint 11 Waves 1–2 on `main` (→ `1.2.0`) ·
+**GA `1.1.0`** · Sprint 11 Waves 1–3 on `main` (→ tag `1.2.0`) ·
 [Landing](site/index.html) · [Docs](site/docs/) · [Roadmap](roadmap.md)
 
 ---

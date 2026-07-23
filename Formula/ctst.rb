@@ -1,11 +1,14 @@
-# Homebrew formula for the ctst CLI (P10.14).
+# Homebrew formula for the ctst CLI (P10.14 / P11.7).
 #
-# Install directly from this repository:
+# Dedicated tap (after one-time bootstrap — see packaging/homebrew-tap/README.md):
+#   brew tap RemiPelloux/containust
+#   brew install ctst
+#
+# From this repository:
 #   brew install --formula ./Formula/ctst.rb
 #
-# The `sha256` values below must be refreshed for every release from the
-# published `SHA256SUMS` asset (see .github/workflows/release.yml). A CI
-# step to automate the bump is tracked in docs/PACKAGING.md.
+# On every v* release, scripts/bump_packaging.sh refreshes version + sha256
+# from SHA256SUMS (release.yml → packaging-bump job).
 class Ctst < Formula
   desc "Containust - lightweight, daemonless container runtime"
   homepage "https://github.com/RemiPelloux/Containust"

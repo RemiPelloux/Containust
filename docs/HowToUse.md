@@ -29,7 +29,7 @@ Other options:
 | --- | --- |
 | Debian / Ubuntu | `sudo dpkg -i ctst_1.1.0_amd64.deb` |
 | Fedora / RHEL | `sudo rpm -i ctst-1.1.0-1.amd64.rpm` |
-| Homebrew (in-tree) | `brew install --formula ./Formula/ctst.rb` |
+| Homebrew | `brew tap RemiPelloux/containust && brew install ctst` (or in-tree formula) |
 | From source | `cargo install --path crates/containust-cli` |
 
 macOS and Windows need **QEMU 7+** (`brew install qemu` / install QEMU on Windows).

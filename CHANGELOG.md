@@ -25,11 +25,17 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 - **Named networks** (`host` / `none` / `bridge` / custom) with persisted
   shared netns; peer names in `/etc/hosts` for `CONNECT` resolution.
 - State schema **4**: `port_mappings`, `network`, `forwarder_pids`.
+- **Homebrew tap automation** (`scripts/bump_packaging.sh`, release
+  `packaging-bump` job, `packaging/homebrew-tap/README.md`).
+- **winget manifest bump** on every `v*` release (submit via
+  `packaging/winget/README.md`).
+- **`ctst pull --require-provenance`** — fail-closed `cosign verify` before
+  layer download (`CONTAINUST_REQUIRE_PROVENANCE`, identity env regexps).
 
 ### Changed
 
 - README, roadmap, support policy, and sprint tracker updated for Sprint 11
-  Waves 1–2 (`1.2.0` track).
+  Waves 1–3 (`1.2.0` track).
 - **License:** switched from MIT/Apache-2.0 dual licensing to the proprietary
   [Containust Commercial License](LICENSE). Source remains viewable for
   evaluation; production use and redistribution require a paid license

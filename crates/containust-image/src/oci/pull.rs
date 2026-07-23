@@ -18,6 +18,7 @@ use crate::oci::manifest::{
     parse_manifest, select_platform,
 };
 use crate::oci::name::{OciName, parse_oci_name};
+use crate::oci::provenance::{ProvenancePolicy, ensure_image_provenance};
 use crate::reference::ImageReference;
 use crate::storage::StorageBackend;
 
@@ -50,11 +51,13 @@ pub struct PulledImage {
 ///
 /// Returns an error when offline mode is enabled, the name is invalid,
 /// authentication fails, no linux manifest matches the host platform,
-/// or any downloaded content fails digest verification.
+/// provenance is required and fails, or any downloaded content fails
+/// digest verification.
 pub fn pull_image(
     store: &StorageBackend,
     reference: &ImageReference,
     policy: &FetchPolicy,
+    provenance: ProvenancePolicy,
 ) -> Result<PulledImage> {
     if policy.offline {
         return Err(ContainustError::Network {
@@ -73,6 +76,7 @@ pub fn pull_image(
     );
     let (body, manifest_digest) = session.fetch_manifest(&manifest_part)?;
     verify_pin(reference, &manifest_digest)?;
+    ensure_image_provenance(&name, &manifest_digest, provenance)?;
 
     let layers = session.resolve_layer_descriptors(&body)?;
     let layers = layers
@@ -285,7 +289,8 @@ mod tests {
             offline: true,
             ..FetchPolicy::default()
         };
-        let error = pull_image(&store, &reference, &policy).expect_err("offline must fail");
+        let error = pull_image(&store, &reference, &policy, ProvenancePolicy::default())
+            .expect_err("offline must fail");
         assert!(error.to_string().contains("offline"));
     }
 

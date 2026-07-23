@@ -637,12 +637,19 @@ ctst pull <IMAGE> [OPTIONS]
 | `<IMAGE>` | `name[:tag]`, `oci://registry/repo:tag`, optionally `@sha256:<digest>` |
 | `--name <NAME>` | Catalog name for the image (defaults to the repository's last segment) |
 | `--file <FILE>` | Composition whose project store receives the image (default `containust.ctst`) |
+| `--require-provenance` | Fail closed unless `cosign verify` succeeds for the resolved digest (`CONTAINUST_REQUIRE_PROVENANCE=1`) |
 
 Inherits all [global options](#global-options).
 
 ### Description
 
 `ctst pull` resolves the tag against the registry (index → platform manifest → layer blobs), verifies every manifest and layer by SHA-256, and registers the image content-addressed in the project catalog. The resolved manifest digest is printed as a pinned `image://name@sha256:<digest>` reference — use that reference in your `.ctst` file.
+
+With `--require-provenance` (P11.9), Containust runs `cosign verify` against the
+resolved digest **before** downloading layers. Install
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/). Narrow
+identity with `CONTAINUST_COSIGN_IDENTITY_REGEXP` and
+`CONTAINUST_COSIGN_OIDC_ISSUER_REGEXP` (default `.*` — any verified signature).
 
 Short names resolve like the Docker CLI: `alpine:3.21` becomes `registry-1.docker.io/library/alpine:3.21`. Other registries are addressed by host: `ghcr.io/org/app:v1`.
 
@@ -677,6 +684,9 @@ ctst pull ghcr.io/org/app:v1
 
 # Re-pull a known digest (fails closed on any mismatch)
 ctst pull alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d
+
+# Require a cosign-verified signature (fail closed)
+ctst pull ghcr.io/org/app:v1 --require-provenance
 ```
 
 ---

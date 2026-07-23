@@ -19,6 +19,13 @@ pub struct PullArgs {
     /// Path to the .ctst composition file whose project store receives the image.
     #[arg(long, default_value = "containust.ctst")]
     pub file: String,
+
+    /// Fail closed unless `cosign verify` succeeds for the resolved digest (P11.9).
+    ///
+    /// Tune identity with `CONTAINUST_COSIGN_IDENTITY_REGEXP` and
+    /// `CONTAINUST_COSIGN_OIDC_ISSUER_REGEXP` (default `.*` — any signature).
+    #[arg(long, env = "CONTAINUST_REQUIRE_PROVENANCE")]
+    pub require_provenance: bool,
 }
 
 /// Executes the `pull` command.
@@ -47,7 +54,10 @@ pub fn execute(args: PullArgs, options: &super::RuntimeOptions) -> anyhow::Resul
 
     println!("Pulling {reference} as '{catalog_name}'...");
     let engine = options.engine_for_project(Path::new(&args.file));
-    let request = ImportRequest::new(&catalog_name, options.offline).with_unpinned();
+    let mut request = ImportRequest::new(&catalog_name, options.offline).with_unpinned();
+    if args.require_provenance {
+        request = request.with_require_provenance();
+    }
     let entry = import_image(engine.data_dir(), &reference, &request)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -109,6 +119,7 @@ mod tests {
             image: "file:///rootfs".into(),
             name: None,
             file: "containust.ctst".into(),
+            require_provenance: false,
         };
         let error =
             execute(args, &super::super::RuntimeOptions::default()).expect_err("non-oci must fail");

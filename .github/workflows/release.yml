@@ -215,9 +215,81 @@ jobs:
             Each archive includes `build-info.json` (`git_sha`, `built`, `source_date_epoch`).
             Linux users can install the `.deb` / `.rpm` packages directly;
             see `docs/PACKAGING.md` for Homebrew and winget instructions.
+            After this release, packaging bump (Homebrew/winget) and optional
+            tap sync run automatically (P11.7 / P11.8).
           files: |
             artifacts/**/*
             SHA256SUMS
             SHA256SUMS.sigstore.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload SHA256SUMS for packaging bump
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-sha256sums
+          path: SHA256SUMS
+
+  packaging-bump:
+    name: Bump Homebrew / winget (P11.7 / P11.8)
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download SHA256SUMS
+        uses: actions/download-artifact@v4
+        with:
+          name: release-sha256sums
+          path: .
+
+      - name: Bump Formula and winget manifests
+        run: |
+          set -euo pipefail
+          chmod +x scripts/bump_packaging.sh
+          ./scripts/bump_packaging.sh "${GITHUB_REF_NAME#v}" SHA256SUMS
+
+      - name: Open packaging bump PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump packaging for ${{ github.ref_name }}"
+          title: "chore: bump Homebrew/winget for ${{ github.ref_name }}"
+          body: |
+            Automated packaging bump from release `${{ github.ref_name }}` (P11.7 / P11.8).
+
+            - Refreshes `Formula/ctst.rb` sha256 + version from `SHA256SUMS`
+            - Refreshes `packaging/winget/Containust.ctst.yaml` for winget-pkgs submit
+          branch: chore/packaging-${{ github.ref_name }}
+          delete-branch: true
+          add-paths: |
+            Formula/ctst.rb
+            packaging/winget/Containust.ctst.yaml
+
+      - name: Sync Homebrew tap (optional)
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "HOMEBREW_TAP_TOKEN unset — skip tap sync (see packaging/homebrew-tap/README.md)"
+            exit 0
+          fi
+          VERSION="${GITHUB_REF_NAME#v}"
+          git clone --depth 1 \
+            "https://x-access-token:${TAP_TOKEN}@github.com/RemiPelloux/homebrew-containust.git" tap
+          mkdir -p tap/Formula
+          cp Formula/ctst.rb tap/Formula/ctst.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/ctst.rb
+          if git diff --cached --quiet; then
+            echo "homebrew-containust already up to date"
+            exit 0
+          fi
+          git commit -m "ctst ${VERSION}"
+          git push origin HEAD:main
