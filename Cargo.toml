@@ -15,6 +15,9 @@ members = [
 [workspace.package]
 version = "1.1.0"
 edition = "2024"
+# SPDX custom id for the proprietary commercial terms in LICENSE.
+# cargo-deny cannot classify that text (askalono confidence ~0.33).
+license = "LicenseRef-Containust-Commercial"
 license-file = "LICENSE"
 repository = "https://github.com/containust/containust"
 rust-version = "1.88.0"

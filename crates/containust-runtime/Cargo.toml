@@ -3,6 +3,7 @@ name = "containust-runtime"
 version.workspace = true
 description = "Container lifecycle management: creation, execution, state tracking, and metrics."
 edition.workspace = true
+license.workspace = true
 license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true

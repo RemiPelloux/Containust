@@ -3,6 +3,7 @@ name = "containust-image"
 version.workspace = true
 description = "Container image and layer management: storage, sources, hashing, and lazy-loading."
 edition.workspace = true
+license.workspace = true
 license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true

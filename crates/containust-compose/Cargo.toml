@@ -3,6 +3,7 @@ name = "containust-compose"
 version.workspace = true
 description = "Parser for the .ctst composition language and dependency graph resolver."
 edition.workspace = true
+license.workspace = true
 license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true

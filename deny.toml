@@ -22,6 +22,8 @@ allow = [
     "CDLA-Permissive-2.0",
     "Zlib",
     "BSL-1.0",
+    # Workspace crates: proprietary commercial license (see LICENSE).
+    "LicenseRef-Containust-Commercial",
 ]
 confidence-threshold = 0.8
 

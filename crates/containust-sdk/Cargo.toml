@@ -3,6 +3,7 @@ name = "containust-sdk"
 version.workspace = true
 description = "Public SDK for using Containust as a Rust library: ContainerBuilder, GraphResolver, EventListener."
 edition.workspace = true
+license.workspace = true
 license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
