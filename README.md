@@ -9,8 +9,7 @@ daemon. Native Linux isolation; QEMU on macOS and Windows.
 [![Release](https://img.shields.io/github/v/release/RemiPelloux/Containust)](https://github.com/RemiPelloux/Containust/releases/latest)
 [![License](https://img.shields.io/badge/license-Commercial-blue.svg)](LICENSE)
 
-**GA `1.1.0`** · Sprint 11 Waves 1–3 on `main` (→ tag `1.2.0`) ·
-[Landing](site/index.html) · [Docs](site/docs/) · [Roadmap](roadmap.md)
+**GA `1.2.0`** · [Landing](site/index.html) · [Docs](site/docs/) · [Roadmap](roadmap.md)
 
 ---
 
@@ -29,7 +28,7 @@ daemon. Native Linux isolation; QEMU on macOS and Windows.
 ## Install
 
 ```bash
-VERSION=1.1.0
+VERSION=1.2.0
 TARGET=x86_64-unknown-linux-gnu   # or aarch64-*-gnu, *-apple-darwin, …
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz"
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz.sha256"

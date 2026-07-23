@@ -12,7 +12,7 @@
 class Ctst < Formula
   desc "Containust - lightweight, daemonless container runtime"
   homepage "https://github.com/RemiPelloux/Containust"
-  version "1.1.0"
+  version "1.2.0"
   license :cannot_represent # Containust Commercial License — see LICENSE
 
   on_macos do

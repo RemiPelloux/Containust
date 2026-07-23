@@ -4,7 +4,7 @@ Day-to-day operator guide. Prefer the [HTML docs site](../site/docs/) for
 browsing; this file is the markdown source. Long references live in the
 [docs map](README.md).
 
-**Version:** 1.1.0
+**Version:** 1.2.0
 
 ---
 
@@ -13,7 +13,7 @@ browsing; this file is the markdown source. Long references live in the
 Prefer a verified release binary ([PACKAGING.md](PACKAGING.md)):
 
 ```bash
-VERSION=1.1.0
+VERSION=1.2.0
 TARGET=x86_64-unknown-linux-gnu   # or aarch64-unknown-linux-gnu, *-apple-darwin, …
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz"
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz.sha256"
@@ -27,8 +27,8 @@ Other options:
 
 | Channel | Command / location |
 | --- | --- |
-| Debian / Ubuntu | `sudo dpkg -i ctst_1.1.0_amd64.deb` |
-| Fedora / RHEL | `sudo rpm -i ctst-1.1.0-1.amd64.rpm` |
+| Debian / Ubuntu | `sudo dpkg -i ctst_1.2.0_amd64.deb` |
+| Fedora / RHEL | `sudo rpm -i ctst-1.2.0-1.amd64.rpm` |
 | Homebrew | `brew tap RemiPelloux/containust && brew install ctst` (or in-tree formula) |
 | From source | `cargo install --path crates/containust-cli` |
 

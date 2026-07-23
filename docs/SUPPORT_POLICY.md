@@ -1,6 +1,6 @@
 # Support Policy
 
-Binding since `1.0.0`. Updated for Sprint 10 (`1.1.0`).
+Binding since `1.0.0`. Updated for Sprint 11 (`1.2.0`).
 
 ## Supported platforms
 

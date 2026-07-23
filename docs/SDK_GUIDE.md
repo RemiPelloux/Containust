@@ -1,6 +1,6 @@
 # Containust SDK Reference
 
-**Crate:** `containust-sdk` v1.1.0
+**Crate:** `containust-sdk` v1.2.0
 **Rust Edition:** 2024 | **MSRV:** 1.88.0
 **License:** Containust Commercial License (see [`LICENSE`](../LICENSE) and [`COMMERCIAL.md`](../COMMERCIAL.md))
 

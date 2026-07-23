@@ -10,6 +10,8 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-07-23
+
 ### Added
 
 - Product landing page in [`site/`](site/) (open `site/index.html`).
@@ -35,11 +37,12 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 ### Changed
 
 - README, roadmap, support policy, and sprint tracker updated for Sprint 11
-  Waves 1–3 (`1.2.0` track).
+  Waves 1–3.
 - **License:** switched from MIT/Apache-2.0 dual licensing to the proprietary
   [Containust Commercial License](LICENSE). Source remains viewable for
   evaluation; production use and redistribution require a paid license
   ([COMMERCIAL.md](COMMERCIAL.md)). Prior MIT/Apache releases are unchanged.
+  This tag is the first release under the commercial license.
 
 ## [1.1.0] — 2026-07-23
 

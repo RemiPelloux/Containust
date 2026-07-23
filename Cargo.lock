@@ -350,7 +350,7 @@ dependencies = [
 
 [[package]]
 name = "containust-cli"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -372,7 +372,7 @@ dependencies = [
 
 [[package]]
 name = "containust-common"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "serde",
@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "containust-compose"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "containust-common",
  "containust-core",
@@ -398,7 +398,7 @@ dependencies = [
 
 [[package]]
 name = "containust-core"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "containust-common",
  "libc",
@@ -410,7 +410,7 @@ dependencies = [
 
 [[package]]
 name = "containust-ebpf"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "aya",
  "containust-common",
@@ -422,7 +422,7 @@ dependencies = [
 
 [[package]]
 name = "containust-image"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "base64",
  "chrono",
@@ -442,7 +442,7 @@ dependencies = [
 
 [[package]]
 name = "containust-runtime"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "containust-common",
@@ -468,7 +468,7 @@ dependencies = [
 
 [[package]]
 name = "containust-sdk"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "containust-common",
  "containust-compose",
@@ -482,7 +482,7 @@ dependencies = [
 
 [[package]]
 name = "containust-tui"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "containust-common",
  "containust-sdk",

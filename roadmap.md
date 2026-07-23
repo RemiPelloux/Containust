@@ -4,14 +4,13 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at GA **`1.1.0`** (Sprint 10 complete) with **Sprint 11 Waves 1–2 landed on `main`** toward **`1.2.0`**: user/PID namespace spawn, remappable ports, named networks, and DNS foundations. License is the proprietary [Containust Commercial License](LICENSE) (source-available; see [COMMERCIAL.md](COMMERCIAL.md)).
+Containust is at GA **`1.2.0`** (Sprint 11 complete): user/PID namespace spawn, remappable ports, named networks, DNS foundations, packaging automation, and opt-in OCI provenance. License is the proprietary [Containust Commercial License](LICENSE) (source-available; see [COMMERCIAL.md](COMMERCIAL.md)) — **`v1.2.0` is the first commercial-licensed tag**.
 
 - CI green on Linux, macOS, Windows, QEMU smoke, privileged Linux (including `spawn_user_pid` + offline gate under default-on userns), format/clippy/deny/coverage.
-- Release `v1.1.0` publishes tarballs/zips for five targets, `.deb`/`.rpm`, aggregated `SHA256SUMS`, and cosign keyless signature.
-- Images: `file://`, `tar://`, `preset://alpine|busybox`, `oci://` / `ctst pull` (Hub + GHCR, auth, digest-pin, `--offline` fail-closed), catalog as `image://…@sha256:`.
+- Release `v1.2.0` publishes tarballs/zips for five targets, `.deb`/`.rpm`, aggregated `SHA256SUMS`, and cosign keyless signature; packaging-bump refreshes Homebrew/winget.
+- Images: `file://`, `tar://`, `preset://alpine|busybox`, `oci://` / `ctst pull` (Hub + GHCR, auth, digest-pin, `--offline` fail-closed, optional `--require-provenance`), catalog as `image://…@sha256:`.
 - Runtime: user + PID namespaces default-on on Linux; `EXPOSE host:container` remap (userspace forwarder / VM `hostfwd`); named networks + `/etc/hosts` peers; restart/healthcheck; state schema **4**.
 - Docs: product landing + HTML docs site under [`site/`](site/); operator guide [`docs/HowToUse.md`](docs/HowToUse.md).
-- Sprint 11 Wave 3 landed on `main`; cut `v1.2.0` next (version bump + tag; optional tap repo / winget-pkgs PR).
 - Deferred (Sprint 12+): rolling updates, volume drivers, remote orchestration, Apple notarization / Authenticode.
 
 ## Release train
@@ -236,9 +235,7 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 - [x] **P11.8 winget submission.** Same bump job refreshes `packaging/winget/Containust.ctst.yaml`; submit path documented in `packaging/winget/README.md` (`wingetcreate submit` after each release PR).
 - [x] **P11.9 OCI provenance.** Opt-in `ctst pull --require-provenance` / `CONTAINUST_REQUIRE_PROVENANCE` runs `cosign verify` fail-closed before layer download.
 
-**Waves 1–3 status: complete on `main`.** Remaining for the `v1.2.0` tag: version bump + CHANGELOG cut, create `homebrew-containust` + secret (optional), winget-pkgs PR after first commercial `1.2.0` artifacts.
-
-**Exit gate for `v1.2.0`:** CHANGELOG cut; workspace version `1.2.0`; tag on green CI; packaging bump PR merges with real sha256.
+**Exit gate: passed for engineering scope.** Tag `v1.2.0`. Optional follow-ups: create `RemiPelloux/homebrew-containust` + `HOMEBREW_TAP_TOKEN`; `wingetcreate submit` after packaging-bump PR lands with real sha256.
 
 ## Later feature backlog
 
