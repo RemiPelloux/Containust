@@ -46,11 +46,17 @@ isolated network namespace on Linux.
 - Announce in `CHANGELOG.md` and docs at least one MINOR before removal.
 - Removals happen only in MAJOR releases after `1.0.0`.
 
+## Linux spawn isolation (user + PID namespaces)
+
+On Linux, `ctst run` opts into user and PID namespaces via a pipe-synced
+fork/exec path (`write_uid_gid_map` + post-`CLONE_NEWPID` double-fork so the
+container init is PID 1). Requires a kernel with user namespaces enabled
+(and typically root or delegated userns for production hosts).
+
 ## Explicitly deferred (not supported unless listed above)
 
 - `EXPOSE` host/container port remapping on Linux (veth/NAT publish path)
 - Apple notarization / Windows Authenticode (cosign keyless signs `SHA256SUMS`; see `PACKAGING.md`)
-- PID / user-namespace wiring on the Linux spawn path
 - Multi-network mesh, DNS / service discovery
 - Rolling updates / declarative `plan` apply diffs
 - Volume drivers, snapshots, encrypted local storage
@@ -59,4 +65,5 @@ isolated network namespace on Linux.
 Shipped since GA (removed from this list): OCI registry pulls with auth
 (`ctst pull`, `1.1.0`), `ports` / `restart` / `healthcheck` enforcement
 (`1.1.0`), GitHub Release binaries + `.deb`/`.rpm` + in-tree Homebrew +
-winget template + cosign-signed checksums (`1.1.0`).
+winget template + cosign-signed checksums (`1.1.0`), Linux user+PID namespace
+spawn wiring (Sprint 11 Wave 1).

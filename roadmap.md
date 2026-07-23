@@ -219,9 +219,9 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 ### Wave 1 — Linux spawn isolation
 
-- [ ] **P11.1 User + PID namespaces on spawn.** Wire `NamespaceConfig` through the Linux create/start path (double-fork + uid/gid maps); keep fail-closed until complete.
-- [ ] **P11.2 Privileged CI expand.** Cover spawn-path user/PID ns fixtures in `privileged-linux`.
-- [ ] **P11.3 Docs.** Document capability / sysctl prerequisites in `SUPPORT_POLICY.md`.
+- [x] **P11.1 User + PID namespaces on spawn.** Pipe-synced fork/exec path (`process_spawn.rs`) with uid/gid maps and post-`CLONE_NEWPID` double-fork; Linux backend opts in via `with_user_and_pid()`.
+- [x] **P11.2 Privileged CI expand.** `privileged-linux` runs `process_spawn` ignored fixtures as root.
+- [x] **P11.3 Docs.** `SUPPORT_POLICY.md` + `docs/HowToUse.md` cover userns/PID spawn; operator guide added.
 
 ### Wave 2 — Port remapping and networks
 

@@ -1,7 +1,7 @@
 # Containust — Sprint Tracker
 
 > **Goal**: Ship Containust as a production-ready container runtime, lighter and more reliable than Docker.
-> **Version**: `1.1.0` (Sprint 10 complete)
+> **Version**: `1.1.0` (Sprint 11 in progress → `1.2.0`)
 > **Standards**: 90%+ test coverage for library crates, zero clippy warnings, `cargo deny` green, no banned patterns.
 
 ## Completed
@@ -24,14 +24,14 @@ Tracked in `roadmap.md` (P10.1–P10.18) and gated by `docs/PROD_CHECKLIST.md`.
 - **Wave 4** — ✅ Homebrew/deb/RPM/winget packaging, cosign-signed checksums,
   `v1.1.0` tagged on green CI (Linux, macOS, Windows, QEMU smoke, privileged Linux).
 
-## Next — Sprint 11 (`1.2.0`)
+## Sprint 11 — Isolation depth + networking (`1.2.0`)
 
-Isolation depth + networking. See `roadmap.md` Sprint 11 (P11.1–P11.9).
+See `roadmap.md` (P11.1–P11.9). Operator guide: `docs/HowToUse.md`.
 
-- User + PID namespaces on the Linux spawn path.
-- Linux veth/NAT port remapping (`EXPOSE host:container` with differing ports).
-- Named networks + DNS foundations for CONNECT.
-- Homebrew tap automation, winget submission, optional OCI provenance checks.
+- **Wave 1** — ✅ user + PID namespaces on Linux spawn (pipe sync + double-fork);
+  privileged CI spawn fixture; `docs/HowToUse.md` + SUPPORT_POLICY.
+- **Wave 2** — Linux veth/NAT port remapping; named networks; DNS foundations.
+- **Wave 3** — Homebrew tap automation; winget submission; optional OCI provenance.
 
 ## Deferred (Sprint 12+)
 

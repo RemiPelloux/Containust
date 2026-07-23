@@ -66,14 +66,20 @@ pub fn spawn_container_process(config: &ProcessConfig) -> Result<u32> {
     config.namespaces.validate_for_spawn()?;
     let _ = crate::volume::validate_volumes(&config.volumes)?;
 
-    let container_root = config.rootfs.clone();
     tracing::info!(
         command = ?config.command,
-        rootfs = %container_root.display(),
+        rootfs = %config.rootfs.display(),
+        user = config.namespaces.user,
+        pid = config.namespaces.pid,
         "spawning container process"
     );
-    let mut child_cmd = prepare_child_command(config)?;
 
+    if config.namespaces.user || config.namespaces.pid {
+        return crate::process_spawn::spawn_with_user_pid(config);
+    }
+
+    let container_root = config.rootfs.clone();
+    let mut child_cmd = prepare_child_command_for_spawn(config)?;
     let rootfs_owned = container_root.clone();
     let volumes = config.volumes.clone();
     let readonly_rootfs = config.readonly_rootfs;
@@ -93,11 +99,15 @@ pub fn spawn_container_process(config: &ProcessConfig) -> Result<u32> {
 
     let pid = child.id();
     tracing::info!(pid, "container process spawned");
+    std::mem::forget(child);
     Ok(pid)
 }
 
+/// Builds the child `Command` (env, stdio, argv). Shared with the user/PID spawn path.
 #[cfg(target_os = "linux")]
-fn prepare_child_command(config: &ProcessConfig) -> Result<std::process::Command> {
+pub(crate) fn prepare_child_command_for_spawn(
+    config: &ProcessConfig,
+) -> Result<std::process::Command> {
     if config.command.is_empty() {
         return Err(ContainustError::Config {
             message: "container command is empty".into(),
@@ -160,10 +170,20 @@ fn configure_child_isolation(
     readonly_rootfs: bool,
     namespaces: &NamespaceConfig,
 ) -> std::io::Result<()> {
-    use nix::mount::{MsFlags, mount};
-
     containust_core::namespace::create_namespaces(namespaces)
         .map_err(|e| std::io::Error::other(format!("namespace creation failed: {e}")))?;
+    configure_child_isolation_after_ns(rootfs, volumes, readonly_rootfs)
+}
+
+/// Mount / pivot_root / capability drop after namespaces already exist.
+#[cfg(target_os = "linux")]
+pub(crate) fn configure_child_isolation_after_ns(
+    rootfs: &Path,
+    volumes: &[String],
+    readonly_rootfs: bool,
+) -> std::io::Result<()> {
+    use nix::mount::{MsFlags, mount};
+
     let _ = mount::<str, str, str, str>(None, "/", None, MsFlags::MS_REC | MsFlags::MS_SLAVE, None);
     for volume in volumes {
         bind_volume(volume, rootfs)?;

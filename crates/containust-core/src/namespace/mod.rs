@@ -31,12 +31,11 @@ pub struct NamespaceConfig {
 }
 
 impl Default for NamespaceConfig {
-    /// Secure defaults for the Linux spawn path (`unshare` + `exec`).
+    /// Secure defaults for the Linux spawn path.
     ///
-    /// Mount, network, IPC, and UTS are enabled. PID and user namespaces
-    /// require additional machinery (double-fork / uid maps) and must be
-    /// opted into once those paths are implemented — requesting them
-    /// today fails closed via [`Self::validate_for_spawn`].
+    /// Mount, network, IPC, and UTS are enabled. User and PID namespaces
+    /// are off by default; the Linux backend opts into them via
+    /// [`Self::with_user_and_pid`] once the pipe-sync spawn path is used.
     fn default() -> Self {
         Self {
             pid: false,
@@ -50,32 +49,24 @@ impl Default for NamespaceConfig {
 }
 
 impl NamespaceConfig {
-    /// Validates that this configuration can be applied by the current
-    /// Linux spawn path. Unsupported combinations fail closed.
+    /// Enables user and PID namespaces on top of the secure defaults.
+    #[must_use]
+    pub const fn with_user_and_pid(mut self) -> Self {
+        self.user = true;
+        self.pid = true;
+        self
+    }
+
+    /// Validates that this configuration can be applied by the Linux spawn path.
     ///
     /// # Errors
     ///
-    /// Returns an error when mount isolation is disabled, or when PID /
-    /// user namespaces are requested before the runtime supports them.
+    /// Returns an error when mount isolation is disabled (`pivot_root` requires it).
     pub fn validate_for_spawn(&self) -> Result<()> {
         if !self.mount {
             return Err(ContainustError::Config {
                 message: "mount namespace is required for Linux containers \
                           (pivot_root depends on it)"
-                    .into(),
-            });
-        }
-        if self.pid {
-            return Err(ContainustError::Config {
-                message: "PID namespace isolation is not yet supported by the \
-                          spawn path (requires double-fork); leave namespaces.pid = false"
-                    .into(),
-            });
-        }
-        if self.user {
-            return Err(ContainustError::Config {
-                message: "user namespace isolation is not yet supported \
-                          (requires uid/gid mapping); leave namespaces.user = false"
                     .into(),
             });
         }
@@ -161,17 +152,11 @@ mod tests {
     }
 
     #[test]
-    fn namespace_config_rejects_unsupported_pid_and_user() {
-        let with_pid = NamespaceConfig {
-            pid: true,
-            ..NamespaceConfig::default()
-        };
-        assert!(with_pid.validate_for_spawn().is_err());
-        let with_user = NamespaceConfig {
-            user: true,
-            ..NamespaceConfig::default()
-        };
-        assert!(with_user.validate_for_spawn().is_err());
+    fn namespace_config_allows_user_and_pid_when_mount_enabled() {
+        let config = NamespaceConfig::default().with_user_and_pid();
+        assert!(config.user);
+        assert!(config.pid);
+        assert!(config.validate_for_spawn().is_ok());
     }
 
     #[test]

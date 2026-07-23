@@ -53,6 +53,8 @@ Rust 1.88 or newer is required by the workspace manifest. The checked-in toolcha
 
 ## Install
 
+New here? Start with **[docs/HowToUse.md](docs/HowToUse.md)**.
+
 Prefer a verified release binary (see [docs/PACKAGING.md](docs/PACKAGING.md) and [docs/RUNBOOKS.md](docs/RUNBOOKS.md)):
 
 ```bash
@@ -185,14 +187,14 @@ Privileged namespace, mount, cgroup, and eBPF tests are marked `ignored` and sho
 
 ## Documentation
 
+- **[How to use](docs/HowToUse.md)** — install, first pull/run, everyday commands, ports & offline
 - [CLI reference](docs/CLI_REFERENCE.md)
 - [.ctst language reference](docs/CTST_LANG.md)
-- [SDK guide](docs/SDK_GUIDE.md)
 - [Tutorials](docs/TUTORIALS.md)
+- [SDK guide](docs/SDK_GUIDE.md)
 - [Packaging & install](docs/PACKAGING.md)
 - [Support policy](docs/SUPPORT_POLICY.md)
 - [Operator runbooks](docs/RUNBOOKS.md)
-- [Production checklist](docs/PROD_CHECKLIST.md)
 - [Docker migration](docs/MIGRATION_FROM_DOCKER.md)
 - [Architecture](ARCHITECTURE.md)
 - [Roadmap](roadmap.md)

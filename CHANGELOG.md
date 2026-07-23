@@ -10,10 +10,17 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+### Added
+
+- Operator guide [`docs/HowToUse.md`](docs/HowToUse.md) — install, first pull/run,
+  everyday commands, ports, offline, troubleshooting.
+- Linux spawn path for **user + PID namespaces** (pipe-synced uid/gid maps and
+  post-`CLONE_NEWPID` double-fork so container init is PID 1).
+
 ### Changed
 
 - README, roadmap, support policy, and sprint tracker updated for post-`1.1.0`
-  status; Sprint 11 (`1.2.0`) isolation/networking scope sketched in `roadmap.md`.
+  status; Sprint 11 Wave 1 started (`1.2.0` track).
 
 ## [1.1.0] — 2026-07-23
 
