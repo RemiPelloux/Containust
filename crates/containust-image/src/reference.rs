@@ -26,6 +26,8 @@ pub enum ImageScheme {
     Catalog,
     /// Curated well-known rootfs (`preset://alpine`), resolved to a pinned download.
     Preset,
+    /// OCI registry image (`oci://alpine:3.21`, `oci://ghcr.io/org/app:v1`).
+    Oci,
 }
 
 impl ImageScheme {
@@ -39,6 +41,7 @@ impl ImageScheme {
             Self::Http => "http://",
             Self::Catalog => "image://",
             Self::Preset => "preset://",
+            Self::Oci => "oci://",
         }
     }
 
@@ -49,7 +52,7 @@ impl ImageScheme {
     /// "remote unless cached".
     #[must_use]
     pub const fn is_remote(self) -> bool {
-        matches!(self, Self::Https | Self::Http | Self::Preset)
+        matches!(self, Self::Https | Self::Http | Self::Preset | Self::Oci)
     }
 }
 
@@ -144,13 +147,14 @@ impl fmt::Display for ImageReference {
 }
 
 fn split_scheme(uri: &str) -> Result<(ImageScheme, &str)> {
-    const SCHEMES: [ImageScheme; 6] = [
+    const SCHEMES: [ImageScheme; 7] = [
         ImageScheme::File,
         ImageScheme::Tar,
         ImageScheme::Https,
         ImageScheme::Http,
         ImageScheme::Catalog,
         ImageScheme::Preset,
+        ImageScheme::Oci,
     ];
     SCHEMES
         .into_iter()
@@ -158,7 +162,7 @@ fn split_scheme(uri: &str) -> Result<(ImageScheme, &str)> {
         .ok_or_else(|| ContainustError::Config {
             message: format!(
                 "unsupported image source URI scheme: {uri} \
-                 (expected file://, tar://, image://, preset://, https://, or http://)"
+                 (expected file://, tar://, image://, preset://, oci://, https://, or http://)"
             ),
         })
 }
@@ -209,6 +213,14 @@ mod tests {
         let reference = ImageReference::parse("preset://alpine:3.22").expect("parse");
         assert_eq!(reference.scheme(), ImageScheme::Preset);
         assert_eq!(reference.location(), "alpine:3.22");
+        assert!(reference.is_remote());
+    }
+
+    #[test]
+    fn parse_oci_reference_extracts_name_and_is_remote() {
+        let reference = ImageReference::parse("oci://ghcr.io/org/app:v1").expect("parse");
+        assert_eq!(reference.scheme(), ImageScheme::Oci);
+        assert_eq!(reference.location(), "ghcr.io/org/app:v1");
         assert!(reference.is_remote());
     }
 

@@ -424,6 +424,7 @@ dependencies = [
 name = "containust-image"
 version = "1.0.5"
 dependencies = [
+ "base64",
  "chrono",
  "containust-common",
  "containust-core",

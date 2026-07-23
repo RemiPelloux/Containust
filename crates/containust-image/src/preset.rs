@@ -189,8 +189,8 @@ mod tests {
     fn resolve_node_returns_actionable_hint() {
         let reference = ImageReference::parse("preset://node").expect("parse");
         let error = resolve_preset(&reference).expect_err("node unsupported");
-        assert!(error.to_string().contains("OCI"));
-        assert!(error.to_string().contains("alpine"));
+        assert!(error.to_string().contains("ctst pull"));
+        assert!(error.to_string().contains("node"));
     }
 
     #[test]

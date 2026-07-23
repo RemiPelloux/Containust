@@ -73,36 +73,36 @@ pub const PRESETS: &[PresetEntry] = &[
     },
 ];
 
-/// Names users often expect from Docker Hub that need full OCI pull.
+/// Names users often expect from Docker Hub, now served by `ctst pull`.
 pub const UNSUPPORTED_PRESETS: &[(&str, &str)] = &[
     (
         "node",
-        "preset://node is not curated yet (Docker Hub OCI pull is planned). \
-         Use preset://alpine and install Node with apk, or import a local rootfs.",
+        "preset://node is not curated. Pull it from Docker Hub instead: \
+         `ctst pull node:22-alpine`, then use the printed image:// reference.",
     ),
     (
         "php",
-        "preset://php is not curated yet (Docker Hub OCI pull is planned). \
-         Use preset://alpine and install PHP with apk, or import a local rootfs.",
+        "preset://php is not curated. Pull it from Docker Hub instead: \
+         `ctst pull php:8-fpm-alpine`, then use the printed image:// reference.",
     ),
     (
         "python",
-        "preset://python is not curated yet (Docker Hub OCI pull is planned). \
-         Use preset://alpine and install Python with apk, or import a local rootfs.",
+        "preset://python is not curated. Pull it from Docker Hub instead: \
+         `ctst pull python:3-alpine`, then use the printed image:// reference.",
     ),
     (
         "nginx",
-        "preset://nginx is not curated yet (Docker Hub OCI pull is planned). \
-         Use preset://alpine and install nginx with apk, or import a local rootfs.",
+        "preset://nginx is not curated. Pull it from Docker Hub instead: \
+         `ctst pull nginx:alpine`, then use the printed image:// reference.",
     ),
     (
         "debian",
-        "preset://debian is not curated yet. Prefer preset://alpine for a \
-         minimal rootfs, or import a Debian rootfs with file:// / tar://.",
+        "preset://debian is not curated. Pull it from Docker Hub instead: \
+         `ctst pull debian:stable-slim`, or prefer preset://alpine for a minimal rootfs.",
     ),
     (
         "ubuntu",
-        "preset://ubuntu is not curated yet. Prefer preset://alpine for a \
-         minimal rootfs, or import an Ubuntu rootfs with file:// / tar://.",
+        "preset://ubuntu is not curated. Pull it from Docker Hub instead: \
+         `ctst pull ubuntu:24.04`, or prefer preset://alpine for a minimal rootfs.",
     ),
 ];

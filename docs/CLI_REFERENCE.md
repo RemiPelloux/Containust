@@ -607,6 +607,67 @@ ctst rm --force api
 
 ---
 
+## ctst pull
+
+Pull an OCI registry image (Docker Hub, GHCR, or any OCI distribution registry) into the local catalog.
+
+### Synopsis
+
+```
+ctst pull <IMAGE> [OPTIONS]
+```
+
+### Arguments and Options
+
+| Flag | Description |
+|---|---|
+| `<IMAGE>` | `name[:tag]`, `oci://registry/repo:tag`, optionally `@sha256:<digest>` |
+| `--name <NAME>` | Catalog name for the image (defaults to the repository's last segment) |
+| `--file <FILE>` | Composition whose project store receives the image (default `containust.ctst`) |
+
+Inherits all [global options](#global-options).
+
+### Description
+
+`ctst pull` resolves the tag against the registry (index → platform manifest → layer blobs), verifies every manifest and layer by SHA-256, and registers the image content-addressed in the project catalog. The resolved manifest digest is printed as a pinned `image://name@sha256:<digest>` reference — use that reference in your `.ctst` file.
+
+Short names resolve like the Docker CLI: `alpine:3.21` becomes `registry-1.docker.io/library/alpine:3.21`. Other registries are addressed by host: `ghcr.io/org/app:v1`.
+
+Compositions that declare `oci://` sources directly must pin a digest (`@sha256:<hex>`); unpinned tags are only resolved by `ctst pull`, which prints the digest to pin.
+
+### Authentication
+
+Private registries are supported through, in priority order:
+
+1. `CONTAINUST_REGISTRY_TOKEN` — used directly as a bearer token.
+2. `CONTAINUST_REGISTRY_USER` / `CONTAINUST_REGISTRY_PASSWORD` — exchanged at the registry's token endpoint.
+3. `~/.docker/config.json` (`docker login`) — existing Docker CLI credentials are reused.
+
+Credentials are never logged and never written to `state.json`.
+
+### Offline Mode
+
+`--offline` (or `CONTAINUST_OFFLINE=1`) rejects the pull before any connection is opened. Pull on a connected machine and copy the project's `.containust/` store for air-gapped use.
+
+### Examples
+
+```bash
+# Pull from Docker Hub and pin the digest
+ctst pull alpine:3.21
+# → Pinned reference: image://alpine@sha256:48b0309c…
+
+# Pull a multi-layer image under a custom catalog name
+ctst pull nginx:alpine --name web
+
+# Pull from GHCR with an existing docker login
+ctst pull ghcr.io/org/app:v1
+
+# Re-pull a known digest (fails closed on any mismatch)
+ctst pull alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d
+```
+
+---
+
 ## ctst images
 
 Manage the local image catalog.
@@ -631,7 +692,7 @@ Inherits all [global options](#global-options).
 
 `ctst images` provides operations on the local image store located at `.containust/images/` (project-local). Images are composed of content-addressable layers identified by their SHA-256 hash.
 
-Use `--presets` to see curated downloads such as `preset://alpine` and `preset://busybox` (official Alpine minirootfs, ~3–4&nbsp;MiB, pinned by SHA-256). These are not Docker Hub pulls; full OCI registry support for `node` / `php` / etc. is planned later.
+Use `--presets` to see curated downloads such as `preset://alpine` and `preset://busybox` (official Alpine minirootfs, ~3–4&nbsp;MiB, pinned by SHA-256). For Docker Hub / GHCR images such as `node`, `php`, or `nginx`, use [`ctst pull`](#ctst-pull).
 
 ### Output Format (--list)
 

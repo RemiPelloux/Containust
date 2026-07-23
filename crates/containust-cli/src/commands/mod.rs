@@ -8,6 +8,7 @@ pub mod images;
 pub mod logs;
 pub mod plan;
 pub mod ps;
+pub mod pull;
 pub mod remove;
 pub mod run;
 pub mod stop;
@@ -141,6 +142,8 @@ pub enum Command {
     /// Remove stopped containers and their project-owned resources.
     #[command(name = "rm")]
     Remove(remove::RemoveArgs),
+    /// Pull an OCI registry image into the local catalog.
+    Pull(pull::PullArgs),
     /// Manage the local image catalog.
     Images(images::ImagesArgs),
     /// Convert a docker-compose.yml to .ctst format.
@@ -179,6 +182,7 @@ pub fn execute(cli: Cli) -> anyhow::Result<()> {
         Command::Exec(args) => exec::execute(args, &options),
         Command::Stop(args) => stop::execute(args, &options),
         Command::Remove(args) => remove::execute(args, &options),
+        Command::Pull(args) => pull::execute(args, &options),
         Command::Images(args) => images::execute(args, &options),
         Command::Convert(args) => convert::execute(args, &options),
         Command::Logs(args) => logs::execute(args, &options),

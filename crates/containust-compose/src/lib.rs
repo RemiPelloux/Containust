@@ -54,7 +54,7 @@ pub fn validate_offline(file: &parser::ast::CompositionFile) -> Result<()> {
 }
 
 fn is_remote_source(source: &str) -> bool {
-    source.starts_with("http://") || source.starts_with("https://")
+    source.starts_with("http://") || source.starts_with("https://") || source.starts_with("oci://")
 }
 
 fn is_local_image(source: &str) -> bool {
@@ -119,6 +119,18 @@ mod offline_tests {
         let file = CompositionFile {
             components: vec![ComponentDecl {
                 image: Some("https://example.test/app.tar".into()),
+                ..ComponentDecl::default()
+            }],
+            ..CompositionFile::default()
+        };
+        assert!(validate_offline(&file).is_err());
+    }
+
+    #[test]
+    fn offline_rejects_oci_image() {
+        let file = CompositionFile {
+            components: vec![ComponentDecl {
+                image: Some("oci://alpine:3.21".into()),
                 ..ComponentDecl::default()
             }],
             ..CompositionFile::default()

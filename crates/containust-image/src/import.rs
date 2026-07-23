@@ -28,6 +28,9 @@ pub struct ImportRequest {
     pub offline: bool,
     /// Network policy applied to remote sources.
     pub fetch_policy: FetchPolicy,
+    /// When true, `oci://` references may resolve a tag without a
+    /// pinned digest (the resolved digest is still recorded).
+    pub allow_unpinned: bool,
 }
 
 impl ImportRequest {
@@ -41,7 +44,15 @@ impl ImportRequest {
                 offline,
                 ..FetchPolicy::default()
             },
+            allow_unpinned: false,
         }
+    }
+
+    /// Permits unpinned `oci://` tag resolution (used by `ctst pull`).
+    #[must_use]
+    pub const fn with_unpinned(mut self) -> Self {
+        self.allow_unpinned = true;
+        self
     }
 }
 
@@ -62,6 +73,9 @@ pub fn import_image(
     request: &ImportRequest,
 ) -> Result<ImageEntry> {
     let store = StorageBackend::open(data_dir.to_path_buf())?;
+    if reference.scheme() == ImageScheme::Oci {
+        return import_oci_image(data_dir, &store, reference, request);
+    }
     let staged = stage_source(&store, reference, request)?;
 
     let digest = staged.digest().clone();
@@ -131,6 +145,51 @@ pub fn materialize_image(data_dir: &Path, reference: &ImageReference, target: &P
     }
     tracing::info!(name = %entry.name, target = %target.display(), "image materialized");
     Ok(())
+}
+
+/// Imports a multi-layer image from an OCI registry.
+///
+/// The catalog digest is the top-level manifest digest; each layer
+/// blob is committed under its own content address so shared base
+/// layers deduplicate across images.
+fn import_oci_image(
+    data_dir: &Path,
+    store: &StorageBackend,
+    reference: &ImageReference,
+    request: &ImportRequest,
+) -> Result<ImageEntry> {
+    if reference.digest().is_none() && !request.allow_unpinned {
+        return Err(ContainustError::Config {
+            message: format!(
+                "oci:// sources require a pinned digest by default: {reference}. \
+                 Run `ctst pull {}` once to resolve and pin the tag, or append \
+                 @sha256:<manifest-digest>",
+                reference.location()
+            ),
+        });
+    }
+    let pulled = crate::oci::pull_image(store, reference, &request.fetch_policy)?;
+    let mut layers = Vec::with_capacity(pulled.layers.len());
+    let mut size_bytes = 0_u64;
+    for blob in &pulled.layers {
+        store.commit_layer(&blob.path, blob.digest.as_hex())?;
+        layers.push(blob.digest.as_hex().to_string());
+        size_bytes += blob.size;
+    }
+    let digest = pulled.manifest_digest.as_hex().to_string();
+    let entry = ImageEntry {
+        id: ImageId::new(&digest),
+        name: request.name.clone(),
+        source: reference.to_string(),
+        layers,
+        size_bytes,
+        created_at: chrono::Utc::now().to_rfc3339(),
+        digest: Some(digest),
+        tool_version: env!("CARGO_PKG_VERSION").to_string(),
+    };
+    ImageCatalog::open(data_dir)?.register(entry.clone())?;
+    tracing::info!(name = %entry.name, digest = %pulled.manifest_digest, "oci image imported");
+    Ok(entry)
 }
 
 fn verify_pinned_digest(reference: &ImageReference, entry: &ImageEntry) -> Result<()> {
@@ -205,6 +264,15 @@ fn stage_source(
             fetch_remote(reference, &request.fetch_policy, &staged)?
         }
         ImageScheme::Preset => return stage_preset(store, reference, request, &staged),
+        // OCI pulls are multi-layer and handled by `import_oci_image`
+        // before staging; reaching here would be an internal bug.
+        ImageScheme::Oci => {
+            return Err(ContainustError::Config {
+                message: format!(
+                    "oci:// references are imported via the registry path: {reference}"
+                ),
+            });
+        }
         ImageScheme::Catalog => {
             return Err(ContainustError::Config {
                 message: format!(
@@ -295,7 +363,45 @@ fn extract_layer_blob(store: &StorageBackend, hash: &str, target: &Path) -> Resu
             id: hash.to_string(),
         });
     }
-    safe_extract_archive(&blob, target)
+    safe_extract_archive(&blob, target)?;
+    apply_whiteouts(target)
+}
+
+/// Applies OCI whiteout markers left behind by layer extraction.
+///
+/// A `.wh.<name>` file deletes `<name>` inherited from a lower layer;
+/// `.wh..wh..opq` marks a directory as opaque (the marker itself is
+/// removed; per-entry shadowing is already handled by extraction order).
+fn apply_whiteouts(directory: &Path) -> Result<()> {
+    let io_error = |path: &Path, source| ContainustError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let entries = std::fs::read_dir(directory).map_err(|e| io_error(directory, e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| io_error(directory, e))?;
+        let path = entry.path();
+        if path.is_dir() {
+            apply_whiteouts(&path)?;
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let Some(hidden) = file_name.strip_prefix(".wh.") else {
+            continue;
+        };
+        if hidden != ".wh..opq" && !hidden.is_empty() {
+            let shadowed = directory.join(hidden);
+            if shadowed.is_dir() {
+                std::fs::remove_dir_all(&shadowed).map_err(|e| io_error(&shadowed, e))?;
+            } else if shadowed.exists() {
+                std::fs::remove_file(&shadowed).map_err(|e| io_error(&shadowed, e))?;
+            }
+        }
+        std::fs::remove_file(&path).map_err(|e| io_error(&path, e))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -455,6 +561,41 @@ mod tests {
         let error = import_image(dir.path(), &reference, &ImportRequest::new("app", false))
             .expect_err("catalog re-import must fail");
         assert!(error.to_string().contains("cannot be re-imported"));
+    }
+
+    #[test]
+    fn import_oci_without_pin_or_optin_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let reference = ImageReference::parse("oci://alpine:3.21").expect("parse");
+        let error = import_image(dir.path(), &reference, &ImportRequest::new("app", false))
+            .expect_err("unpinned oci must fail");
+        assert!(error.to_string().contains("ctst pull"));
+    }
+
+    #[test]
+    fn import_oci_offline_rejects_before_connecting() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let reference = ImageReference::parse("oci://alpine:3.21").expect("parse");
+        let request = ImportRequest::new("app", true).with_unpinned();
+        let error =
+            import_image(dir.path(), &reference, &request).expect_err("offline oci must fail");
+        assert!(error.to_string().contains("offline"));
+    }
+
+    #[test]
+    fn whiteout_marker_removes_shadowed_file_and_marker() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("rootfs");
+        std::fs::create_dir_all(root.join("etc")).expect("mkdir");
+        std::fs::write(root.join("etc/old.conf"), b"lower").expect("write lower");
+        std::fs::write(root.join("etc/.wh.old.conf"), b"").expect("write marker");
+        std::fs::write(root.join("etc/.wh..wh..opq"), b"").expect("write opaque");
+
+        apply_whiteouts(&root).expect("apply");
+
+        assert!(!root.join("etc/old.conf").exists());
+        assert!(!root.join("etc/.wh.old.conf").exists());
+        assert!(!root.join("etc/.wh..wh..opq").exists());
     }
 
     #[test]

@@ -114,7 +114,7 @@ fn download_with_retries(
     })
 }
 
-fn build_client(policy: &FetchPolicy) -> reqwest::Result<reqwest::blocking::Client> {
+pub(crate) fn build_client(policy: &FetchPolicy) -> reqwest::Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .timeout(policy.timeout)
         .redirect(reqwest::redirect::Policy::limited(policy.max_redirects))
@@ -153,7 +153,7 @@ fn download_once(
 
 /// Streams the response body to `destination` under the size cap while
 /// hashing it in the same pass, so verification needs no second read.
-fn copy_capped(
+pub(crate) fn copy_capped(
     response: reqwest::blocking::Response,
     destination: &Path,
     max_bytes: u64,

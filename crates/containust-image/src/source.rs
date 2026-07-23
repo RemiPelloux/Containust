@@ -37,6 +37,13 @@ pub enum ImageSource {
         /// Expected SHA-256 hash for verification.
         sha256: String,
     },
+    /// OCI registry image (`oci://name:tag`), pulled via `ctst pull`.
+    Oci {
+        /// Registry image name (`[registry/]repository[:tag]`).
+        name: String,
+        /// Pinned top-level manifest digest, when provided.
+        sha256: Option<String>,
+    },
 }
 
 /// Resolves an image source URI into an `ImageSource`.
@@ -71,6 +78,10 @@ pub fn resolve_source(uri: &str) -> Result<ImageSource> {
         ImageScheme::Https | ImageScheme::Http => Ok(ImageSource::Remote {
             url: reference.canonical_uri(),
             sha256: digest_hex.unwrap_or_default(),
+        }),
+        ImageScheme::Oci => Ok(ImageSource::Oci {
+            name: reference.location().to_string(),
+            sha256: digest_hex,
         }),
     }
 }

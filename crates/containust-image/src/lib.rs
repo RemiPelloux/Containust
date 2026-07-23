@@ -21,6 +21,7 @@ pub mod fuse;
 pub mod hash;
 pub mod import;
 pub mod layer;
+pub mod oci;
 pub mod pack;
 pub mod path_confine;
 pub mod preset;
