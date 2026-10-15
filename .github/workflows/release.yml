@@ -238,7 +238,11 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # Bump on top of main, not the detached tag checkout:
+      # create-pull-request needs a branch base.
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Download SHA256SUMS
         uses: actions/download-artifact@v4
@@ -268,6 +272,7 @@ jobs:
 
             - Refreshes `Formula/ctst.rb` sha256 + version from `SHA256SUMS`
             - Refreshes `packaging/winget/Containust.ctst.yaml` for winget-pkgs submit
+          base: main
           branch: chore/packaging-${{ github.ref_name }}
           delete-branch: true
           add-paths: |
@@ -281,7 +286,8 @@ jobs:
             echo "### Packaging bump PR was not opened"
             echo
             echo "Enable *Settings → Actions → Allow GitHub Actions to create and approve pull requests*,"
-            echo "or open it by hand: https://github.com/${GITHUB_REPOSITORY}/compare/main...chore/packaging-${GITHUB_REF_NAME}"
+            echo "or run \`./scripts/bump_packaging.sh ${GITHUB_REF_NAME#v} SHA256SUMS\` locally and commit."
+            echo "If the branch was pushed: https://github.com/${GITHUB_REPOSITORY}/compare/main...chore/packaging-${GITHUB_REF_NAME}"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::warning::packaging bump PR not opened; see job summary"
 

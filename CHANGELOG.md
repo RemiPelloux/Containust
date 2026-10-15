@@ -10,6 +10,12 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+### Fixed
+
+- Release: the packaging-bump job now checks out `main` and passes
+  `base: main`, so the Homebrew/winget PR opens from a tag-triggered run
+  (it previously stopped at "the 'base' input must be supplied").
+
 ## [1.3.1] — 2026-10-15
 
 ### Added
