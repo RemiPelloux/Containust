@@ -56,7 +56,7 @@
         <p class="crumb"><a href="index.html">Docs</a> / CLI</p>
 
         <header class="doc-hero">
-          <p class="eyebrow">ctst 1.2.0</p>
+          <p class="eyebrow">ctst 1.3.0</p>
           <h1>CLI reference</h1>
           <p class="lede">
             One binary. No background daemon. On Linux it talks to the kernel;
@@ -106,9 +106,11 @@
         <h2 id="lifecycle">Lifecycle</h2>
 
         <h3 id="plan">ctst plan</h3>
-        <p data-searchable="plan validate graph">Parse and validate a composition; print deploy order without importing images.</p>
+        <p data-searchable="plan validate graph diff drift json">Diff the composition against running containers, read-only. Markers: <code>+</code> create, <code>~</code> replace, <code>&gt;</code> start, <code>=</code> keep, <code>-</code> remove.</p>
         <div class="codeblock">
-          <pre><code>ctst plan [FILE]
+          <pre><code>ctst plan [OPTIONS] [FILE]
+  --json                Machine-readable plan
+  --detailed-exitcode   Exit 2 when changes are pending (CI drift check)
 # default FILE: containust.ctst</code></pre>
         </div>
 
@@ -120,10 +122,11 @@
         </div>
 
         <h3 id="run">ctst run</h3>
-        <p data-searchable="run detach start stack">Start the component graph. Foreground by default; use <code>--detach</code> for background.</p>
+        <p data-searchable="run detach start stack apply prune idempotent">Apply the plan: keep unchanged, start stopped, replace changed components one at a time in dependency order. Safe to re-run. Foreground by default; use <code>--detach</code> for background.</p>
         <div class="codeblock">
           <pre><code>ctst run [OPTIONS] [FILE]
   --detach     Run in the background
+  --prune      Remove containers no longer declared
 ctst run stack.ctst --detach</code></pre>
         </div>
 

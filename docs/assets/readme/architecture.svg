@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="404" viewBox="0 0 1280 404" role="img" aria-labelledby="t">
+<title id="t">Containust architecture: .ctst to plan to Linux or QEMU backend</title>
+<style>
+
+.sans { font-family: Manrope, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+.mono { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+.h { fill: #f4efe6; font-size: 17px; font-weight: 700; }
+.dim { fill: #8fa8bc; }
+.cap { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; fill: #8fa8bc; letter-spacing: .18em; }
+.wire { stroke: #8fa8bc; stroke-opacity: .35; stroke-width: 2; fill: none; }
+.flow { stroke: #f0a56a; stroke-width: 3; fill: none; stroke-linecap: round;
+  stroke-dasharray: 10 300; animation: flow 4s linear infinite; }
+@keyframes flow { 0% { stroke-dashoffset: 310; } 100% { stroke-dashoffset: 0; } }
+.f1 { animation-delay: .6s; } .f2 { animation-delay: 1.2s; } .f3 { animation-delay: 1.8s; } .f4 { animation-delay: 2.4s; } .f5 { animation-delay: 2.4s; }
+.lit { stroke: #d4894a; stroke-width: 2; opacity: 0; animation: lit 4s ease-in-out infinite; }
+@keyframes lit { 0%,100% { opacity: 0; } 10% { opacity: 1; } 30% { opacity: 0; } }
+.s1 .lit { animation-delay: .6s; } .s2 .lit { animation-delay: 1.2s; } .s3 .lit { animation-delay: 1.8s; }
+.s4 .lit { animation-delay: 2.6s; } .s5 .lit { animation-delay: 2.6s; }
+.stage { animation: in .9s cubic-bezier(.22,1,.36,1) both; }
+.s1 { animation-delay: .1s; } .s2 { animation-delay: .2s; } .s3 { animation-delay: .3s; } .s4 { animation-delay: .4s; } .s5 { animation-delay: .5s; }
+@keyframes in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } .pulse, .flow { opacity: 0; } }
+</style>
+
+<rect width="1280" height="404" rx="20" fill="#071018"/>
+<g stroke="rgba(143,168,188,0.18)" stroke-width="1" opacity="0.35"><path d="M32 0V404"/><path d="M64 0V404"/><path d="M96 0V404"/><path d="M128 0V404"/><path d="M160 0V404"/><path d="M192 0V404"/><path d="M224 0V404"/><path d="M256 0V404"/><path d="M288 0V404"/><path d="M320 0V404"/><path d="M352 0V404"/><path d="M384 0V404"/><path d="M416 0V404"/><path d="M448 0V404"/><path d="M480 0V404"/><path d="M512 0V404"/><path d="M544 0V404"/><path d="M576 0V404"/><path d="M608 0V404"/><path d="M640 0V404"/><path d="M672 0V404"/><path d="M704 0V404"/><path d="M736 0V404"/><path d="M768 0V404"/><path d="M800 0V404"/><path d="M832 0V404"/><path d="M864 0V404"/><path d="M896 0V404"/><path d="M928 0V404"/><path d="M960 0V404"/><path d="M992 0V404"/><path d="M1024 0V404"/><path d="M1056 0V404"/><path d="M1088 0V404"/><path d="M1120 0V404"/><path d="M1152 0V404"/><path d="M1184 0V404"/><path d="M1216 0V404"/><path d="M1248 0V404"/><path d="M0 32H1280"/><path d="M0 64H1280"/><path d="M0 96H1280"/><path d="M0 128H1280"/><path d="M0 160H1280"/><path d="M0 192H1280"/><path d="M0 224H1280"/><path d="M0 256H1280"/><path d="M0 288H1280"/><path d="M0 320H1280"/><path d="M0 352H1280"/><path d="M0 384H1280"/></g>
+<text x="40" y="66" class="cap">HOW A ctst RUN FLOWS — NO DAEMON, JUST A CLI AND FILES</text>
+<g class="stage s0">
+  <rect x="40" y="110" width="210" height="134" rx="14" fill="#0e1c2e" stroke="rgba(143,168,188,0.18)"/>
+  <rect x="40" y="110" width="210" height="134" rx="14" fill="none" class="lit"/>
+  <text x="60" y="146" class="sans h">.ctst file</text>
+  <text x="60" y="176" class="mono dim">COMPONENT · CONNECT</text><text x="60" y="198" class="mono dim">EXPOSE · IMPORT</text>
+</g><g class="stage s1">
+  <rect x="278" y="110" width="210" height="134" rx="14" fill="#0e1c2e" stroke="rgba(143,168,188,0.18)"/>
+  <rect x="278" y="110" width="210" height="134" rx="14" fill="none" class="lit"/>
+  <text x="298" y="146" class="sans h">Parse &amp; validate</text>
+  <text x="298" y="176" class="mono dim">nom grammar</text><text x="298" y="198" class="mono dim">offline policy gate</text>
+</g><g class="stage s2">
+  <rect x="516" y="110" width="210" height="134" rx="14" fill="#0e1c2e" stroke="rgba(143,168,188,0.18)"/>
+  <rect x="516" y="110" width="210" height="134" rx="14" fill="none" class="lit"/>
+  <text x="536" y="146" class="sans h">Dependency graph</text>
+  <text x="536" y="176" class="mono dim">petgraph topo-sort</text><text x="536" y="198" class="mono dim">CONNECT env wiring</text>
+</g><g class="stage s3">
+  <rect x="754" y="110" width="210" height="134" rx="14" fill="#0e1c2e" stroke="rgba(143,168,188,0.18)"/>
+  <rect x="754" y="110" width="210" height="134" rx="14" fill="none" class="lit"/>
+  <text x="774" y="146" class="sans h">Plan diff</text>
+  <text x="774" y="176" class="mono dim">+ create   ~ replace</text><text x="774" y="198" class="mono dim">&gt; start    = keep</text><text x="774" y="220" class="mono dim">- remove (--prune)</text>
+</g>
+<path class="wire" d="M250 176 H278"/><path class="flow f0" d="M250 176 H278"/><path class="wire" d="M488 176 H516"/><path class="flow f1" d="M488 176 H516"/><path class="wire" d="M726 176 H754"/><path class="flow f2" d="M726 176 H754"/>
+<path class="wire" d="M964 176 C 990 176, 984 106, 1010 106"/>
+<path class="flow f4" d="M964 176 C 990 176, 984 106, 1010 106"/>
+<path class="wire" d="M964 176 C 990 176, 984 246, 1010 246"/>
+<path class="flow f5" d="M964 176 C 990 176, 984 246, 1010 246"/>
+<g class="stage s4">
+  <rect x="1010" y="62" width="230" height="88" rx="14" fill="#0e1c2e" stroke="rgba(143,168,188,0.18)"/>
+  <rect x="1010" y="62" width="230" height="88" rx="14" fill="none" class="lit"/>
+  <text x="1030" y="96" class="sans h">Linux native</text>
+  <text x="1030" y="122" class="mono dim">user+PID ns · cgroups v2</text>
+</g>
+<g class="stage s5">
+  <rect x="1010" y="202" width="230" height="88" rx="14" fill="#0e1c2e" stroke="rgba(143,168,188,0.18)"/>
+  <rect x="1010" y="202" width="230" height="88" rx="14" fill="none" class="lit"/>
+  <text x="1030" y="236" class="sans h">macOS · Windows</text>
+  <text x="1030" y="262" class="mono dim">QEMU micro-VM + agent</text>
+</g>
+<rect x="40" y="314" width="1200" height="60" rx="14" fill="none" stroke="rgba(143,168,188,0.18)" stroke-dasharray="6 6"/>
+<text x="64" y="350" class="mono" style="font-size:14px" fill="#e8e2d6"><tspan fill="#f0a56a">.containust/</tspan>  state/state.json · state/applied.json · images/ · layers/sha256 · logs/   <tspan fill="#8fa8bc">← the whole runtime state, per project</tspan></text>
+
+</svg>

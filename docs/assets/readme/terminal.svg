@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="526" viewBox="0 0 920 526" role="img" aria-labelledby="t">
+<title id="t">ctst plan and ctst run: declarative apply demo</title>
+<style>
+
+.mono { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; white-space: pre; }
+.bar { font-family: Manrope, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #8fa8bc; }
+@keyframes r0 { 0%,3.33% { opacity:0; } 3.34%,96% { opacity:1; } 100% { opacity:0; } }
+@keyframes c0 { 0%,3.33% { transform: translateX(0); } 8.89%,100% { transform: translateX(196px); } }
+@keyframes r1 { 0%,11.11% { opacity:0; transform: translateY(4px); } 12.31%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r2 { 0%,12.22% { opacity:0; transform: translateY(4px); } 13.42%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r3 { 0%,13.33% { opacity:0; transform: translateY(4px); } 14.53%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r4 { 0%,14.44% { opacity:0; transform: translateY(4px); } 15.64%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r5 { 0%,16.11% { opacity:0; transform: translateY(4px); } 17.31%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r6 { 0%,23.33% { opacity:0; } 23.34%,96% { opacity:1; } 100% { opacity:0; } }
+@keyframes c6 { 0%,23.33% { transform: translateX(0); } 29.44%,100% { transform: translateX(214px); } }
+@keyframes r7 { 0%,31.11% { opacity:0; transform: translateY(4px); } 32.31%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r8 { 0%,32.78% { opacity:0; transform: translateY(4px); } 33.98%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r9 { 0%,34.44% { opacity:0; transform: translateY(4px); } 35.64%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r10 { 0%,44.44% { opacity:0; } 44.45%,96% { opacity:1; } 100% { opacity:0; } }
+@keyframes c10 { 0%,44.44% { transform: translateX(0); } 56.94%,100% { transform: translateX(426px); } }
+@keyframes r11 { 0%,53.33% { opacity:0; transform: translateY(4px); } 54.53%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r12 { 0%,54.44% { opacity:0; transform: translateY(4px); } 55.64%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r13 { 0%,55.56% { opacity:0; transform: translateY(4px); } 56.76%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r14 { 0%,64.44% { opacity:0; } 64.45%,96% { opacity:1; } 100% { opacity:0; } }
+@keyframes c14 { 0%,64.44% { transform: translateX(0); } 74.17%,100% { transform: translateX(334px); } }
+@keyframes r15 { 0%,73.33% { opacity:0; transform: translateY(4px); } 74.53%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r16 { 0%,75.00% { opacity:0; transform: translateY(4px); } 76.20%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+@keyframes r17 { 0%,77.78% { opacity:0; transform: translateY(4px); } 78.98%,96% { opacity:1; transform: none; } 100% { opacity:0; } }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } .pulse, .flow { opacity: 0; } }
+</style>
+
+<rect width="920" height="526" rx="16" fill="#071018"/>
+<rect x=".5" y=".5" width="919" height="525" rx="16" fill="none" stroke="rgba(143,168,188,0.18)"/>
+<rect width="920" height="38" rx="16" fill="#0e1c2e"/>
+<rect y="22" width="920" height="16" fill="#0e1c2e"/>
+<circle cx="24" cy="19" r="6" fill="#ef6f61"/><circle cx="44" cy="19" r="6" fill="#f2c14e"/><circle cx="64" cy="19" r="6" fill="#5fc27e"/>
+<text x="460" y="24" text-anchor="middle" class="bar">ctst — declarative plan &amp; apply</text>
+<clipPath id="inner"><rect x="2" y="38" width="916" height="486"/></clipPath>
+<g clip-path="url(#inner)">
+<g style="animation: r0 18.0s linear infinite"><text x="28" y="64" class="mono"><tspan fill="#d4894a">$ </tspan><tspan fill="#f4efe6">ctst plan </tspan><tspan fill="#f0a56a">stack.ctst</tspan></text><rect x="46" y="47" width="860" height="23" fill="#071018" style="transform: translateX(196px); animation: c0 18.0s steps(20, end) infinite"/></g>
+<text x="28" y="88" class="mono" style="animation: r1 18.0s ease-out infinite"><tspan fill="#f4efe6">Plan for stack.ctst</tspan></text>
+<text x="28" y="112" class="mono" style="animation: r2 18.0s ease-out infinite"><tspan fill="#7fd1a8">  + create   </tspan><tspan fill="#f4efe6">db</tspan></text>
+<text x="28" y="136" class="mono" style="animation: r3 18.0s ease-out infinite"><tspan fill="#7fd1a8">  + create   </tspan><tspan fill="#f4efe6">api</tspan></text>
+<text x="28" y="160" class="mono" style="animation: r4 18.0s ease-out infinite"><tspan fill="#7fd1a8">  + create   </tspan><tspan fill="#f4efe6">web</tspan></text>
+<text x="28" y="184" class="mono" style="animation: r5 18.0s ease-out infinite"><tspan fill="#8fa8bc">  Plan: 3 to create, 0 to replace, 0 unchanged.</tspan></text>
+<g style="animation: r6 18.0s linear infinite"><text x="28" y="208" class="mono"><tspan fill="#d4894a">$ </tspan><tspan fill="#f4efe6">ctst run -d </tspan><tspan fill="#f0a56a">stack.ctst</tspan></text><rect x="46" y="191" width="860" height="23" fill="#071018" style="transform: translateX(214px); animation: c6 18.0s steps(22, end) infinite"/></g>
+<text x="28" y="232" class="mono" style="animation: r7 18.0s ease-out infinite"><tspan fill="#7fd1a8">  ● db   </tspan><tspan fill="#8fa8bc">[a41f…]</tspan><tspan fill="#7cc4e8">  -&gt; localhost:5432</tspan></text>
+<text x="28" y="256" class="mono" style="animation: r8 18.0s ease-out infinite"><tspan fill="#7fd1a8">  ● api  </tspan><tspan fill="#8fa8bc">[7c02…]</tspan><tspan fill="#7cc4e8">  -&gt; localhost:8080</tspan></text>
+<text x="28" y="280" class="mono" style="animation: r9 18.0s ease-out infinite"><tspan fill="#7fd1a8">  ● web  </tspan><tspan fill="#8fa8bc">[e9b3…]</tspan><tspan fill="#7cc4e8">  -&gt; localhost:3000</tspan></text>
+<g style="animation: r10 18.0s linear infinite"><text x="28" y="304" class="mono"><tspan fill="#d4894a">$ </tspan><tspan fill="#f4efe6">sed -i 's/pg15/pg16/' stack.ctst &amp;&amp; ctst plan</tspan></text><rect x="46" y="287" width="860" height="23" fill="#071018" style="transform: translateX(426px); animation: c10 18.0s steps(45, end) infinite"/></g>
+<text x="28" y="328" class="mono" style="animation: r11 18.0s ease-out infinite"><tspan fill="#f2c66d">  ~ replace  </tspan><tspan fill="#f4efe6">db </tspan><tspan fill="#8fa8bc">(spec changed)</tspan></text>
+<text x="28" y="352" class="mono" style="animation: r12 18.0s ease-out infinite"><tspan fill="#f2c66d">  ~ replace  </tspan><tspan fill="#f4efe6">api </tspan><tspan fill="#8fa8bc">(upstream 'db' replaced)</tspan></text>
+<text x="28" y="376" class="mono" style="animation: r13 18.0s ease-out infinite"><tspan fill="#8fa8bc">  = keep     </tspan><tspan fill="#f4efe6">web</tspan></text>
+<g style="animation: r14 18.0s linear infinite"><text x="28" y="400" class="mono"><tspan fill="#d4894a">$ </tspan><tspan fill="#f4efe6">ctst run -d </tspan><tspan fill="#f0a56a">stack.ctst</tspan><tspan fill="#f4efe6"> &amp;&amp; ctst plan</tspan></text><rect x="46" y="383" width="860" height="23" fill="#071018" style="transform: translateX(334px); animation: c14 18.0s steps(35, end) infinite"/></g>
+<text x="28" y="424" class="mono" style="animation: r15 18.0s ease-out infinite"><tspan fill="#8fa8bc">  Replacing container 'db' (spec changed)...</tspan></text>
+<text x="28" y="448" class="mono" style="animation: r16 18.0s ease-out infinite"><tspan fill="#8fa8bc">  Replacing container 'api' (upstream 'db' replaced)...</tspan></text>
+<text x="28" y="472" class="mono" style="animation: r17 18.0s ease-out infinite"><tspan fill="#7fd1a8">  No changes. </tspan><tspan fill="#e8e2d6">Running stack matches stack.ctst.</tspan></text>
+</g>
+
+</svg>

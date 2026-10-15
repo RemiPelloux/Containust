@@ -1,7 +1,7 @@
 # ctst — Containust CLI Reference
 
 **Binary**: `ctst`
-**Version**: 1.2.0
+**Version**: 1.3.0
 **Platform**: Linux (native), macOS (VM backend), Windows (VM backend)
 
 ```
@@ -31,7 +31,7 @@ cargo install --path crates/containust-cli
 
 ```bash
 ctst --version
-# ctst 1.2.0
+# ctst 1.3.0
 ```
 
 ---
@@ -142,53 +142,68 @@ Display the planned infrastructure changes without applying them (dry run).
 ctst plan [OPTIONS] [FILE]
 ```
 
-### Arguments
+### Arguments and Options
 
-| Argument | Description | Default |
+| Argument / Flag | Description | Default |
 |---|---|---|
 | `FILE` | Path to the `.ctst` composition file | `containust.ctst` |
-
-### Options
+| `--json` | Print the plan as JSON (`{"changes":[{"name","action","reason",...}]}`) | `false` |
+| `--detailed-exitcode` | Exit `2` when the plan has changes, `0` when the stack is in sync | `false` |
 
 Inherits all [global options](#global-options).
 
 ### Description
 
-`ctst plan` compares the desired state described in the `.ctst` file against the current state recorded in the state file. It outputs a diff-style summary showing what would change if `ctst run` were executed.
+`ctst plan` compares the desired components in the `.ctst` file against the
+live containers of the project and the **applied-spec ledger**
+(`.containust/state/applied.json`, written by `ctst run`). Each component gets
+exactly one action, listed in dependency order, followed by removals.
 
-No containers are created, started, or stopped.
+Every component is fingerprinted (SHA-256 over image, command, env including
+`CONNECT` wiring, limits, volumes, ports, network, restart, healthcheck, and
+namespace policy). The declared image string is fingerprinted rather than a
+resolved preset digest, so planning stays read-only and offline-safe.
+
+No containers are created, started, or stopped, and a project that has never
+been run gets no state directory.
 
 ### Output Format
 
-The output uses diff-style markers:
-
-| Marker | Meaning |
-|---|---|
-| `+` | New component to be created |
-| `~` | Existing component to be modified |
-| `-` | Running component to be removed |
+| Marker | Action | Meaning |
+|---|---|---|
+| `+` | `create` | No container with this name exists |
+| `~` | `replace` | Spec changed, no recorded spec, or an upstream (`CONNECT` target) is being replaced |
+| `>` | `start` | Same spec, container stopped or failed |
+| `=` | `keep` | Same spec and running — untouched |
+| `-` | `remove` | Container no longer declared (applied only by `ctst run --prune`) |
 
 ```
 $ ctst plan production.ctst
+Plan for production.ctst
+────────────────────────────────────────────────
+  ~ replace  db (spec changed)
+      image: tar:///backups/pg16.tar
+      port: 5432
+  ~ replace  api (upstream 'db' replaced)
+      image: file:///opt/images/myapp
+      port: 8080
+  = keep     cache
+  - remove   legacy-svc (no longer declared)
 
-Containust Plan — production.ctst
-══════════════════════════════════
+  Connections:
+    api -> db
 
-  + api          image=file:///opt/images/myapp     port=8080  mem=256MB
-  + db           image=tar:///backups/pg15.tar      port=5432  mem=512MB
-  ~ cache        image=file:///opt/images/redis     mem: 64MB → 128MB
-  - legacy-svc   (will be stopped and removed)
-
-Plan: 2 to add, 1 to change, 1 to destroy.
+  Plan: 0 to create, 2 to replace, 0 to start, 1 unchanged, 1 to remove.
+  Removals apply only with `ctst run --prune`.
 ```
 
 ### Exit Codes
 
 | Code | Meaning |
 |---|---|
-| `0` | Plan computed — changes detected or no changes |
+| `0` | Plan computed (with `--detailed-exitcode`: no changes) |
 | `1` | Failed to compute plan (parse error, corrupt state) |
-| `2` | Invalid arguments |
+| `2` | With `--detailed-exitcode`: changes pending. Otherwise invalid arguments |
 | `4` | Composition file not found |
 
 ### Examples
@@ -205,6 +220,12 @@ ctst plan --offline production.ctst
 
 # Plan with verbose tracing
 CONTAINUST_LOG=debug ctst plan
+
+# CI drift check: fail the job when the running stack differs from the file
+ctst plan --detailed-exitcode production.ctst
+
+# Machine-readable plan
+ctst plan --json | jq '.changes[] | select(.action != "keep")'
 ```
 
 ---
@@ -225,12 +246,28 @@ ctst run [OPTIONS] [FILE]
 |---|---|---|
 | `FILE` | Path to the `.ctst` composition file | `containust.ctst` |
 | `-d, --detach` | Run containers in the background and return immediately | `false` |
+| `--prune` | Stop and remove containers that are no longer declared in the file | `false` |
 
 Inherits all [global options](#global-options).
 
+### Declarative apply (since 1.3.0)
+
+`ctst run` executes the same plan `ctst plan` prints, so it is safe to re-run:
+
+- `keep` components are left running untouched (re-running an unchanged file is a no-op).
+- `start` components are restarted with their existing rootfs.
+- `replace` components are stopped, removed, and re-created **one at a time in
+  dependency order** — upstreams first, then their dependents — so a changed
+  `db` rolls through `api` without touching unrelated services.
+- `create` components are created and started.
+- `remove` (undeclared) containers are only touched with `--prune`.
+
+The ledger is updated after every successful component, so a failure part-way
+through leaves an accurate record and the next `ctst run` resumes from there.
+
 ### Description
 
-`ctst run` performs a full deployment:
+On a fresh project, `ctst run` performs a full deployment:
 
 1. **Parse and resolve** the `.ctst` file (equivalent to `ctst build` if images are not yet built).
 2. **Compute the dependency graph** from `CONNECT` directives using petgraph.
