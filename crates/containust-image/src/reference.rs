@@ -123,7 +123,7 @@ impl ImageReference {
         self.digest.as_ref().map_or_else(
             || {
                 let digest = Sha256::digest(self.canonical_uri().as_bytes());
-                format!("{digest:x}")
+                crate::hash::hex_digest(&digest)
             },
             |digest| digest.as_hex().to_string(),
         )

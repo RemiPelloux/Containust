@@ -235,7 +235,7 @@ impl RegistrySession {
             ));
         }
         let digest = Sha256::digest(&body);
-        let digest = Sha256Hash::from_hex(format!("{digest:x}"))?;
+        let digest = Sha256Hash::from_hex(crate::hash::hex_digest(&digest))?;
         Ok((body, digest))
     }
 
@@ -339,7 +339,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = StorageBackend::open(dir.path().to_path_buf()).expect("open store");
         let body = b"layer-bytes";
-        let hex = format!("{:x}", Sha256::digest(body));
+        let hex = crate::hash::hex_digest(&Sha256::digest(body));
         let staged = store.staging_path();
         std::fs::write(&staged, body).expect("stage");
         store.commit_layer(&staged, &hex).expect("commit");

@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/containust-common",
     "crates/containust-core",
@@ -48,7 +48,7 @@ nix = { version = "0.31", features = ["mount", "sched", "signal", "user", "proce
 libc = "0.2"
 
 # eBPF
-aya = "0.13.1"
+aya = "0.14"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -67,7 +67,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Crypto
-sha2 = "0.10"
+sha2 = "0.11"
 
 # YAML parsing (for docker-compose converter)
 serde_yaml = { package = "serde_norway", version = "0.9" }
@@ -81,7 +81,7 @@ fs2 = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 
 # Utilities
-which = "7"
+which = "8"
 ctrlc = "3"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }

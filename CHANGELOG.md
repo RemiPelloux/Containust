@@ -65,6 +65,12 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 - Security: rustls 0.23.46 (RUSTSEC-2026-0285); YAML parsing for `ctst convert`
   moves from the archived `serde_yaml` to the maintained `serde_norway` fork
   (RUSTSEC-2024-0449, unmaintained `unsafe-libyaml`).
+- Dependency refresh: all crates updated to their latest MSRV-compatible
+  releases (115 lockfile updates); major bumps `sha2` 0.11, `which` 8,
+  `aya` 0.14 (drops the `thiserror` 1.x duplicate). Workspace resolver 3 keeps
+  future `cargo update` runs MSRV-aware. `reqwest` stays on 0.12.28: 0.13
+  switches TLS to aws-lc-rs plus OS trust stores, which needs its own review
+  for air-gapped hosts and cross builds. `cargo audit` / `cargo deny` clean.
 - Clean `clippy -D warnings` on Rust 1.99 stable (`assert_is_empty`,
   `thiserror` 2.0.21); MSRV stays 1.88.
 

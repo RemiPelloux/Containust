@@ -232,7 +232,7 @@ mod tests {
         const BODY: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
         let digest = {
             use sha2::{Digest, Sha256};
-            format!("{:x}", Sha256::digest(BODY))
+            containust_image::hash::hex_digest(&Sha256::digest(BODY))
         };
         let expected = Sha256Hash::from_hex(&digest).expect("hex");
         let (url, handle) = serve_body(BODY, true);

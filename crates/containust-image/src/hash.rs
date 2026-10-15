@@ -38,7 +38,7 @@ impl<W: Write> HashingWriter<W> {
     /// Returns an error if the digest cannot be encoded (never expected
     /// for a well-formed SHA-256 output).
     pub fn finish(self) -> Result<(W, Sha256Hash)> {
-        let digest = Sha256Hash::from_hex(format!("{:x}", self.hasher.finalize()))?;
+        let digest = Sha256Hash::from_hex(hex_digest(&self.hasher.finalize()))?;
         Ok((self.inner, digest))
     }
 }
@@ -53,6 +53,18 @@ impl<W: Write> Write for HashingWriter<W> {
     fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush()
     }
+}
+
+/// Lowercase hex encoding of a digest's bytes.
+#[must_use]
+pub fn hex_digest(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
 }
 
 /// Computes the SHA-256 hash of a file.
@@ -78,7 +90,7 @@ pub fn hash_file(path: &Path) -> Result<Sha256Hash> {
         hasher.update(&buffer[..n]);
     }
     let hash_bytes = hasher.finalize();
-    let hex = format!("{hash_bytes:x}");
+    let hex = hex_digest(&hash_bytes);
     tracing::debug!(path = %path.display(), hash = %hex, "computed SHA-256");
     Sha256Hash::from_hex(hex)
 }
