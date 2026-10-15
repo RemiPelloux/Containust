@@ -62,7 +62,9 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ### Maintenance
 
-- Security: rustls 0.23.46 (RUSTSEC-2026-0285).
+- Security: rustls 0.23.46 (RUSTSEC-2026-0285); YAML parsing for `ctst convert`
+  moves from the archived `serde_yaml` to the maintained `serde_norway` fork
+  (RUSTSEC-2024-0449, unmaintained `unsafe-libyaml`).
 - Clean `clippy -D warnings` on Rust 1.99 stable (`assert_is_empty`,
   `thiserror` 2.0.21); MSRV stays 1.88.
 
