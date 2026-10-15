@@ -1,7 +1,7 @@
 # Containust — Sprint Tracker
 
 > **Goal**: Ship Containust as a production-ready container runtime, lighter and more reliable than Docker.
-> **Version**: `1.2.0` (Sprint 11 complete)
+> **Version**: `1.3.0` (Sprint 12 complete)
 > **License**: Containust Commercial License (source-available; see `COMMERCIAL.md`)
 > **Standards**: 90%+ test coverage for library crates, zero clippy warnings, `cargo deny` green, no banned patterns.
 
@@ -16,11 +16,15 @@
 - **Sprint 10 (`1.1.0`)** — OCI pull, ports/restart/healthcheck, privileged CI, packaging.
 - **Sprint 11 (`1.2.0`)** — user/PID ns, port remap, named networks, DNS foundations,
   Homebrew/winget bump automation, `ctst pull --require-provenance`, commercial license.
+- **Sprint 12 (`1.3.0`)** — declarative `ctst plan` diffs, idempotent `ctst run`
+  apply with dependency-ordered replacement and `--prune`; stop/create/pull/extract
+  performance pass; animated README.
 
-## Next (Sprint 12+)
+## Next (Sprint 13+)
 
-- Rolling updates / declarative plan apply diffs.
+- Zero-downtime rolling updates (start-before-stop with port handoff).
+- Parallel layer downloads for `ctst pull`.
 - Volume drivers, snapshots, encrypted storage.
 - Remote execution / orchestration.
 - Apple notarization / Windows Authenticode.
-- Optional: `homebrew-containust` tap repo + winget-pkgs PR for `1.2.0`.
+- Optional: `homebrew-containust` tap repo + winget-pkgs PR for `1.3.0`.

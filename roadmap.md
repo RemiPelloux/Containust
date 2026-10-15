@@ -4,14 +4,15 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at GA **`1.2.0`** (Sprint 11 complete): user/PID namespace spawn, remappable ports, named networks, DNS foundations, packaging automation, and opt-in OCI provenance. License is the proprietary [Containust Commercial License](LICENSE) (source-available; see [COMMERCIAL.md](COMMERCIAL.md)) — **`v1.2.0` is the first commercial-licensed tag**.
+Containust is at GA **`1.3.0`** (Sprint 12 complete: declarative plan/apply + performance pass). Sprint 11 (`1.2.0`) shipped: user/PID namespace spawn, remappable ports, named networks, DNS foundations, packaging automation, and opt-in OCI provenance. License is the proprietary [Containust Commercial License](LICENSE) (source-available; see [COMMERCIAL.md](COMMERCIAL.md)) — **`v1.2.0` is the first commercial-licensed tag**.
 
 - CI green on Linux, macOS, Windows, QEMU smoke, privileged Linux (including `spawn_user_pid` + offline gate under default-on userns), format/clippy/deny/coverage.
-- Release `v1.2.0` publishes tarballs/zips for five targets, `.deb`/`.rpm`, aggregated `SHA256SUMS`, and cosign keyless signature; packaging-bump refreshes Homebrew/winget.
+- Release `v1.3.0` publishes tarballs/zips for five targets, `.deb`/`.rpm`, aggregated `SHA256SUMS`, and cosign keyless signature; packaging-bump refreshes Homebrew/winget.
 - Images: `file://`, `tar://`, `preset://alpine|busybox`, `oci://` / `ctst pull` (Hub + GHCR, auth, digest-pin, `--offline` fail-closed, optional `--require-provenance`), catalog as `image://…@sha256:`.
 - Runtime: user + PID namespaces default-on on Linux; `EXPOSE host:container` remap (userspace forwarder / VM `hostfwd`); named networks + `/etc/hosts` peers; restart/healthcheck; state schema **4**.
 - Docs: product landing + HTML docs site under [`site/`](site/); operator guide [`docs/HowToUse.md`](docs/HowToUse.md).
-- Deferred (Sprint 12+): rolling updates, volume drivers, remote orchestration, Apple notarization / Authenticode.
+- Plan/apply: `ctst plan` diffs (`+ ~ > = -`, `--json`, `--detailed-exitcode`), idempotent `ctst run` with dependency-ordered replacement and `--prune` (`1.3.0`).
+- Deferred (Sprint 13+): zero-downtime rolling updates, volume drivers, remote orchestration, Apple notarization / Authenticode.
 
 ## Release train
 
@@ -28,6 +29,7 @@ Containust is at GA **`1.2.0`** (Sprint 11 complete): user/PID namespace spawn, 
 | Sprint 9 | `1.0.0` | GA only after every platform/security/recovery gate is green. |
 | Sprint 10 | `1.1.0` | Production-usable: OCI pull, ports/restart/healthcheck, privileged CI, packaging. |
 | Sprint 11 | `1.2.0` | Isolation depth + networking: user/PID ns spawn, Linux port remap, DNS foundations. |
+| Sprint 12 | `1.3.0` | Declarative plan/apply and hot-path performance. |
 
 ## Delivery policy
 
@@ -237,6 +239,31 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Exit gate: passed for engineering scope.** Tag `v1.2.0`. Optional follow-ups: create `RemiPelloux/homebrew-containust` + `HOMEBREW_TAP_TOKEN`; `wingetcreate submit` after packaging-bump PR lands with real sha256.
 
+## Sprint 12: Declarative plan/apply and performance (`1.3.0`)
+
+**Goal:** make `ctst run` safe to re-run and `ctst plan` an honest diff, and remove the biggest latency costs on everyday paths.
+
+### Wave 1 — Plan/apply
+
+- [x] **P12.1 Spec fingerprint + ledger.** SHA-256 fingerprint per component; `applied.json` ledger next to `state.json`, atomically written after every applied component.
+- [x] **P12.2 `ctst plan` diff.** `create` / `replace` / `start` / `keep` / `remove` in dependency order with reasons; `--json`; `--detailed-exitcode`; read-only on fresh projects.
+- [x] **P12.3 Idempotent `ctst run`.** Keep unchanged, start stopped, replace changed one at a time in topological order with dependent cascade; `--prune` for undeclared containers.
+- [x] **P12.4 Tests.** Planner unit tests, stateful fake-backend apply tests (idempotency, cascade, prune), CLI `plan --json` / `--detailed-exitcode` tests.
+
+### Wave 2 — Performance
+
+- [x] **P12.5 Stop latency.** Poll-for-exit instead of fixed 2 s sleep; signal outside the state lock.
+- [x] **P12.6 Create without lock contention.** Staged rootfs build outside the exclusive lock.
+- [x] **P12.7 Pull layer reuse.** Skip download for layers already in the store.
+- [x] **P12.8 I/O paths.** Buffered extract/pack, fewer stats, whiteout walk without following symlinks, clone-free state save.
+- [x] **P12.9 Perf gates.** Stop latency + 10k-file extraction budgets.
+
+### Wave 3 — Docs
+
+- [x] **P12.10 README.** Animated hero/terminal/architecture SVGs (reduced-motion aware), use cases, comparison.
+
+**Exit gate: passed for engineering scope.** Tag `v1.3.0`.
+
 ## Later feature backlog
 
 These are intentionally after Sprint 11:
@@ -245,8 +272,9 @@ These are intentionally after Sprint 11:
 - [x] Curated `preset://` catalog for Alpine/BusyBox (`ctst images --presets`).
 - [x] Restart policies and healthcheck enforcement (`1.1.0`).
 - [x] Identity port mappings + `EXPOSE` (`1.1.0`).
-- [ ] Declarative update/diff/apply semantics for `ctst plan` and `ctst run`.
-- [ ] Rolling updates and dependency-aware replacement of running components.
+- [x] Declarative update/diff/apply semantics for `ctst plan` and `ctst run` (`1.3.0`).
+- [x] Dependency-aware replacement of running components (`1.3.0`).
+- [ ] Zero-downtime (start-before-stop) rolling updates.
 - [ ] Volume drivers, snapshots, backup/restore, and encrypted local storage.
 - [ ] SDK async lifecycle API, typed events, backend injection.
 - [ ] Remote execution or orchestration only after local security and lifecycle semantics are stable.
