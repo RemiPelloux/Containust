@@ -23,7 +23,13 @@ pub fn read_logs(data_dir: &Path, container_id: &str) -> Result<String> {
     if !path.exists() {
         return Ok(String::new());
     }
-    std::fs::read_to_string(&path).map_err(|e| ContainustError::Io { path, source: e })
+    // Container output is arbitrary bytes; decode lossily so non-UTF-8
+    // output never makes the whole log unreadable.
+    let bytes = std::fs::read(&path).map_err(|e| ContainustError::Io { path, source: e })?;
+    Ok(match String::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(error) => String::from_utf8_lossy(error.as_bytes()).into_owned(),
+    })
 }
 
 /// Appends a log line for a container.
@@ -110,7 +116,7 @@ mod tests {
     fn read_logs_missing_file_returns_empty() {
         let dir = tempfile::tempdir().expect("tempdir");
         let content = read_logs(dir.path(), "nonexistent").expect("should succeed");
-        assert!(content.is_empty());
+        assert_eq!(content, "");
     }
 
     #[test]
@@ -147,6 +153,19 @@ mod tests {
         assert!(!a_logs.contains("from b"));
         assert!(b_logs.contains("from b"));
         assert!(!b_logs.contains("from a"));
+    }
+
+    #[test]
+    fn read_logs_tolerates_invalid_utf8() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = log_path(dir.path(), "bin");
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("logs dir");
+        std::fs::write(&path, b"ok \xff\xfe tail\n").expect("write");
+
+        let content = read_logs(dir.path(), "bin").expect("lossy read");
+        assert!(content.starts_with("ok "));
+        assert!(content.contains("tail"));
+        assert!(content.contains('\u{fffd}'));
     }
 
     #[test]

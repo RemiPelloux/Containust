@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn accel_flags_returns_non_empty() {
         let flags = accel_flags();
-        assert!(!flags.is_empty());
+        assert_ne!(flags, Vec::<String>::new());
         assert_eq!(flags[0], "-accel");
     }
 

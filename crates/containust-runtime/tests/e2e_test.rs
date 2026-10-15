@@ -295,7 +295,7 @@ fn pipeline_layer_extraction() {
         .expect("should extract layer");
     assert!(extract_dir.join("test.txt").exists());
     assert!(layer.size_bytes > 0);
-    assert!(!layer.hash.as_hex().is_empty());
+    assert_ne!(layer.hash.as_hex(), "");
 }
 
 // ── Image Catalog ────────────────────────────────────────────────────
@@ -621,8 +621,8 @@ COMPONENT web {
 #[test]
 fn pipeline_platform_detection() {
     let info = containust_runtime::backend::platform_info();
-    assert!(!info.os.is_empty());
-    assert!(!info.arch.is_empty());
+    assert_ne!(info.os, "");
+    assert_ne!(info.arch, "");
     if cfg!(target_os = "macos") {
         assert!(
             !info.native_available,
@@ -787,7 +787,7 @@ fn pipeline_container_id_generate_unique() {
     let id1 = containust_common::types::ContainerId::generate();
     let id2 = containust_common::types::ContainerId::generate();
     assert_ne!(id1, id2, "generated IDs should be unique");
-    assert!(!id1.as_str().is_empty());
+    assert_ne!(id1.as_str(), "");
 }
 
 #[test]

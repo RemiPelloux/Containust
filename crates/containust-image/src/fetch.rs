@@ -220,6 +220,8 @@ mod tests {
                 break;
             }
         }
+        // `try_update` replaces this on newer toolchains but is not in the MSRV.
+        #[allow(deprecated)]
         let should_fail = remaining_failures
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
             .is_ok();

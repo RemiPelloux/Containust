@@ -12,7 +12,7 @@ mod tests {
 
     #[test]
     fn syscall_program_name_is_non_empty() {
-        assert!(!SYSCALL_PROGRAM_NAME.is_empty());
+        assert_ne!(SYSCALL_PROGRAM_NAME, "");
     }
 
     #[test]

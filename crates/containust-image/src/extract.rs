@@ -4,7 +4,7 @@
 //! and symlink targets that resolve outside the extraction root —
 //! including chained-symlink escapes.
 
-use std::io::Read;
+use std::io::{BufRead, Read, Write};
 use std::path::{Component, Path, PathBuf};
 
 use containust_common::error::{ContainustError, Result};
@@ -36,32 +36,33 @@ pub fn safe_extract_archive(archive_path: &Path, target: &Path) -> Result<()> {
     }
 }
 
+/// Read buffer for archive extraction (one buffered pass over the file).
+const ARCHIVE_READ_BUFFER: usize = 256 * 1024;
+
+/// Write buffer for extracted regular files.
+const FILE_WRITE_BUFFER: usize = 128 * 1024;
+
 fn extract_into(archive_path: &Path, target: &Path) -> Result<()> {
     let file = std::fs::File::open(archive_path).map_err(|source| ContainustError::Io {
         path: archive_path.to_path_buf(),
         source,
     })?;
-    let mut peek = [0_u8; 2];
-    let mut reader = std::io::BufReader::new(file);
+    let mut reader = std::io::BufReader::with_capacity(ARCHIVE_READ_BUFFER, file);
+    // Peek the magic without consuming it, so the same reader feeds tar.
     let gzip = reader
-        .read(&mut peek)
+        .fill_buf()
         .map_err(|source| ContainustError::Io {
             path: archive_path.to_path_buf(),
             source,
         })?
-        == 2
-        && peek == GZIP_MAGIC;
-    let file = std::fs::File::open(archive_path).map_err(|source| ContainustError::Io {
-        path: archive_path.to_path_buf(),
-        source,
-    })?;
+        .starts_with(&GZIP_MAGIC);
     if gzip {
         unpack_entries(
-            tar::Archive::new(flate2::read::GzDecoder::new(file)),
+            tar::Archive::new(flate2::bufread::GzDecoder::new(reader)),
             target,
         )
     } else {
-        unpack_entries(tar::Archive::new(file), target)
+        unpack_entries(tar::Archive::new(reader), target)
     }
 }
 
@@ -170,15 +171,19 @@ fn write_regular_file<R: Read>(
         })?;
     }
     assert_dest_confined(root, dest)?;
-    let mut out = std::fs::File::create(dest).map_err(|source| ContainustError::Io {
+    let file = std::fs::File::create(dest).map_err(|source| ContainustError::Io {
         path: dest.to_path_buf(),
         source,
     })?;
+    let mut out = std::io::BufWriter::with_capacity(FILE_WRITE_BUFFER, file);
     let _ = std::io::copy(entry, &mut out).map_err(|source| ContainustError::Io {
         path: dest.to_path_buf(),
         source,
     })?;
-    Ok(())
+    out.flush().map_err(|source| ContainustError::Io {
+        path: dest.to_path_buf(),
+        source,
+    })
 }
 
 /// Applies the archive mode bits to an extracted file or directory.
@@ -244,6 +249,57 @@ mod tests {
     #[test]
     fn sanitize_entry_path_rejects_parent_dir() {
         assert!(sanitize_entry_path(Path::new("../escape")).is_err());
+    }
+
+    fn many_files_archive(dir: &Path, count: usize, gzip: bool) -> PathBuf {
+        let tar_path = dir.join(if gzip { "many.tar.gz" } else { "many.tar" });
+        let file = std::fs::File::create(&tar_path).expect("create tar");
+        let writer: Box<dyn std::io::Write> = if gzip {
+            Box::new(flate2::write::GzEncoder::new(
+                file,
+                flate2::Compression::fast(),
+            ))
+        } else {
+            Box::new(file)
+        };
+        let mut builder = tar::Builder::new(writer);
+        for index in 0..count {
+            let data = format!("file-{index}\n");
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(
+                    &mut header,
+                    format!("d{}/f{index}.txt", index % 16),
+                    data.as_bytes(),
+                )
+                .expect("append entry");
+        }
+        builder
+            .into_inner()
+            .expect("finish tar")
+            .flush()
+            .expect("flush");
+        tar_path
+    }
+
+    #[test]
+    fn extract_many_small_files_plain_and_gzip() {
+        for gzip in [false, true] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let archive = many_files_archive(dir.path(), 2_000, gzip);
+            let target = dir.path().join("out");
+            safe_extract_archive(&archive, &target).expect("extract");
+            for index in [0_usize, 777, 1_999] {
+                let path = target.join(format!("d{}/f{index}.txt", index % 16));
+                assert_eq!(
+                    std::fs::read_to_string(path).expect("read"),
+                    format!("file-{index}\n")
+                );
+            }
+        }
     }
 
     #[cfg(unix)]

@@ -513,7 +513,7 @@ mod tests {
 
         let inner = writer.finish();
         let data = inner.into_inner();
-        assert!(!data.is_empty());
+        assert_ne!(data, Vec::<u8>::new());
         // First bytes should be the newc magic "070701"
         let magic = std::str::from_utf8(&data[..6]).expect("valid utf8");
         assert_eq!(magic, "070701");
@@ -528,7 +528,7 @@ mod tests {
         writer.write_trailer().expect("failed to write trailer");
 
         let inner = writer.finish();
-        assert!(!inner.into_inner().is_empty());
+        assert_ne!(inner.into_inner(), Vec::<u8>::new());
     }
 
     #[test]
@@ -547,7 +547,7 @@ mod tests {
 
         let inner = writer.finish();
         let data = inner.into_inner();
-        assert!(!data.is_empty());
+        assert_ne!(data, Vec::<u8>::new());
     }
 
     #[test]
@@ -556,12 +556,12 @@ mod tests {
         let mut writer = CpioWriter::new(buf);
         writer.write_trailer().expect("write trailer");
         let inner = writer.finish();
-        assert!(!inner.into_inner().is_empty());
+        assert_ne!(inner.into_inner(), Vec::<u8>::new());
     }
 
     #[test]
     fn init_script_is_not_empty() {
-        assert!(!INIT_SCRIPT.is_empty());
+        assert_ne!(INIT_SCRIPT, "");
         assert!(INIT_SCRIPT.contains("#!/bin/sh"));
         assert!(INIT_SCRIPT.contains("exec /sbin/containust-agent"));
         assert!(INIT_SCRIPT.contains("10.0.2.15/24"));
@@ -570,7 +570,7 @@ mod tests {
 
     #[test]
     fn agent_script_is_not_empty() {
-        assert!(!AGENT_SCRIPT.is_empty());
+        assert_ne!(AGENT_SCRIPT, "");
         assert!(AGENT_SCRIPT.contains("#!/bin/sh"));
         assert!(AGENT_SCRIPT.contains("h_create"));
         assert!(AGENT_SCRIPT.contains("h_start"));

@@ -185,7 +185,9 @@ fn import_oci_image(
     let mut layers = Vec::with_capacity(pulled.layers.len());
     let mut size_bytes = 0_u64;
     for blob in &pulled.layers {
-        store.commit_layer(&blob.path, blob.digest.as_hex())?;
+        if !blob.cached {
+            store.commit_layer(&blob.path, blob.digest.as_hex())?;
+        }
         layers.push(blob.digest.as_hex().to_string());
         size_bytes += blob.size;
     }
@@ -394,7 +396,10 @@ fn apply_whiteouts(directory: &Path) -> Result<()> {
     for entry in entries {
         let entry = entry.map_err(|e| io_error(directory, e))?;
         let path = entry.path();
-        if path.is_dir() {
+        // `DirEntry::file_type` does not follow symlinks, so a symlinked
+        // directory is never walked (no escapes, no cycles).
+        let file_type = entry.file_type().map_err(|e| io_error(&path, e))?;
+        if file_type.is_dir() {
             apply_whiteouts(&path)?;
             continue;
         }
@@ -466,7 +471,7 @@ mod tests {
         assert_eq!(entry.digest.as_deref().map(str::len), Some(64));
         assert_eq!(entry.tool_version, env!("CARGO_PKG_VERSION"));
         assert!(entry.source.starts_with("tar://"));
-        assert!(!entry.created_at.is_empty());
+        assert_ne!(entry.created_at, "");
     }
 
     #[test]
@@ -609,6 +614,27 @@ mod tests {
         assert!(!root.join("etc/old.conf").exists());
         assert!(!root.join("etc/.wh.old.conf").exists());
         assert!(!root.join("etc/.wh..wh..opq").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn whiteouts_do_not_walk_symlinked_directories() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("rootfs");
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(root.join("a")).expect("mkdir");
+        std::fs::create_dir_all(&outside).expect("mkdir outside");
+        std::fs::write(outside.join("victim"), b"keep").expect("write victim");
+        std::fs::write(outside.join(".wh.victim"), b"").expect("write marker");
+        // A self-referential loop and a link escaping the rootfs.
+        std::os::unix::fs::symlink("..", root.join("a/loop")).expect("loop link");
+        std::os::unix::fs::symlink(&outside, root.join("escape")).expect("escape link");
+
+        apply_whiteouts(&root).expect("apply terminates");
+
+        assert!(outside.join("victim").exists());
+        assert!(outside.join(".wh.victim").exists());
+        assert!(root.join("a/loop").symlink_metadata().is_ok());
     }
 
     #[test]

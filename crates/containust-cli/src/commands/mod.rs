@@ -328,7 +328,7 @@ mod tests {
         let cli = Cli::try_parse_from(&["ctst", "stop"]).expect("should parse");
         match cli.command {
             Command::Stop(args) => {
-                assert!(args.containers.is_empty());
+                assert_eq!(args.containers, Vec::<String>::new());
             }
             other => panic!("expected Stop, got {other:?}"),
         }

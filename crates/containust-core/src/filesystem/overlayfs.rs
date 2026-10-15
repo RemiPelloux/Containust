@@ -156,7 +156,7 @@ mod tests {
             work_dir: PathBuf::from("/work"),
             merged_dir: PathBuf::from("/merged"),
         };
-        assert!(config.lower_dirs.is_empty());
+        assert_eq!(config.lower_dirs, Vec::<std::path::PathBuf>::new());
     }
 
     #[test]

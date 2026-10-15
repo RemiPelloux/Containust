@@ -111,8 +111,8 @@ mod tests {
         let builder = ContainerBuilder::new("test-container");
         assert_eq!(builder.name, "test-container");
         assert!(builder.image.is_none());
-        assert!(builder.command.is_empty());
-        assert!(builder.env.is_empty());
+        assert_eq!(builder.command, Vec::<String>::new());
+        assert_eq!(builder.env, Vec::<(String, String)>::new());
         assert!(builder.memory_limit.is_none());
         assert!(builder.cpu_shares.is_none());
         assert!(builder.readonly_rootfs);

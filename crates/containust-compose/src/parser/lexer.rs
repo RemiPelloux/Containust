@@ -289,13 +289,13 @@ mod tests {
     #[test]
     fn tokenize_empty_input() {
         let tokens = tokenize("").expect("should tokenize");
-        assert!(tokens.is_empty());
+        assert_eq!(tokens.len(), 0);
     }
 
     #[test]
     fn tokenize_only_comments() {
         let tokens = tokenize("// just a comment\n// another one").expect("should tokenize");
-        assert!(tokens.is_empty());
+        assert_eq!(tokens.len(), 0);
     }
 
     #[test]

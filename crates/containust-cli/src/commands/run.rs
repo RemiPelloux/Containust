@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use clap::Args;
-use containust_runtime::engine::{DeployedComponent, Engine};
+use containust_runtime::engine::{ApplyOptions, DeployedComponent, Engine};
 
 /// Arguments for the `run` command.
 #[derive(Args, Debug)]
@@ -18,6 +18,10 @@ pub struct RunArgs {
     /// Run in detached mode (don't wait for Ctrl+C).
     #[arg(short, long)]
     pub detach: bool,
+
+    /// Stop and remove containers that are no longer declared in the file.
+    #[arg(long)]
+    pub prune: bool,
 }
 
 const BOLD: &str = "\x1b[1m";
@@ -50,7 +54,7 @@ pub fn execute(args: RunArgs, options: &super::RuntimeOptions) -> anyhow::Result
         print_vm_notice();
     }
 
-    let deployed = deploy_and_report(&engine, path, total_start)?;
+    let deployed = deploy_and_report(&engine, path, args.prune, total_start)?;
 
     if args.detach {
         eprintln!();
@@ -79,14 +83,18 @@ fn print_vm_notice() {
 fn deploy_and_report(
     engine: &Engine,
     path: &Path,
+    prune: bool,
     total_start: Instant,
 ) -> anyhow::Result<Vec<DeployedComponent>> {
-    let deployed = engine.deploy(path).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let outcome = engine
+        .apply(path, ApplyOptions { prune })
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let deployed = outcome.deployed;
 
     eprintln!();
     eprintln!(
-        "  {GREEN}{BOLD}Deployed {}{RESET} container(s) in {:.1}s:",
-        deployed.len(),
+        "  {GREEN}{BOLD}Applied{RESET} {} in {:.1}s:",
+        outcome.plan.summary(),
         total_start.elapsed().as_secs_f64()
     );
     eprintln!();
@@ -107,6 +115,21 @@ fn deploy_and_report(
         for port in &ports {
             eprintln!("  {CYAN}Access at:{RESET} {BOLD}http://localhost:{port}{RESET}");
         }
+    }
+
+    for name in &outcome.removed {
+        eprintln!("    {DIM}-{RESET} {name} {DIM}(removed){RESET}");
+    }
+    let undeclared = outcome
+        .plan
+        .count(containust_runtime::plan::PlanAction::Remove)
+        - outcome.removed.len();
+    if undeclared > 0 {
+        eprintln!();
+        eprintln!(
+            "  {YELLOW}Note:{RESET} {undeclared} undeclared container(s) left in place; \
+             rerun with {BOLD}--prune{RESET} to remove them."
+        );
     }
 
     let project_dir = containust_common::constants::project_dir(path);

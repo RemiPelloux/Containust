@@ -285,3 +285,119 @@ pub fn spawn_container_process(_config: &ProcessConfig) -> Result<u32> {
         message: "process spawning requires Linux (use VM backend on macOS/Windows)".into(),
     })
 }
+
+/// Grace period between SIGTERM and SIGKILL when stopping a container.
+pub(crate) const STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Interval at which a terminating process is polled for exit.
+#[cfg(target_os = "linux")]
+const STOP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// Sends SIGTERM, waits up to `grace` for the process to exit (polling),
+/// then sends SIGKILL if it is still alive. `force` sends SIGKILL at once.
+///
+/// Returns as soon as the process has exited instead of always sleeping
+/// for the full grace period.
+#[cfg(target_os = "linux")]
+pub(crate) fn terminate_process(pid: u32, force: bool, grace: std::time::Duration) {
+    use nix::sys::signal::{Signal, kill};
+    use nix::unistd::Pid;
+
+    let nix_pid = Pid::from_raw(i32::try_from(pid).unwrap_or(i32::MAX));
+
+    if force {
+        let _ = kill(nix_pid, Signal::SIGKILL);
+        return;
+    }
+    if kill(nix_pid, Signal::SIGTERM).is_err() {
+        return;
+    }
+    tracing::info!(pid, "sent SIGTERM");
+
+    let deadline = std::time::Instant::now() + grace;
+    loop {
+        if process_has_exited(nix_pid) {
+            return;
+        }
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            break;
+        }
+        std::thread::sleep(STOP_POLL_INTERVAL.min(deadline - now));
+    }
+
+    if kill(nix_pid, None).is_ok() {
+        let _ = kill(nix_pid, Signal::SIGKILL);
+        tracing::info!(pid, "sent SIGKILL");
+    }
+}
+
+/// Non-Linux stub: process signaling is handled by the VM backend.
+#[cfg(not(target_os = "linux"))]
+pub(crate) const fn terminate_process(_pid: u32, _force: bool, _grace: std::time::Duration) {}
+
+/// Reports whether `pid` has exited.
+///
+/// For our own children a zombie still answers `kill(pid, 0)`, so check with
+/// `waitid(WNOWAIT)` first (which does not reap, leaving that to the owner).
+/// Non-children fall back to `kill(pid, 0)`; `EPERM` means it is alive.
+#[cfg(target_os = "linux")]
+fn process_has_exited(pid: nix::unistd::Pid) -> bool {
+    use nix::errno::Errno;
+    use nix::sys::wait::{Id, WaitPidFlag, WaitStatus, waitid};
+
+    match waitid(
+        Id::Pid(pid),
+        WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT,
+    ) {
+        Ok(WaitStatus::StillAlive) => false,
+        Ok(_) => true,
+        Err(_) => matches!(nix::sys::signal::kill(pid, None), Err(e) if e != Errno::EPERM),
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminate_returns_promptly_when_process_exits_on_sigterm() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep");
+        let started = std::time::Instant::now();
+        terminate_process(child.id(), false, STOP_GRACE);
+        let elapsed = started.elapsed();
+        let status = child.wait().expect("reap sleep");
+
+        assert!(!status.success(), "sleep should be killed by a signal");
+        assert!(
+            elapsed < std::time::Duration::from_millis(1_000),
+            "stop took {elapsed:?}; expected well under the {STOP_GRACE:?} grace"
+        );
+    }
+
+    #[test]
+    fn terminate_escalates_to_sigkill_after_grace() {
+        // `sh` ignoring SIGTERM forces the SIGKILL path.
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "trap '' TERM; while :; do sleep 0.05; done"])
+            .spawn()
+            .expect("spawn sh");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let grace = std::time::Duration::from_millis(200);
+        let started = std::time::Instant::now();
+        terminate_process(child.id(), false, grace);
+        let elapsed = started.elapsed();
+        let status = child.wait().expect("reap sh");
+
+        assert!(!status.success());
+        assert!(elapsed >= grace, "returned before grace: {elapsed:?}");
+    }
+
+    #[test]
+    fn terminate_ignores_missing_pid() {
+        terminate_process(999_999_999, false, STOP_GRACE);
+    }
+}

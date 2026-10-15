@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn list_presets_only_returns_host_architecture() {
         let presets = list_presets();
-        assert!(!presets.is_empty());
+        assert_ne!(presets.len(), 0);
         let arch = host_arch().expect("arch");
         assert!(presets.iter().all(|preset| preset.arch == arch));
     }

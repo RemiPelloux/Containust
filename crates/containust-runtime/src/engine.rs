@@ -14,6 +14,27 @@ use crate::backend::{
 };
 use crate::events::{EventBus, OperationEmit};
 use crate::exec::ExecOutput;
+use crate::plan::{
+    AppliedComponent, DeployPlan, DesiredComponent, Ledger, PlanAction, PlannedChange,
+};
+
+/// Options for [`Engine::apply`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ApplyOptions {
+    /// Stop and remove containers that are no longer declared.
+    pub prune: bool,
+}
+
+/// Result of [`Engine::apply`].
+#[derive(Debug, Clone)]
+pub struct ApplyOutcome {
+    /// The plan that was executed.
+    pub plan: DeployPlan,
+    /// Declared components, now running, in dependency order.
+    pub deployed: Vec<DeployedComponent>,
+    /// Names of containers removed by `prune`.
+    pub removed: Vec<String>,
+}
 
 /// Immutable storage and network policy for an engine instance.
 #[derive(Debug, Clone)]
@@ -152,7 +173,36 @@ impl Engine {
         }
     }
 
-    fn deploy_inner(&self, ctst_path: &Path) -> Result<Vec<DeployedComponent>> {
+    /// Computes the declarative plan for a `.ctst` file without changing
+    /// anything on the host.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the composition is invalid or state cannot be read.
+    pub fn plan(&self, ctst_path: &Path) -> Result<DeployPlan> {
+        let desired = load_desired(ctst_path, self.offline)?;
+        // Keep planning read-only: a native project without a state directory
+        // has no containers, and listing would create the lock file.
+        let has_local_state = self.state_file.parent().is_some_and(Path::exists)
+            || self.backend.as_any().is::<crate::backend::vm::VMBackend>();
+        let live = if has_local_state {
+            self.backend.list()?
+        } else {
+            Vec::new()
+        };
+        self.plan_for(&desired, &live)
+    }
+
+    /// Applies a `.ctst` file declaratively: unchanged running components
+    /// are kept, stopped ones started, changed ones replaced one at a time in
+    /// dependency order, and new ones created. With `prune`, containers no
+    /// longer declared are stopped and removed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if planning or any backend operation fails. Changes
+    /// applied before the failure are kept and recorded in the ledger.
+    pub fn apply(&self, ctst_path: &Path, options: ApplyOptions) -> Result<ApplyOutcome> {
         let project_dir = containust_common::constants::project_dir(ctst_path);
         for subdir in ["logs", "state"] {
             let path = project_dir.join(subdir);
@@ -161,58 +211,64 @@ impl Engine {
         }
         tracing::info!(project_dir = %project_dir.display(), "project directory");
 
-        let content = std::fs::read_to_string(ctst_path).map_err(|e| ContainustError::Io {
-            path: ctst_path.to_path_buf(),
-            source: e,
-        })?;
-
-        let composition = containust_compose::parser::parse_ctst(&content)?;
-        if self.offline {
-            containust_compose::validate_offline(&composition)?;
-        }
-        let order = resolve_deploy_order(&composition)?;
-        let resolved = containust_compose::resolver::resolve_connections(&composition)?;
-        let components: HashMap<&str, &containust_compose::parser::ast::ComponentDecl> =
-            composition
-                .components
+        let desired = load_desired(ctst_path, self.offline)?;
+        let live = self.backend.list()?;
+        let plan = self.plan_for(&desired, &live)?;
+        let ledger_path = Ledger::path_for(&self.state_file);
+        let mut run = ApplyRun {
+            engine: self,
+            prune: options.prune,
+            ledger: Ledger::load(&ledger_path)?,
+            ledger_path,
+            live: live.iter().map(|info| (info.name.as_str(), info)).collect(),
+            desired: desired
                 .iter()
-                .map(|component| (component.name.as_str(), component))
-                .collect();
-        let resolved_by_name: HashMap<&str, &containust_compose::resolver::ResolvedComponent> =
-            resolved
-                .iter()
-                .map(|component| (component.name.as_str(), component))
-                .collect();
-
-        let mut deployed = Vec::with_capacity(order.len());
-        for name in &order {
-            let component =
-                components
-                    .get(name.as_str())
-                    .ok_or_else(|| ContainustError::NotFound {
-                        kind: "component",
-                        id: name.clone(),
-                    })?;
-            let mappings = published_port_mappings(component, &composition.exposes)?;
-            deployed.push(self.deploy_component(
-                component,
-                resolved_by_name.get(name.as_str()).copied(),
-                mappings,
-            )?);
+                .map(|spec| (spec.component.name.as_str(), spec))
+                .collect(),
+            deployed: Vec::with_capacity(desired.len()),
+            removed: Vec::new(),
+        };
+        for change in &plan.changes {
+            run.apply_change(change)?;
         }
-        Ok(deployed)
+        Ok(ApplyOutcome {
+            deployed: run.deployed,
+            removed: run.removed,
+            plan,
+        })
     }
 
-    /// Deploys a single named component from the composition.
-    fn deploy_component(
-        &self,
-        comp: &containust_compose::parser::ast::ComponentDecl,
-        resolved_comp: Option<&containust_compose::resolver::ResolvedComponent>,
-        port_mappings: Vec<containust_common::types::PortMapping>,
-    ) -> Result<DeployedComponent> {
-        validate_runtime_component(comp)?;
-        let image = resolve_deploy_image(self.data_dir(), self.offline, comp)?;
-        let config = build_deploy_config(comp, resolved_comp, image, port_mappings)?;
+    fn plan_for(&self, desired: &[DesiredSpec], live: &[ContainerInfo]) -> Result<DeployPlan> {
+        let ledger = Ledger::load(&Ledger::path_for(&self.state_file))?;
+        let inputs: Vec<DesiredComponent<'_>> = desired
+            .iter()
+            .map(|spec| DesiredComponent {
+                name: &spec.component.name,
+                fingerprint: spec.fingerprint.clone(),
+                upstreams: spec.upstreams.iter().map(String::as_str).collect(),
+            })
+            .collect();
+        Ok(crate::plan::compute(&inputs, live, &ledger))
+    }
+
+    /// Stops (when running) and removes an existing container.
+    fn retire(&self, id: &ContainerId, running: bool) -> Result<()> {
+        if running {
+            self.stop_with_force(id, false)?;
+        }
+        self.backend.remove(id)
+    }
+
+    fn deploy_inner(&self, ctst_path: &Path) -> Result<Vec<DeployedComponent>> {
+        self.apply(ctst_path, ApplyOptions::default())
+            .map(|outcome| outcome.deployed)
+    }
+
+    /// Creates and starts one planned component.
+    fn deploy_component(&self, spec: &DesiredSpec) -> Result<DeployedComponent> {
+        let comp = &spec.component;
+        let mut config = spec.config.clone();
+        config.image = resolve_deploy_image(self.data_dir(), self.offline, comp)?;
 
         eprintln!("  Creating container '{}'...", comp.name);
         let id = self.backend.create(&config)?;
@@ -442,6 +498,101 @@ impl Engine {
     }
 }
 
+/// Mutable bookkeeping for one [`Engine::apply`] pass.
+struct ApplyRun<'a> {
+    engine: &'a Engine,
+    prune: bool,
+    ledger: Ledger,
+    ledger_path: PathBuf,
+    live: HashMap<&'a str, &'a ContainerInfo>,
+    desired: HashMap<&'a str, &'a DesiredSpec>,
+    deployed: Vec<DeployedComponent>,
+    removed: Vec<String>,
+}
+
+impl ApplyRun<'_> {
+    fn apply_change(&mut self, change: &PlannedChange) -> Result<()> {
+        match change.action {
+            PlanAction::Remove if self.prune => self.remove(change),
+            PlanAction::Remove => Ok(()),
+            PlanAction::Keep | PlanAction::Start => self.keep_or_start(change),
+            PlanAction::Create | PlanAction::Replace => self.create_or_replace(change),
+        }
+    }
+
+    fn is_running(&self, name: &str) -> bool {
+        self.live
+            .get(name)
+            .is_some_and(|info| info.state == "running")
+    }
+
+    fn forget(&mut self, name: &str) -> Result<()> {
+        let _ = self.ledger.components.remove(name);
+        self.ledger.save(&self.ledger_path)
+    }
+
+    fn remove(&mut self, change: &PlannedChange) -> Result<()> {
+        if let Some(id) = &change.container_id {
+            eprintln!("  Removing container '{}'...", change.name);
+            self.engine.retire(id, self.is_running(&change.name))?;
+        }
+        self.forget(&change.name)?;
+        self.removed.push(change.name.clone());
+        Ok(())
+    }
+
+    fn keep_or_start(&mut self, change: &PlannedChange) -> Result<()> {
+        let (Some(spec), Some(id)) = (
+            self.desired.get(change.name.as_str()).copied(),
+            change.container_id.clone(),
+        ) else {
+            return Ok(());
+        };
+        let pid = if change.action == PlanAction::Start {
+            eprintln!("  Starting container '{}'...", change.name);
+            Some(self.engine.backend.start(&id)?)
+        } else {
+            eprintln!("  Keeping container '{}' (unchanged)", change.name);
+            self.live
+                .get(change.name.as_str())
+                .and_then(|info| info.pid)
+        };
+        self.deployed.push(DeployedComponent {
+            id,
+            name: change.name.clone(),
+            port: spec.component.port,
+            pid,
+        });
+        Ok(())
+    }
+
+    fn create_or_replace(&mut self, change: &PlannedChange) -> Result<()> {
+        let Some(spec) = self.desired.get(change.name.as_str()).copied() else {
+            return Ok(());
+        };
+        if let Some(id) = &change.container_id {
+            eprintln!(
+                "  Replacing container '{}' ({})...",
+                change.name,
+                change.reason.as_deref().unwrap_or("spec changed")
+            );
+            self.engine.retire(id, self.is_running(&change.name))?;
+            self.forget(&change.name)?;
+        }
+        let component = self.engine.deploy_component(spec)?;
+        let _ = self.ledger.components.insert(
+            change.name.clone(),
+            AppliedComponent {
+                fingerprint: spec.fingerprint.clone(),
+                container_id: component.id.clone(),
+            },
+        );
+        self.ledger.save(&self.ledger_path)?;
+        self.deployed.push(component);
+        Ok(())
+    }
+}
+
 impl Default for Engine {
     fn default() -> Self {
         Self::new()
@@ -466,6 +617,83 @@ fn resolve_deploy_order(
     let order = graph.resolve_order()?;
     tracing::info!(?order, "deployment order resolved");
     Ok(order)
+}
+
+/// A declared component with its fully-built (pre-image-resolution) config.
+struct DesiredSpec {
+    component: containust_compose::parser::ast::ComponentDecl,
+    config: ContainerConfig,
+    fingerprint: String,
+    upstreams: Vec<String>,
+}
+
+/// Parses and validates a composition into desired specs in deploy order.
+///
+/// Every component is validated up front so an invalid file fails before
+/// any container is touched.
+fn load_desired(ctst_path: &Path, offline: bool) -> Result<Vec<DesiredSpec>> {
+    let content = std::fs::read_to_string(ctst_path).map_err(|e| ContainustError::Io {
+        path: ctst_path.to_path_buf(),
+        source: e,
+    })?;
+    let composition = containust_compose::parser::parse_ctst(&content)?;
+    if offline {
+        containust_compose::validate_offline(&composition)?;
+    }
+    let order = resolve_deploy_order(&composition)?;
+    let resolved = containust_compose::resolver::resolve_connections(&composition)?;
+    let mut components: HashMap<&str, &containust_compose::parser::ast::ComponentDecl> =
+        composition
+            .components
+            .iter()
+            .map(|component| (component.name.as_str(), component))
+            .collect();
+    let resolved_by_name: HashMap<&str, &containust_compose::resolver::ResolvedComponent> =
+        resolved
+            .iter()
+            .map(|component| (component.name.as_str(), component))
+            .collect();
+    let mut upstreams = upstreams_by_component(&composition);
+
+    let mut desired = Vec::with_capacity(order.len());
+    for name in &order {
+        let component =
+            components
+                .remove(name.as_str())
+                .ok_or_else(|| ContainustError::NotFound {
+                    kind: "component",
+                    id: name.clone(),
+                })?;
+        validate_runtime_component(component)?;
+        let mappings = published_port_mappings(component, &composition.exposes)?;
+        let config = build_deploy_config(
+            component,
+            resolved_by_name.get(name.as_str()).copied(),
+            component.image.clone().unwrap_or_default(),
+            mappings,
+        )?;
+        desired.push(DesiredSpec {
+            fingerprint: crate::plan::fingerprint(&config),
+            upstreams: upstreams.remove(name.as_str()).unwrap_or_default(),
+            component: component.clone(),
+            config,
+        });
+    }
+    Ok(desired)
+}
+
+/// Maps each component to the components it `CONNECT`s to.
+fn upstreams_by_component(
+    composition: &containust_compose::parser::ast::CompositionFile,
+) -> HashMap<&str, Vec<String>> {
+    let mut upstreams: HashMap<&str, Vec<String>> = HashMap::new();
+    for conn in &composition.connections {
+        upstreams
+            .entry(conn.from.as_str())
+            .or_default()
+            .push(conn.to.clone());
+    }
+    upstreams
 }
 
 /// Resolves `preset://` images into catalog references before create.
@@ -900,6 +1128,211 @@ mod tests {
         assert_eq!(parse_cpu_shares("2"), Some(2));
         assert_eq!(parse_cpu_shares("0"), None);
         assert_eq!(parse_cpu_shares("invalid"), None);
+    }
+
+    /// Backend that keeps containers in memory so apply can be re-run.
+    #[derive(Default)]
+    struct MemBackend {
+        containers: Mutex<Vec<ContainerInfo>>,
+        log: Mutex<Vec<String>>,
+        next: std::sync::atomic::AtomicU32,
+    }
+
+    impl MemBackend {
+        fn record(&self, entry: String) {
+            self.log.lock().expect("log").push(entry);
+        }
+
+        fn set_state(&self, id: &ContainerId, state: &str) {
+            self.containers
+                .lock()
+                .expect("containers")
+                .iter_mut()
+                .filter(|info| info.id == *id)
+                .for_each(|info| info.state = state.into());
+        }
+    }
+
+    impl ContainerBackend for Arc<MemBackend> {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn create(&self, config: &ContainerConfig) -> Result<ContainerId> {
+            let n = self.next.fetch_add(1, Ordering::Relaxed);
+            let id = ContainerId::new(format!("{}-{n}", config.name));
+            self.containers
+                .lock()
+                .expect("containers")
+                .push(ContainerInfo {
+                    id: id.clone(),
+                    name: config.name.clone(),
+                    state: "created".into(),
+                    pid: None,
+                    image: config.image.clone(),
+                    created_at: String::new(),
+                });
+            self.record(format!("create {}", config.name));
+            Ok(id)
+        }
+
+        fn start(&self, id: &ContainerId) -> Result<u32> {
+            self.set_state(id, "running");
+            self.record(format!("start {id}"));
+            Ok(7)
+        }
+
+        fn stop(&self, id: &ContainerId) -> Result<()> {
+            self.set_state(id, "stopped");
+            self.record(format!("stop {id}"));
+            Ok(())
+        }
+
+        fn exec(&self, _id: &ContainerId, _cmd: &[String]) -> Result<ExecOutput> {
+            Ok(ExecOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            })
+        }
+
+        fn remove(&self, id: &ContainerId) -> Result<()> {
+            self.containers
+                .lock()
+                .expect("containers")
+                .retain(|info| info.id != *id);
+            self.record(format!("remove {id}"));
+            Ok(())
+        }
+
+        fn logs(&self, _id: &ContainerId) -> Result<String> {
+            Ok(String::new())
+        }
+
+        fn list(&self) -> Result<Vec<ContainerInfo>> {
+            Ok(self.containers.lock().expect("containers").clone())
+        }
+
+        fn is_available(&self) -> bool {
+            true
+        }
+    }
+
+    fn mem_engine(backend: &Arc<MemBackend>, data_dir: PathBuf) -> Engine {
+        let options = EngineOptions {
+            state_file: data_dir.join("state").join("state.json"),
+            data_dir,
+            offline: false,
+        };
+        Engine::with_backend(options, Box::new(Arc::clone(backend)))
+    }
+
+    fn take_log(backend: &MemBackend) -> Vec<String> {
+        std::mem::take(&mut *backend.log.lock().expect("log"))
+    }
+
+    const STACK: &str = r#"COMPONENT db {
+    image = "file:///db"
+    port = 5432
+}
+COMPONENT api {
+    image = "file:///api"
+    port = 8080
+}
+CONNECT api -> db
+"#;
+
+    #[test]
+    fn apply_is_idempotent_for_unchanged_stack() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("stack.ctst");
+        std::fs::write(&file, STACK).expect("write");
+        let backend = Arc::new(MemBackend::default());
+        let engine = mem_engine(&backend, dir.path().join("data"));
+
+        let first = engine.apply(&file, ApplyOptions::default()).expect("apply");
+        assert_eq!(first.plan.count(PlanAction::Create), 2);
+        assert_eq!(
+            take_log(&backend),
+            vec!["create db", "start db-0", "create api", "start api-1"]
+        );
+
+        let plan = engine.plan(&file).expect("plan");
+        assert!(plan.is_noop(), "{plan:?}");
+        let second = engine
+            .apply(&file, ApplyOptions::default())
+            .expect("re-apply");
+        assert_eq!(second.deployed.len(), 2);
+        assert_eq!(take_log(&backend), Vec::<String>::new());
+    }
+
+    #[test]
+    fn apply_replaces_changed_component_and_its_dependents() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("stack.ctst");
+        std::fs::write(&file, STACK).expect("write");
+        let backend = Arc::new(MemBackend::default());
+        let engine = mem_engine(&backend, dir.path().join("data"));
+        let _ = engine.apply(&file, ApplyOptions::default()).expect("apply");
+        let _ = take_log(&backend);
+
+        std::fs::write(&file, STACK.replace("file:///db", "file:///db2")).expect("rewrite");
+        let plan = engine.plan(&file).expect("plan");
+        assert_eq!(plan.count(PlanAction::Replace), 2);
+        let _ = engine.apply(&file, ApplyOptions::default()).expect("apply");
+        assert_eq!(
+            take_log(&backend),
+            vec![
+                "stop db-0",
+                "remove db-0",
+                "create db",
+                "start db-2",
+                "stop api-1",
+                "remove api-1",
+                "create api",
+                "start api-3",
+            ]
+        );
+        assert!(engine.plan(&file).expect("plan").is_noop());
+    }
+
+    #[test]
+    fn apply_starts_stopped_and_prunes_undeclared() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("stack.ctst");
+        std::fs::write(&file, STACK).expect("write");
+        let backend = Arc::new(MemBackend::default());
+        let engine = mem_engine(&backend, dir.path().join("data"));
+        let _ = engine.apply(&file, ApplyOptions::default()).expect("apply");
+        backend.set_state(&ContainerId::new("db-0"), "stopped");
+        let _ = take_log(&backend);
+
+        let db_only = STACK.split("COMPONENT api").next().expect("db block");
+        std::fs::write(&file, db_only).expect("rewrite");
+        let kept = engine.apply(&file, ApplyOptions::default()).expect("apply");
+        assert_eq!(kept.removed, Vec::<String>::new());
+        assert_eq!(take_log(&backend), vec!["start db-0"]);
+        assert_eq!(engine.list().expect("list").len(), 2);
+
+        let pruned = engine
+            .apply(&file, ApplyOptions { prune: true })
+            .expect("prune");
+        assert_eq!(pruned.removed, vec!["api"]);
+        assert_eq!(take_log(&backend), vec!["stop api-1", "remove api-1"]);
+        assert_eq!(engine.list().expect("list").len(), 1);
+    }
+
+    #[test]
+    fn plan_on_fresh_project_does_not_create_state() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("stack.ctst");
+        std::fs::write(&file, STACK).expect("write");
+        let backend = Arc::new(MemBackend::default());
+        let data_dir = dir.path().join("data");
+        let engine = mem_engine(&backend, data_dir.clone());
+        let plan = engine.plan(&file).expect("plan");
+        assert_eq!(plan.count(PlanAction::Create), 2);
+        assert!(!data_dir.exists());
     }
 
     #[test]

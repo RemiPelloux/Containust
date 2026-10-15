@@ -398,7 +398,7 @@ mod tests {
         let entries = catalog.list().expect("list failed");
         assert_eq!(entries.len(), 1);
         assert!(entries[0].digest.is_none());
-        assert!(entries[0].tool_version.is_empty());
+        assert_eq!(entries[0].tool_version, "");
     }
 
     #[test]

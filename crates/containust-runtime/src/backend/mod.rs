@@ -236,13 +236,13 @@ mod tests {
     #[test]
     fn platform_info_os_not_empty() {
         let info = platform_info();
-        assert!(!info.os.is_empty());
+        assert_ne!(info.os, "");
     }
 
     #[test]
     fn platform_info_arch_not_empty() {
         let info = platform_info();
-        assert!(!info.arch.is_empty());
+        assert_ne!(info.arch, "");
     }
 
     #[test]
@@ -311,7 +311,7 @@ mod tests {
             namespaces: containust_core::namespace::NamespaceConfig::default(),
         };
         assert_eq!(cfg.name, "minimal");
-        assert!(cfg.image.is_empty());
+        assert_eq!(cfg.image, "");
         assert!(cfg.memory_bytes.is_none());
         assert!(!cfg.readonly_rootfs);
         assert!(cfg.port.is_none());

@@ -30,6 +30,6 @@ mod tests {
 
     #[test]
     fn ebpf_status_is_non_empty() {
-        assert!(!ebpf_status().is_empty());
+        assert_ne!(ebpf_status(), "");
     }
 }

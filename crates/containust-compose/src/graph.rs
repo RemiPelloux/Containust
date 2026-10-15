@@ -76,7 +76,7 @@ mod tests {
     fn empty_graph_resolves_to_empty() {
         let graph = DependencyGraph::new();
         let order = graph.resolve_order().expect("should resolve");
-        assert!(order.is_empty());
+        assert_eq!(order, Vec::<String>::new());
     }
 
     #[test]

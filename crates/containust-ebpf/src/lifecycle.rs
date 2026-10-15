@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn availability_message_is_non_empty() {
-        assert!(!availability_message().is_empty());
+        assert_ne!(availability_message(), "");
     }
 
     #[test]

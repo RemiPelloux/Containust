@@ -12,6 +12,7 @@ pub mod logs;
 pub mod metrics;
 pub mod network;
 pub mod observe;
+pub mod plan;
 #[cfg(target_os = "linux")]
 pub mod port_forward;
 pub mod process;

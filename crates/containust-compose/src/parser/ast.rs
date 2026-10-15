@@ -113,20 +113,20 @@ mod tests {
         assert!(file.imports.is_empty());
         assert!(file.components.is_empty());
         assert!(file.connections.is_empty());
-        assert!(file.exposes.is_empty());
+        assert_eq!(file.exposes, Vec::new());
     }
 
     #[test]
     fn component_decl_default_has_no_values() {
         let comp = ComponentDecl::default();
-        assert!(comp.name.is_empty());
+        assert_eq!(comp.name, "");
         assert!(comp.from_template.is_none());
         assert!(comp.image.is_none());
         assert!(comp.port.is_none());
-        assert!(comp.ports.is_empty());
+        assert_eq!(comp.ports, Vec::<u16>::new());
         assert!(comp.env.is_empty());
-        assert!(comp.volumes.is_empty());
-        assert!(comp.command.is_empty());
+        assert_eq!(comp.volumes, Vec::<String>::new());
+        assert_eq!(comp.command, Vec::<String>::new());
         assert!(comp.entrypoint.is_none());
         assert!(comp.readonly.is_none());
         assert!(comp.healthcheck.is_none());

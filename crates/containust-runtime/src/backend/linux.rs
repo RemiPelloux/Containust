@@ -10,6 +10,7 @@ use super::{
     ContainerBackend, ContainerConfig, ContainerInfo, ReconciliationReport, project_identifier,
 };
 use crate::exec::ExecOutput;
+use crate::process::terminate_process;
 use crate::state::StateStore;
 
 /// Backend that uses Linux kernel features directly.
@@ -100,32 +101,35 @@ impl ContainerBackend for LinuxNativeBackend {
         let id = ContainerId::generate();
         tracing::info!(id = %id, name = %config.name, "creating container (Linux native)");
 
-        let store_result = self.state_store.update(|state| {
-            if state
-                .containers
-                .iter()
-                .any(|entry| entry.name == config.name)
-            {
-                return Err(ContainustError::Config {
-                    message: format!("container name already exists: {}", config.name),
-                });
-            }
-            let _ = crate::volume::validate_volumes(&config.volumes)?;
-            config.namespaces.validate_for_spawn()?;
-            validate_resource_limits(config.memory_bytes, config.cpu_shares)?;
-            let rootfs = prepare_rootfs(&self.data_dir, &config.image, &id)?;
-            state
-                .containers
-                .push(self.new_state_entry(&id, config, &rootfs));
-            Ok(rootfs)
-        });
-        let rootfs = match store_result {
-            Ok(rootfs) => rootfs,
-            Err(error) => {
-                let _ = std::fs::remove_dir_all(self.data_dir.join("rootfs").join(id.as_str()));
-                return Err(error);
-            }
-        };
+        // Cheap early name check under the shared lock; re-checked below.
+        ensure_name_available(&self.state_store.read()?, &config.name)?;
+        let _ = crate::volume::validate_volumes(&config.volumes)?;
+        config.namespaces.validate_for_spawn()?;
+        validate_resource_limits(config.memory_bytes, config.cpu_shares)?;
+
+        // Build the rootfs (potentially slow: copy/extract/materialize)
+        // without holding the exclusive state lock. It is built in a
+        // staging directory outside `rootfs/` so a concurrent reconcile
+        // cannot treat it as orphaned, then renamed into place while the
+        // entry is committed.
+        let staging = staging_rootfs_dir(&self.data_dir, &id);
+        let rootfs = self.data_dir.join("rootfs").join(id.as_str());
+        let store_result =
+            prepare_rootfs_at(&self.data_dir, &config.image, &staging).and_then(|()| {
+                self.state_store.update(|state| {
+                    ensure_name_available(state, &config.name)?;
+                    rename_dir(&staging, &rootfs)?;
+                    state
+                        .containers
+                        .push(self.new_state_entry(&id, config, &rootfs));
+                    Ok(())
+                })
+            });
+        if let Err(error) = store_result {
+            let _ = std::fs::remove_dir_all(&staging);
+            let _ = std::fs::remove_dir_all(&rootfs);
+            return Err(error);
+        }
         tracing::info!(rootfs = %rootfs.display(), "rootfs prepared");
         Ok(id)
     }
@@ -261,6 +265,7 @@ impl ContainerBackend for LinuxNativeBackend {
                 ))
             })?;
         let orphaned_rootfs = cleanup_orphaned_rootfs(&self.data_dir, &tracked_rootfs)?;
+        cleanup_stale_staging(&self.data_dir);
         let orphaned_cgroups = cleanup_orphaned_cgroups(&self.project_id, &tracked_ids);
         let policies = crate::supervise::enforce_policies(&self.state_store, self)?;
         Ok(ReconciliationReport {
@@ -430,6 +435,24 @@ impl LinuxNativeBackend {
 
     fn stop_internal(&self, id: &ContainerId, force: bool) -> Result<()> {
         tracing::info!(id = %id, force, "stopping container (Linux native)");
+        // Signal and wait for the process without holding the exclusive
+        // state lock, so other project operations are not blocked for the
+        // grace period.
+        let observed_pid = {
+            let state = self.state_store.read()?;
+            let entry = state
+                .containers
+                .iter()
+                .find(|entry| entry.id == *id)
+                .ok_or_else(|| ContainustError::NotFound {
+                    kind: "container",
+                    id: id.to_string(),
+                })?;
+            running_pid(entry)
+        };
+        if let Some(pid) = observed_pid {
+            terminate_process(pid, force, crate::process::STOP_GRACE);
+        }
         self.state_store.update(|state| {
             let entry = state
                 .containers
@@ -439,9 +462,10 @@ impl LinuxNativeBackend {
                     kind: "container",
                     id: id.to_string(),
                 })?;
-            let is_running = entry.state == containust_common::types::ContainerState::Running;
-            if let Some(pid) = entry.pid.filter(|_| is_running) {
-                terminate_process(pid, force);
+            // The container may have been (re)started while unlocked; never
+            // mark a live process stopped without signaling it.
+            if let Some(pid) = running_pid(entry).filter(|pid| Some(*pid) != observed_pid) {
+                terminate_process(pid, force, crate::process::STOP_GRACE);
             }
             #[cfg(target_os = "linux")]
             {
@@ -458,32 +482,22 @@ impl LinuxNativeBackend {
     }
 }
 
-/// Sends SIGTERM followed by SIGKILL after a 2-second grace period.
-#[cfg(target_os = "linux")]
-fn terminate_process(pid: u32, force: bool) {
-    use nix::sys::signal::{Signal, kill};
-    use nix::unistd::Pid;
-
-    let nix_pid = Pid::from_raw(i32::try_from(pid).unwrap_or(i32::MAX));
-
-    if force {
-        let _ = kill(nix_pid, Signal::SIGKILL);
-        return;
+/// Rejects a container name that is already tracked in `state`.
+fn ensure_name_available(state: &crate::state::StateFile, name: &str) -> Result<()> {
+    if state.containers.iter().any(|entry| entry.name == name) {
+        return Err(ContainustError::Config {
+            message: format!("container name already exists: {name}"),
+        });
     }
-    if kill(nix_pid, Signal::SIGTERM).is_err() {
-        return;
-    }
-    tracing::info!(pid, "sent SIGTERM");
-    std::thread::sleep(std::time::Duration::from_secs(2));
-
-    if kill(nix_pid, None).is_ok() {
-        let _ = kill(nix_pid, Signal::SIGKILL);
-        tracing::info!(pid, "sent SIGKILL");
-    }
+    Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
-const fn terminate_process(_pid: u32, _force: bool) {}
+/// PID of the entry's process when it is tracked as running.
+fn running_pid(entry: &crate::state::StateEntry) -> Option<u32> {
+    entry
+        .pid
+        .filter(|_| entry.state == containust_common::types::ContainerState::Running)
+}
 
 // ---------------------------------------------------------------------------
 // Image preparation helpers
@@ -513,7 +527,58 @@ fn prepare_rootfs(
         tracing::info!(path = %rootfs_dir.display(), "reusing existing rootfs");
         return Ok(rootfs_dir);
     }
+    prepare_rootfs_at(data_dir, image_uri, &rootfs_dir)?;
+    Ok(rootfs_dir)
+}
 
+/// Directory where `create` builds a rootfs before committing it.
+fn staging_rootfs_dir(data_dir: &Path, container_id: &ContainerId) -> PathBuf {
+    data_dir
+        .join(STAGING_ROOTFS_DIR)
+        .join(container_id.as_str())
+}
+
+/// Parent of in-progress rootfs builds (never scanned by orphan cleanup
+/// of `rootfs/`).
+const STAGING_ROOTFS_DIR: &str = "rootfs-staging";
+
+/// Staging directories older than this are treated as crash leftovers.
+const STAGING_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Atomically moves a fully built rootfs into its final location.
+fn rename_dir(from: &Path, to: &Path) -> Result<()> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent).map_err(|source| ContainustError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    std::fs::rename(from, to).map_err(|source| ContainustError::Io {
+        path: to.to_path_buf(),
+        source,
+    })
+}
+
+/// Removes stale staging rootfs directories left by interrupted creates.
+fn cleanup_stale_staging(data_dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(data_dir.join(STAGING_ROOTFS_DIR)) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age > STAGING_MAX_AGE);
+        if stale {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// Builds a rootfs for `image_uri` into `rootfs_dir`.
+fn prepare_rootfs_at(data_dir: &Path, image_uri: &str, rootfs_dir: &Path) -> Result<()> {
     if let Some(path_str) = image_uri.strip_prefix("file://") {
         let src = PathBuf::from(path_str);
         if !src.exists() {
@@ -522,7 +587,7 @@ fn prepare_rootfs(
                 id: path_str.to_string(),
             });
         }
-        copy_dir_recursive(&src, &rootfs_dir, &rootfs_dir)?;
+        copy_dir_recursive(&src, rootfs_dir, rootfs_dir)?;
         tracing::info!(rootfs = %rootfs_dir.display(), "rootfs copied from file:// source");
     } else if let Some(path_str) = image_uri.strip_prefix("tar://") {
         let archive = PathBuf::from(path_str);
@@ -532,11 +597,11 @@ fn prepare_rootfs(
                 id: path_str.to_string(),
             });
         }
-        extract_tar(&archive, &rootfs_dir)?;
+        extract_tar(&archive, rootfs_dir)?;
         tracing::info!(rootfs = %rootfs_dir.display(), "rootfs extracted from tar:// source");
     } else if image_uri.starts_with("image://") {
         let reference = containust_image::reference::ImageReference::parse(image_uri)?;
-        containust_image::import::materialize_image(data_dir, &reference, &rootfs_dir)?;
+        containust_image::import::materialize_image(data_dir, &reference, rootfs_dir)?;
         tracing::info!(rootfs = %rootfs_dir.display(), "rootfs materialized from image catalog");
     } else {
         return Err(ContainustError::Config {
@@ -544,7 +609,7 @@ fn prepare_rootfs(
         });
     }
 
-    Ok(rootfs_dir)
+    Ok(())
 }
 
 /// Copies a directory tree recursively without following symlinks.
@@ -979,7 +1044,7 @@ mod tests {
     #[test]
     fn terminate_process_does_not_panic_on_invalid_pid() {
         // Use a PID that almost certainly does not exist
-        terminate_process(999_999_999, true);
+        terminate_process(999_999_999, true, crate::process::STOP_GRACE);
     }
 
     #[test]
@@ -1162,6 +1227,53 @@ mod tests {
 
         assert_eq!(first.list().expect("first list").len(), 1);
         assert!(second.list().expect("second list").is_empty());
+    }
+
+    #[test]
+    fn create_commits_rootfs_and_rejects_duplicate_name_without_leaks() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let image = dir.path().join("image");
+        std::fs::create_dir_all(image.join("bin")).expect("image");
+        std::fs::write(image.join("bin/app"), "binary").expect("image file");
+        let data_dir = dir.path().join("project");
+        let backend =
+            LinuxNativeBackend::with_paths(data_dir.clone(), data_dir.join("state/state.json"));
+        let config = ContainerConfig {
+            name: "dup".into(),
+            image: format!("file://{}", image.display()),
+            command: vec!["/bin/app".into()],
+            env: Vec::new(),
+            memory_bytes: None,
+            cpu_shares: None,
+            readonly_rootfs: true,
+            volumes: Vec::new(),
+            port: None,
+            ports: Vec::new(),
+            port_mappings: Vec::new(),
+            network: "bridge".into(),
+            restart: containust_common::types::RestartPolicy::default(),
+            healthcheck: None,
+            namespaces: containust_core::namespace::NamespaceConfig::default(),
+        };
+
+        let id = backend.create(&config).expect("create");
+        let rootfs = data_dir.join("rootfs").join(id.as_str());
+        assert!(rootfs.join("bin/app").exists());
+        let state = backend.state_store.read().expect("state");
+        assert_eq!(
+            state.containers[0].rootfs_path.as_deref(),
+            Some(rootfs.to_string_lossy().as_ref())
+        );
+
+        let error = backend.create(&config).expect_err("duplicate name");
+        assert!(error.to_string().contains("already exists"));
+        let rootfs_dirs = std::fs::read_dir(data_dir.join("rootfs"))
+            .expect("rootfs dir")
+            .count();
+        assert_eq!(rootfs_dirs, 1);
+        let staging_left =
+            std::fs::read_dir(data_dir.join(STAGING_ROOTFS_DIR)).map_or(0, Iterator::count);
+        assert_eq!(staging_left, 0);
     }
 
     #[test]

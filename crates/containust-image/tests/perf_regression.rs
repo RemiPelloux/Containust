@@ -118,3 +118,55 @@ fn repeated_imports_leave_no_staging_files_behind() {
         "staging files leaked into the layer store: {leftovers:?}"
     );
 }
+
+/// Number of tiny entries used by the many-small-files extraction gate.
+const SMALL_FILE_COUNT: usize = 10_000;
+
+/// Generous budget for extracting `SMALL_FILE_COUNT` gzip entries (observed
+/// well under 1 s locally); guards against per-entry reopen/unbuffered I/O.
+const SMALL_FILES_BUDGET: Duration = Duration::from_secs(20);
+
+#[test]
+fn extract_many_small_files_completes_within_budget() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive = dir.path().join("small.tar.gz");
+    {
+        let file = std::fs::File::create(&archive).expect("create archive");
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::fast());
+        let mut builder = tar::Builder::new(encoder);
+        for index in 0..SMALL_FILE_COUNT {
+            let data = format!("payload-{index}\n");
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(
+                    &mut header,
+                    format!("d{}/f{index}", index % 64),
+                    data.as_bytes(),
+                )
+                .expect("append");
+        }
+        let _ = builder
+            .into_inner()
+            .expect("tar finish")
+            .finish()
+            .expect("gzip finish");
+    }
+    let target = dir.path().join("out");
+
+    let start = Instant::now();
+    containust_image::extract::safe_extract_archive(&archive, &target).expect("extract");
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < SMALL_FILES_BUDGET,
+        "{SMALL_FILE_COUNT} small-file extraction took {elapsed:?}, budget is {SMALL_FILES_BUDGET:?}"
+    );
+    let last = SMALL_FILE_COUNT - 1;
+    assert_eq!(
+        std::fs::read_to_string(target.join(format!("d{}/f{last}", last % 64))).expect("read"),
+        format!("payload-{last}\n")
+    );
+}

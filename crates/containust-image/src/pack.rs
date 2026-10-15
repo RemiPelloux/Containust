@@ -12,6 +12,9 @@ use containust_common::types::Sha256Hash;
 
 use crate::hash::HashingWriter;
 
+/// Write buffer for the packed archive (tar emits many small writes).
+const PACK_WRITE_BUFFER: usize = 256 * 1024;
+
 /// Packs `source` into a deterministic tar archive at `destination`.
 ///
 /// # Errors
@@ -36,7 +39,10 @@ pub fn pack_directory_hashed(source: &Path, destination: &Path) -> Result<Sha256
         path: destination.to_path_buf(),
         source: source_err,
     })?;
-    let mut builder = tar::Builder::new(HashingWriter::new(file));
+    // Hash the exact bytes handed to the buffer; the buffer is flushed
+    // to the file before `sync_all`, so digest and file contents match.
+    let buffered = std::io::BufWriter::with_capacity(PACK_WRITE_BUFFER, file);
+    let mut builder = tar::Builder::new(HashingWriter::new(buffered));
     builder.follow_symlinks(false);
 
     for relative in collect_sorted_entries(source)? {
@@ -49,7 +55,13 @@ pub fn pack_directory_hashed(source: &Path, destination: &Path) -> Result<Sha256
             path: destination.to_path_buf(),
             source: source_err,
         })?;
-    let (file, digest) = writer.finish()?;
+    let (buffered, digest) = writer.finish()?;
+    let file = buffered
+        .into_inner()
+        .map_err(|source_err| ContainustError::Io {
+            path: destination.to_path_buf(),
+            source: source_err.into_error(),
+        })?;
     file.sync_all().map_err(|source_err| ContainustError::Io {
         path: destination.to_path_buf(),
         source: source_err,
@@ -78,7 +90,13 @@ fn collect_sorted_entries(root: &Path) -> Result<Vec<PathBuf>> {
                     message: format!("entry escapes pack root: {}", path.display()),
                 })?
                 .to_path_buf();
-            if path.is_dir() && !path.is_symlink() {
+            // `DirEntry::file_type` does not follow symlinks and is usually
+            // served from the readdir result without an extra stat.
+            let file_type = entry.file_type().map_err(|source| ContainustError::Io {
+                path: path.clone(),
+                source,
+            })?;
+            if file_type.is_dir() {
                 pending.push(path);
             }
             entries.push(relative);
@@ -149,7 +167,7 @@ mod tests {
         let first_bytes = std::fs::read(&first).expect("read first");
         let second_bytes = std::fs::read(&second).expect("read second");
         assert_eq!(first_bytes, second_bytes);
-        assert!(!first_bytes.is_empty());
+        assert_ne!(first_bytes.len(), 0);
     }
 
     #[test]

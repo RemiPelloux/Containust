@@ -108,6 +108,13 @@ impl Default for StateFile {
     }
 }
 
+/// Borrowed serialization view of [`StateFile`] used by `save_state_unlocked`.
+#[derive(Serialize)]
+struct PersistedState<'a> {
+    schema_version: u32,
+    containers: &'a [StateEntry],
+}
+
 const fn legacy_state_schema() -> u32 {
     1
 }
@@ -297,8 +304,12 @@ fn save_state_unlocked(path: &Path, state: &StateFile) -> Result<()> {
             source: e,
         })?;
     }
-    let mut persisted = state.clone();
-    persisted.schema_version = CURRENT_STATE_SCHEMA;
+    // Borrowed view with the same field names/order as `StateFile`, so the
+    // on-disk format is unchanged without cloning every entry.
+    let persisted = PersistedState {
+        schema_version: CURRENT_STATE_SCHEMA,
+        containers: &state.containers,
+    };
     let json = serde_json::to_vec_pretty(&persisted)?;
     let temp_path = temporary_path(path);
     let write_result: Result<()> = (|| {
@@ -605,10 +616,10 @@ mod tests {
 
         let migrated = load_state(&path).expect("migrate");
         let entry = &migrated.containers[0];
-        assert!(entry.command.is_empty());
-        assert!(entry.env.is_empty());
+        assert_eq!(entry.command, Vec::<String>::new());
+        assert_eq!(entry.env, Vec::<(String, String)>::new());
         assert!(entry.readonly_rootfs);
-        assert!(entry.volumes.is_empty());
+        assert_eq!(entry.volumes, Vec::<String>::new());
     }
 
     #[test]

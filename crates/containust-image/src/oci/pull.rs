@@ -28,12 +28,16 @@ const MANIFEST_MAX_BYTES: u64 = 4 * 1024 * 1024;
 /// A verified layer blob staged on disk, in manifest order.
 #[derive(Debug)]
 pub struct LayerBlob {
-    /// Staged blob file awaiting commit into the layer store.
+    /// Staged blob file awaiting commit into the layer store, or the
+    /// existing store blob when `cached` is set.
     pub path: std::path::PathBuf,
     /// Verified SHA-256 of the blob content.
     pub digest: Sha256Hash,
     /// Blob size in bytes.
     pub size: u64,
+    /// The blob was already present in the content-addressed store and
+    /// was not downloaded; it must not be committed (or deleted) again.
+    pub cached: bool,
 }
 
 /// The result of a completed registry pull.
@@ -81,7 +85,10 @@ pub fn pull_image(
     let layers = session.resolve_layer_descriptors(&body)?;
     let layers = layers
         .iter()
-        .map(|descriptor| session.download_layer(store, descriptor))
+        .map(|descriptor| {
+            cached_layer(store, descriptor)?
+                .map_or_else(|| session.download_layer(store, descriptor), Ok)
+        })
         .collect::<Result<Vec<_>>>()?;
     tracing::info!(
         repository = %name.repository,
@@ -93,6 +100,29 @@ pub fn pull_image(
         manifest_digest,
         layers,
     })
+}
+
+/// Returns the store's existing blob for `descriptor` when it is already
+/// present with the declared size, so the download can be skipped.
+///
+/// Blobs only enter the store after digest verification at commit time,
+/// so presence under the content address plus a matching size is enough.
+fn cached_layer(store: &StorageBackend, descriptor: &Descriptor) -> Result<Option<LayerBlob>> {
+    let digest = descriptor_sha256(&descriptor.digest)?;
+    let path = store.layer_blob_path(digest.as_hex());
+    let Ok(metadata) = std::fs::metadata(&path) else {
+        return Ok(None);
+    };
+    if !metadata.is_file() || metadata.len() != descriptor.size {
+        return Ok(None);
+    }
+    tracing::debug!(digest = %descriptor.digest, "layer satisfied from local store");
+    Ok(Some(LayerBlob {
+        path,
+        digest,
+        size: metadata.len(),
+        cached: true,
+    }))
 }
 
 fn verify_pin(reference: &ImageReference, actual: &Sha256Hash) -> Result<()> {
@@ -265,6 +295,7 @@ impl RegistrySession {
             path: staged,
             digest: actual,
             size,
+            cached: false,
         })
     }
 }
@@ -292,6 +323,52 @@ mod tests {
         let error = pull_image(&store, &reference, &policy, ProvenancePolicy::default())
             .expect_err("offline must fail");
         assert!(error.to_string().contains("offline"));
+    }
+
+    fn descriptor(digest: &str, size: u64) -> Descriptor {
+        Descriptor {
+            media_type: "application/vnd.oci.image.layer.v1.tar+gzip".into(),
+            digest: digest.into(),
+            size,
+            platform: None,
+        }
+    }
+
+    #[test]
+    fn cached_layer_reuses_store_blob_with_matching_size() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = StorageBackend::open(dir.path().to_path_buf()).expect("open store");
+        let body = b"layer-bytes";
+        let hex = format!("{:x}", Sha256::digest(body));
+        let staged = store.staging_path();
+        std::fs::write(&staged, body).expect("stage");
+        store.commit_layer(&staged, &hex).expect("commit");
+
+        let hit = cached_layer(
+            &store,
+            &descriptor(&format!("sha256:{hex}"), body.len() as u64),
+        )
+        .expect("lookup")
+        .expect("cached");
+        assert!(hit.cached);
+        assert_eq!(hit.digest.as_hex(), hex);
+        assert_eq!(hit.path, store.layer_blob_path(&hex));
+
+        let wrong_size =
+            cached_layer(&store, &descriptor(&format!("sha256:{hex}"), 1)).expect("lookup");
+        assert!(wrong_size.is_none(), "size mismatch must re-download");
+    }
+
+    #[test]
+    fn cached_layer_misses_when_blob_absent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = StorageBackend::open(dir.path().to_path_buf()).expect("open store");
+        let missing = cached_layer(
+            &store,
+            &descriptor(&format!("sha256:{}", "a".repeat(64)), 3),
+        )
+        .expect("lookup");
+        assert!(missing.is_none());
     }
 
     #[test]
