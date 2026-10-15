@@ -27,7 +27,8 @@ hash_for() {
   local artifact="$1"
   # Lines look like: <sha256>  <optional path prefix>ctst-<target>.tar.gz
   local line
-  line="$(grep -E "[^ ]${artifact}$| ${artifact}$" "$SUMS" | head -n1 || true)"
+  # Strip CR: the Windows job writes its .sha256 with CRLF line endings.
+  line="$(tr -d '\r' <"$SUMS" | grep -E "[^ ]${artifact}$| ${artifact}$" | head -n1 || true)"
   if [[ -z "$line" ]]; then
     echo "error: no checksum for ${artifact} in ${SUMS}" >&2
     exit 1

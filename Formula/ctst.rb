@@ -18,22 +18,22 @@ class Ctst < Formula
   on_macos do
     on_arm do
       url "https://github.com/RemiPelloux/Containust/releases/download/v#{version}/ctst-aarch64-apple-darwin.tar.gz"
-      sha256 :no_check # refreshed from SHA256SUMS at release time
+      sha256 "9c845dc38e2ac02525d994a3f51584814a59dcbb57fde52dc27c33624fea5575"
     end
     on_intel do
       url "https://github.com/RemiPelloux/Containust/releases/download/v#{version}/ctst-x86_64-apple-darwin.tar.gz"
-      sha256 :no_check # refreshed from SHA256SUMS at release time
+      sha256 "67e83407b28b215fff7962a4c9ef3780fdbc8cc41f5d298792ad23877c1b358d"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/RemiPelloux/Containust/releases/download/v#{version}/ctst-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 :no_check # refreshed from SHA256SUMS at release time
+      sha256 "e5b6829b6ee7fbea9bff281fc18e07792c0bd25e3fb78684be1e09c6a31e6ec2"
     end
     on_intel do
       url "https://github.com/RemiPelloux/Containust/releases/download/v#{version}/ctst-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 :no_check # refreshed from SHA256SUMS at release time
+      sha256 "c3b706da5b7f79365db2d026b87df13fe6cf8c6f74d1130d1c96601b2e0d4ab6"
     end
   end
 

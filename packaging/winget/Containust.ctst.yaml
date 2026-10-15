@@ -12,7 +12,7 @@ Installers:
   - Architecture: x64
     InstallerType: zip
     InstallerUrl: https://github.com/RemiPelloux/Containust/releases/download/v1.3.0/ctst-x86_64-pc-windows-msvc.zip
-    InstallerSha256: REPLACE_WITH_SHA256_FROM_SHA256SUMS
+    InstallerSha256: 61a145786316d57d4fcfd0b3fee5d060d54acbc7b17062396a12fa7fee5dc7cf
     NestedInstallerType: portable
     NestedInstallerFiles:
       - RelativeFilePath: ctst.exe
