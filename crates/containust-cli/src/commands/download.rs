@@ -115,7 +115,7 @@ pub fn execute(args: DownloadArgs, options: &super::RuntimeOptions) -> anyhow::R
 
     summary.print(data_dir, args.dry_run);
     if let Some(composition) = &composition {
-        report_offline_readiness(composition);
+        report_offline_readiness(composition, args.dry_run);
     }
     Ok(())
 }
@@ -242,8 +242,14 @@ impl Summary {
 }
 
 /// Tells the user whether `ctst --offline` will accept the composition.
-fn report_offline_readiness(composition: &containust_compose::parser::ast::CompositionFile) {
+fn report_offline_readiness(
+    composition: &containust_compose::parser::ast::CompositionFile,
+    dry_run: bool,
+) {
     match containust_compose::validate_offline(composition) {
+        Ok(()) if dry_run => {
+            println!("Offline ready once downloaded: run again without --dry-run.");
+        }
         Ok(()) => println!("Offline ready: `ctst --offline run` will not touch the network."),
         Err(error) => {
             println!("Not offline ready: {error}");

@@ -253,6 +253,11 @@ jobs:
           ./scripts/bump_packaging.sh "${GITHUB_REF_NAME#v}" SHA256SUMS
 
       - name: Open packaging bump PR
+        id: bump-pr
+        # The release is already published at this point; a repo that forbids
+        # Actions from opening PRs must not turn it red. The branch is still
+        # pushed, so the fallback step below links to it.
+        continue-on-error: true
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -268,6 +273,17 @@ jobs:
           add-paths: |
             Formula/ctst.rb
             packaging/winget/Containust.ctst.yaml
+
+      - name: Report packaging bump fallback
+        if: steps.bump-pr.outcome == 'failure'
+        run: |
+          {
+            echo "### Packaging bump PR was not opened"
+            echo
+            echo "Enable *Settings → Actions → Allow GitHub Actions to create and approve pull requests*,"
+            echo "or open it by hand: https://github.com/${GITHUB_REPOSITORY}/compare/main...chore/packaging-${GITHUB_REF_NAME}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::packaging bump PR not opened; see job summary"
 
       - name: Sync Homebrew tap (optional)
         env:
