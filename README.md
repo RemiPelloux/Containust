@@ -102,8 +102,7 @@ store across the air gap, and run with the network policy enforced.
 
 ```bash
 # connected side
-ctst pull postgres:16 --require-provenance
-ctst build stack.ctst                      # imports into .containust/images + layers
+ctst download stack.ctst --image postgres:16   # images, presets, VM assets if needed
 
 # copy .containust/images and .containust/layers across the gap, then:
 ctst --offline plan stack.ctst             # remote references fail closed
@@ -194,7 +193,7 @@ See [docs/SDK_GUIDE.md](docs/SDK_GUIDE.md).
 ## ⚡ Quick start
 
 ```bash
-VERSION=1.3.0
+VERSION=1.3.1
 TARGET=x86_64-unknown-linux-gnu   # or aarch64-unknown-linux-gnu, *-apple-darwin, x86_64-pc-windows-msvc
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz"
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz.sha256"
@@ -209,8 +208,8 @@ tar xzf "ctst-${TARGET}.tar.gz" && sudo install -m 755 ctst /usr/local/bin/ctst
 
 | Channel | Command |
 | --- | --- |
-| Debian / Ubuntu | `sudo dpkg -i ctst_1.3.0_amd64.deb` |
-| Fedora / RHEL | `sudo rpm -i ctst-1.3.0-1.amd64.rpm` |
+| Debian / Ubuntu | `sudo dpkg -i ctst_1.3.1_amd64.deb` |
+| Fedora / RHEL | `sudo rpm -i ctst-1.3.1-1.amd64.rpm` |
 | Homebrew | `brew install --formula ./Formula/ctst.rb` |
 | winget | manifest in [`packaging/winget/`](packaging/winget/) |
 | Source | `cargo install --path crates/containust-cli` |
@@ -319,6 +318,7 @@ a daemon, a registry dependency, or opaque state is a liability.
 | `ctst run [-d] [--prune]` | Apply the plan |
 | `ctst build [--dry-run]` | Import images into the project catalog |
 | `ctst pull [--require-provenance]` | OCI pull (Hub, GHCR) into the catalog |
+| `ctst download [--image] [--all-presets] [--vm]` | Prefetch everything for offline / on-prem use |
 | `ctst ps [--all] [--tui]` | Reconcile, enforce restart and health, list |
 | `ctst logs [-f]` · `ctst exec` | Inspect |
 | `ctst stop [--force]` · `ctst rm` | Tear down |

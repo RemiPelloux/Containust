@@ -4,10 +4,10 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at GA **`1.3.0`** (Sprint 12 complete: declarative plan/apply + performance pass). Sprint 11 (`1.2.0`) shipped: user/PID namespace spawn, remappable ports, named networks, DNS foundations, packaging automation, and opt-in OCI provenance. License is the proprietary [Containust Commercial License](LICENSE) (source-available; see [COMMERCIAL.md](COMMERCIAL.md)) — **`v1.2.0` is the first commercial-licensed tag**.
+Containust is at GA **`1.3.1`** (Sprint 12 complete: declarative plan/apply + performance pass; `1.3.1` adds `ctst download` and fixes the packaging bump). Sprint 11 (`1.2.0`) shipped: user/PID namespace spawn, remappable ports, named networks, DNS foundations, packaging automation, and opt-in OCI provenance. License is the proprietary [Containust Commercial License](LICENSE) (source-available; see [COMMERCIAL.md](COMMERCIAL.md)) — **`v1.2.0` is the first commercial-licensed tag**.
 
 - CI green on Linux, macOS, Windows, QEMU smoke, privileged Linux (including `spawn_user_pid` + offline gate under default-on userns), format/clippy/deny/coverage.
-- Release `v1.3.0` publishes tarballs/zips for five targets, `.deb`/`.rpm`, aggregated `SHA256SUMS`, and cosign keyless signature; packaging-bump refreshes Homebrew/winget.
+- Release `v1.3.1` publishes tarballs/zips for five targets, `.deb`/`.rpm`, aggregated `SHA256SUMS`, and cosign keyless signature; packaging-bump refreshes Homebrew/winget.
 - Images: `file://`, `tar://`, `preset://alpine|busybox`, `oci://` / `ctst pull` (Hub + GHCR, auth, digest-pin, `--offline` fail-closed, optional `--require-provenance`), catalog as `image://…@sha256:`.
 - Runtime: user + PID namespaces default-on on Linux; `EXPOSE host:container` remap (userspace forwarder / VM `hostfwd`); named networks + `/etc/hosts` peers; restart/healthcheck; state schema **4**.
 - Docs: product landing + HTML docs site under [`site/`](site/); operator guide [`docs/HowToUse.md`](docs/HowToUse.md).
@@ -30,6 +30,7 @@ Containust is at GA **`1.3.0`** (Sprint 12 complete: declarative plan/apply + pe
 | Sprint 10 | `1.1.0` | Production-usable: OCI pull, ports/restart/healthcheck, privileged CI, packaging. |
 | Sprint 11 | `1.2.0` | Isolation depth + networking: user/PID ns spawn, Linux port remap, DNS foundations. |
 | Sprint 12 | `1.3.0` | Declarative plan/apply and hot-path performance. |
+| Sprint 13 | `1.4.0` | Zero-downtime updates: start-before-stop with health-gated port handoff. |
 
 ## Delivery policy
 
@@ -264,6 +265,86 @@ Release work cannot be marked complete when a feature is only parser-supported. 
 
 **Exit gate: passed for engineering scope.** Tag `v1.3.0`.
 
+Patch `1.3.1`: `ctst download` (offline/on-prem prefetch), packaging-bump
+CRLF fix with a non-fatal PR step, `ctst doctor` / `ctst download` docs.
+
+## Sprint 13: Zero-downtime updates (`1.4.0`)
+
+**Goal:** `ctst run` replaces a changed component without dropping traffic
+on its published ports: start the new container, wait until it is healthy,
+move the port to it, then retire the old one.
+
+Today `create_or_replace` (`crates/containust-runtime/src/engine.rs`) retires
+the old container *before* deploying the new one, and each port forwarder
+(`port_forward.rs`) is bound to one container's netns for its whole life, so
+every replace has a gap of stop time + start time + boot time.
+
+### Design
+
+- **Update strategy per component.** New `.ctst` property
+  `update = "recreate" | "start-first"`. The default stays `recreate`, so
+  existing files behave exactly as in `1.3.x`. `start-first` requires a
+  `healthcheck` (validated at parse time with a clear error) because the swap
+  is gated on it.
+- **Stable forwarders with a swappable target.** A published host port is
+  owned by a long-lived forwarder that reads its target netns from a small
+  per-port target file (atomic rename) for every new connection. A swap is
+  one rename: new connections reach the new container, in-flight connections
+  finish on the old one.
+- **Staged deploy.** The new container is created under a temporary name
+  (`<name>~next`) with the same spec. When healthy, the target file is
+  swapped, the old container is drained (configurable `stop_grace`, default
+  10 s) and retired, and the new one is renamed to `<name>` in state and the
+  ledger in one atomic state write.
+- **Failure is non-destructive.** If the new container does not become
+  healthy within `start_period + retries × interval`, it is removed and the
+  old container keeps serving; `ctst run` exits non-zero with the probe
+  output. `ctst plan` shows `~ replace (start-first)`.
+- **Scope limits (documented, not silently degraded).** Identity publishes
+  on the host network cannot bind twice, so they fall back to `recreate`
+  with a plan warning. Stateful components with exclusive volumes should keep
+  `recreate`; the docs say so. The VM backend gets the same flow through the
+  agent; QEMU `hostfwd` stays fixed and the in-VM forwarder does the swap.
+
+### Wave 1 — Runtime
+
+- [ ] **P13.1 Swappable forwarder target.** Per-port target file +
+  per-connection lookup; forwarder survives container replacement; tests for
+  swap under load (no refused connections) and stale-target cleanup.
+- [ ] **P13.2 Staged replace in the apply engine.** `start-first` path in
+  `ApplyRun`: deploy `~next`, health gate, swap, drain, retire, rename;
+  crash-safe ordering (ledger + state written so `ctst ps` reconciles a
+  half-finished swap).
+- [ ] **P13.3 Health gate.** Reuse `supervise` probes synchronously with a
+  bounded wait; probe output surfaced in the error.
+
+### Wave 2 — Language, plan, VM
+
+- [ ] **P13.4 `.ctst` grammar.** `update` and `stop_grace` properties,
+  validation (`start-first` needs `healthcheck`), fingerprint excludes
+  `update` so changing strategy alone is not a replace.
+- [ ] **P13.5 Plan output.** Strategy in text and `--json`; fallback warnings.
+- [ ] **P13.6 VM backend.** Agent-side forwarder swap on macOS/Windows; QEMU
+  smoke covers one start-first replace.
+
+### Wave 3 — Proof and docs
+
+- [ ] **P13.7 Downtime gate.** Integration test (privileged Linux CI): a
+  client loops HTTP requests against a published port while `ctst run`
+  replaces the component; zero failed requests for `start-first`.
+- [ ] **P13.8 Docs.** CTST_LANG, CLI_REFERENCE, HowToUse, site, SUPPORT_POLICY
+  (remove blue/green from the deferred list), CHANGELOG.
+
+**Exit gate:** P13.7 green on privileged Linux CI and QEMU smoke; `recreate`
+behavior unchanged (existing apply tests untouched); tag `v1.4.0`.
+
+### Also in Sprint 13 if capacity allows
+
+- Parallel layer downloads for `ctst pull` / `ctst download` (bounded
+  concurrency, same digest verification).
+- Bump GitHub Actions off the deprecated Node 20 runtime
+  (`actions/checkout`, `download-artifact`, `upload-artifact`).
+
 ## Later feature backlog
 
 These are intentionally after Sprint 11:
@@ -274,7 +355,7 @@ These are intentionally after Sprint 11:
 - [x] Identity port mappings + `EXPOSE` (`1.1.0`).
 - [x] Declarative update/diff/apply semantics for `ctst plan` and `ctst run` (`1.3.0`).
 - [x] Dependency-aware replacement of running components (`1.3.0`).
-- [ ] Zero-downtime (start-before-stop) rolling updates.
+- [ ] Zero-downtime (start-before-stop) rolling updates — planned for Sprint 13 (`1.4.0`).
 - [ ] Volume drivers, snapshots, backup/restore, and encrypted local storage.
 - [ ] SDK async lifecycle API, typed events, backend injection.
 - [ ] Remote execution or orchestration only after local security and lifecycle semantics are stable.

@@ -266,7 +266,7 @@ ctst convert docker-compose.yml
 ctst convert docker-compose.yml -o infrastructure.ctst
 ```
 
-The converter handles services, ports, volumes, environment variables, depends_on, restart policies, healthchecks, resource limits, and more. Docker Hub image references are converted to `tar://` placeholders with instructions to export them using `docker save`. Review the output and adjust image URIs, remove duplicate env vars (CONNECT auto-injects connection variables), and add any missing health checks. See [CLI_REFERENCE.md](CLI_REFERENCE.md#11-ctst-convert) for full details.
+The converter handles services, ports, volumes, environment variables, depends_on, restart policies, healthchecks, resource limits, and more. Docker Hub image references are converted to `tar://` placeholders with instructions to export them using `docker save`. Review the output and adjust image URIs, remove duplicate env vars (CONNECT auto-injects connection variables), and add any missing health checks. See [CLI_REFERENCE.md](CLI_REFERENCE.md#ctst-convert) for full details.
 
 ---
 

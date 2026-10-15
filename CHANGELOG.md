@@ -10,6 +10,8 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-10-15
+
 ### Added
 
 - **`ctst download`**: one connected run prefetches everything needed for
@@ -18,6 +20,21 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
   (`--image`, repeatable). It then reports whether the composition is ready for
   `ctst --offline`. Supports `--dry-run`.
 - Runtime: `backend::vm::prefetch_boot_assets()` and `backend::vm::vm_cache_dir()`.
+
+### Fixed
+
+- `ctst download --dry-run` no longer reports a composition as "offline ready"
+  before anything has been downloaded.
+- Release: the Homebrew/winget packaging-bump job failed on `1.2.0` and `1.3.0`
+  because the Windows checksum is written with CRLF line endings. The bump
+  script now strips `\r`, and a blocked bump PR no longer fails the release run
+  (the job summary links to the pushed branch instead).
+
+### Documentation
+
+- `ctst doctor` and `ctst download` documented in the CLI reference, the
+  operator guide, and the docs site; the air-gapped workflow uses
+  `ctst download`.
 
 ## [1.3.0] — 2026-10-15
 

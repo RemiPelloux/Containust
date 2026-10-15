@@ -1,7 +1,7 @@
 # ctst — Containust CLI Reference
 
 **Binary**: `ctst`
-**Version**: 1.3.0
+**Version**: 1.3.1
 **Platform**: Linux (native), macOS (VM backend), Windows (VM backend)
 
 ```
@@ -31,7 +31,7 @@ cargo install --path crates/containust-cli
 
 ```bash
 ctst --version
-# ctst 1.3.0
+# ctst 1.3.1
 ```
 
 ---
@@ -1074,7 +1074,7 @@ ctst run
 
 ---
 
-## 11. `ctst convert`
+## ctst convert
 
 Convert a `docker-compose.yml` file to Containust `.ctst` format.
 
@@ -1254,6 +1254,49 @@ ctst vm start
 
 # Shut down the VM when done
 ctst vm stop
+```
+
+## ctst doctor
+
+Diagnose the host: platform, backend, QEMU, caches, and offline readiness.
+
+### Synopsis
+
+```
+ctst doctor
+```
+
+Inherits all [global options](#global-options).
+
+### Description
+
+Each check prints one row: `OK`, `INFO`, `WARN`, or `FAIL`, followed by the
+check name, the detected value, and an explanation. `FAIL` rows are blocking
+(for example, no usable backend, or an unwritable cache directory). `INFO`
+rows are context only. Run it first when something fails on a new host, and
+before copying caches to an air-gapped machine.
+
+### Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | No blocking issue (`Doctor summary: ready`) |
+| `1` | One or more `FAIL` rows |
+
+### Example
+
+```text
+$ ctst doctor
+Containust doctor
+
+INFO  host.os                linux                    Detected operating system
+OK    backend.native         available                Linux native namespaces/cgroups backend
+OK    backend.qemu           available                QEMU binary found on PATH
+OK    cache.dir              ~/.containust/cache      Global cache is writable
+INFO  network.offline        disabled                 Offline mode blocks remote image/asset downloads
+OK    linux.cgroup_v2        available                cgroup v2 controllers are mounted
+
+Doctor summary: ready
 ```
 
 ---

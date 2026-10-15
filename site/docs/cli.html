@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CLI reference — Containust Docs</title>
-    <meta name="description" content="ctst command reference: plan, build, run, pull, ps, logs, convert, vm." />
+    <meta name="description" content="ctst command reference: plan, build, run, pull, download, ps, logs, exec, convert, vm, doctor." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -56,7 +56,7 @@
         <p class="crumb"><a href="index.html">Docs</a> / CLI</p>
 
         <header class="doc-hero">
-          <p class="eyebrow">ctst 1.3.0</p>
+          <p class="eyebrow">ctst 1.3.1</p>
           <h1>CLI reference</h1>
           <p class="lede">
             One binary. No background daemon. On Linux it talks to the kernel;
@@ -170,11 +170,21 @@ ctst images --presets</code></pre>
                 <td>Read detached stdout/stderr</td>
               </tr>
               <tr>
-                <td><code>ctst exec &lt;NAME&gt; -- &lt;CMD…&gt;</code></td>
-                <td>Run a command inside a running container</td>
+                <td><code>ctst exec &lt;NAME|ID&gt; -- &lt;CMD…&gt;</code></td>
+                <td>Run a command inside a running container (joins its namespaces; exit code is propagated)</td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <h3 id="download">ctst download</h3>
+        <p data-searchable="download offline air-gapped on-prem prefetch presets vm">Prefetch everything a composition needs, verified by SHA-256, so <code>ctst --offline</code> works on this host or an air-gapped one.</p>
+        <div class="codeblock">
+          <pre><code>ctst download [FILE] [OPTIONS]
+  --image &lt;IMAGE&gt;          Extra registry image (repeatable)
+  --all-presets            Every curated preset://
+  --vm &lt;auto|always|never&gt; QEMU kernel + initramfs (auto: only without native backend)
+  --dry-run                List downloads, touch nothing</code></pre>
         </div>
 
         <h2 id="convert">ctst convert</h2>
@@ -188,6 +198,15 @@ ctst images --presets</code></pre>
         <div class="codeblock">
           <pre><code>ctst vm start
 ctst vm stop</code></pre>
+        </div>
+
+        <h2 id="doctor">ctst doctor</h2>
+        <p data-searchable="doctor diagnose qemu cgroup cache health check">Check the platform, backend, QEMU, caches and offline mode. Exits <code>1</code> when a <code>FAIL</code> row is blocking.</p>
+        <div class="codeblock">
+          <pre><code>ctst doctor
+# OK    backend.native   available
+# OK    linux.cgroup_v2  available
+# Doctor summary: ready</code></pre>
         </div>
 
         <div class="callout">

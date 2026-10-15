@@ -4,7 +4,7 @@ Day-to-day operator guide. Prefer the [HTML docs site](../site/docs/) for
 browsing; this file is the markdown source. Long references live in the
 [docs map](README.md).
 
-**Version:** 1.3.0
+**Version:** 1.3.1
 
 ---
 
@@ -13,7 +13,7 @@ browsing; this file is the markdown source. Long references live in the
 Prefer a verified release binary ([PACKAGING.md](PACKAGING.md)):
 
 ```bash
-VERSION=1.3.0
+VERSION=1.3.1
 TARGET=x86_64-unknown-linux-gnu   # or aarch64-unknown-linux-gnu, *-apple-darwin, …
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz"
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz.sha256"
@@ -27,8 +27,8 @@ Other options:
 
 | Channel | Command / location |
 | --- | --- |
-| Debian / Ubuntu | `sudo dpkg -i ctst_1.3.0_amd64.deb` |
-| Fedora / RHEL | `sudo rpm -i ctst-1.3.0-1.amd64.rpm` |
+| Debian / Ubuntu | `sudo dpkg -i ctst_1.3.1_amd64.deb` |
+| Fedora / RHEL | `sudo rpm -i ctst-1.3.1-1.amd64.rpm` |
 | Homebrew | `brew tap RemiPelloux/containust && brew install ctst` (or in-tree formula) |
 | From source | `cargo install --path crates/containust-cli` |
 
@@ -90,20 +90,21 @@ ctst rm app
 | Goal | Command |
 | --- | --- |
 | See what would change | `ctst plan stack.ctst` |
-| Apply changes (safe to re-run) | `ctst run -d stack.ctst` |
+| Start or update the stack (safe to re-run) | `ctst run stack.ctst --detach` |
 | Remove undeclared containers | `ctst run -d --prune stack.ctst` |
 | CI drift check | `ctst plan --detailed-exitcode stack.ctst` |
 | Import / resolve images | `ctst build stack.ctst` |
 | Dry-run import | `ctst build stack.ctst --dry-run` |
 | Pull OCI image | `ctst pull nginx:alpine` |
 | List catalog / presets | `ctst images` / `ctst images --presets` |
-| Start stack | `ctst run stack.ctst --detach` |
 | List containers | `ctst ps --all` |
 | Follow logs | `ctst logs app --follow` |
 | Exec into a container | `ctst exec app -- /bin/sh` |
 | Stop / remove | `ctst stop app` then `ctst rm app` |
 | Convert Compose | `ctst convert docker-compose.yml > stack.ctst` |
+| Prefetch for offline use | `ctst download stack.ctst` |
 | Pre-boot VM (macOS/Windows) | `ctst vm start` |
+| Check the host | `ctst doctor` |
 
 Project data lives next to the composition:
 
@@ -149,10 +150,11 @@ Credentials are never written to `state.json` or logs.
 ### Offline / air-gapped
 
 ```bash
-# On a networked machine
-ctst pull alpine:3.21
-ctst build stack.ctst
-# Copy .containust/images and .containust/layers to the air-gapped host
+# On a networked machine: images, presets and (on macOS/Windows) VM assets
+ctst download stack.ctst --image alpine:3.21
+ctst download stack.ctst --dry-run      # preview only
+# Copy .containust/images and .containust/layers (plus the VM cache on
+# macOS/Windows) to the air-gapped host
 
 # On the air-gapped host
 ctst --offline run stack.ctst --detach
@@ -277,10 +279,10 @@ ctst vm stop
 | Private registry 401 | Set `CONTAINUST_REGISTRY_*` or refresh `~/.docker/config.json` |
 | Stale `Running` entries | `ctst ps` reconciles dead PIDs; then `ctst rm --force` if needed |
 
-Doctor / diagnostics:
+Diagnostics:
 
 ```bash
-ctst doctor          # if available in your build
+ctst doctor          # platform, backend, QEMU and cache checks
 ctst --help
 ```
 
