@@ -62,6 +62,7 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ### Maintenance
 
+- Security: rustls 0.23.46 (RUSTSEC-2026-0285).
 - Clean `clippy -D warnings` on Rust 1.99 stable (`assert_is_empty`,
   `thiserror` 2.0.21); MSRV stays 1.88.
 
