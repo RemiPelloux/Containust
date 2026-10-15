@@ -10,6 +10,15 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+### Added
+
+- **`ctst download`**: one connected run prefetches everything needed for
+  air-gapped / on-prem use: pinned VM boot assets (`--vm auto|always|never`),
+  composition images, curated presets (`--all-presets`), and registry images
+  (`--image`, repeatable). It then reports whether the composition is ready for
+  `ctst --offline`. Supports `--dry-run`.
+- Runtime: `backend::vm::prefetch_boot_assets()` and `backend::vm::vm_cache_dir()`.
+
 ## [1.3.0] — 2026-10-15
 
 ### Added

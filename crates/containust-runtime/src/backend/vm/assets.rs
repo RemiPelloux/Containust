@@ -154,9 +154,9 @@ fn ensure_one(req: EnsureOne<'_>) -> Result<()> {
         return Err(ContainustError::Network {
             url: req.url.to_string(),
             message: format!(
-                "offline mode blocks VM {} download. Run once online \
-                 (`ctst vm start` without --offline) to populate \
-                 ~/.containust/cache/vm/, then retry air-gapped",
+                "offline mode blocks VM {} download. Run `ctst download` \
+                 once online to populate ~/.containust/cache/vm/, then \
+                 retry air-gapped",
                 req.kind
             ),
         });

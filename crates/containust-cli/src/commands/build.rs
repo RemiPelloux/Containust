@@ -70,14 +70,14 @@ pub fn execute(args: BuildArgs, options: &super::RuntimeOptions) -> anyhow::Resu
     Ok(())
 }
 
-struct BuildContext<'a> {
-    data_dir: &'a Path,
-    offline: bool,
-    dry_run: bool,
+pub struct BuildContext<'a> {
+    pub data_dir: &'a Path,
+    pub offline: bool,
+    pub dry_run: bool,
 }
 
 /// Imports one component image; returns whether an import happened.
-fn build_component(
+pub fn build_component(
     context: &BuildContext<'_>,
     name: &str,
     reference: &ImageReference,

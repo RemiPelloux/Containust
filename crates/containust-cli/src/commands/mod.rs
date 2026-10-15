@@ -3,6 +3,7 @@
 pub mod build;
 pub mod convert;
 pub mod doctor;
+pub mod download;
 pub mod exec;
 pub mod images;
 pub mod logs;
@@ -144,6 +145,8 @@ pub enum Command {
     Remove(remove::RemoveArgs),
     /// Pull an OCI registry image into the local catalog.
     Pull(pull::PullArgs),
+    /// Download every resource needed to run offline / on-prem.
+    Download(download::DownloadArgs),
     /// Manage the local image catalog.
     Images(images::ImagesArgs),
     /// Convert a docker-compose.yml to .ctst format.
@@ -183,6 +186,7 @@ pub fn execute(cli: Cli) -> anyhow::Result<()> {
         Command::Stop(args) => stop::execute(args, &options),
         Command::Remove(args) => remove::execute(args, &options),
         Command::Pull(args) => pull::execute(args, &options),
+        Command::Download(args) => download::execute(args, &options),
         Command::Images(args) => images::execute(args, &options),
         Command::Convert(args) => convert::execute(args, &options),
         Command::Logs(args) => logs::execute(args, &options),
@@ -436,6 +440,52 @@ mod tests {
             }
             other => panic!("expected Logs, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn cli_download_subcommand_parses_defaults() {
+        let cli = Cli::try_parse_from(&["ctst", "download"]).expect("should parse");
+        match cli.command {
+            Command::Download(args) => {
+                assert_eq!(args.file, "containust.ctst");
+                assert_eq!(args.images, Vec::<String>::new());
+                assert_eq!(args.vm, download::VmAssets::Auto);
+                assert!(!args.all_presets && !args.dry_run);
+            }
+            other => panic!("expected Download, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_download_subcommand_parses_flags() {
+        let cli = Cli::try_parse_from(&[
+            "ctst",
+            "download",
+            "app.ctst",
+            "--image",
+            "nginx:alpine",
+            "--image",
+            "postgres:16",
+            "--all-presets",
+            "--vm",
+            "always",
+            "--dry-run",
+        ])
+        .expect("should parse");
+        match cli.command {
+            Command::Download(args) => {
+                assert_eq!(args.file, "app.ctst");
+                assert_eq!(args.images, vec!["nginx:alpine", "postgres:16"]);
+                assert_eq!(args.vm, download::VmAssets::Always);
+                assert!(args.all_presets && args.dry_run);
+            }
+            other => panic!("expected Download, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_download_rejects_unknown_vm_policy() {
+        assert!(Cli::try_parse_from(&["ctst", "download", "--vm", "sometimes"]).is_err());
     }
 
     // --- Global flags ---

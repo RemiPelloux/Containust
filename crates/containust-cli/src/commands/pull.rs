@@ -72,7 +72,7 @@ pub fn execute(args: PullArgs, options: &super::RuntimeOptions) -> anyhow::Resul
 }
 
 /// Prepends `oci://` to bare `name[:tag]` references.
-fn normalize_oci_uri(image: &str) -> String {
+pub fn normalize_oci_uri(image: &str) -> String {
     if image.contains("://") {
         image.to_string()
     } else {
@@ -81,7 +81,7 @@ fn normalize_oci_uri(image: &str) -> String {
 }
 
 /// Derives a catalog name from the repository's final path segment.
-fn default_catalog_name(location: &str) -> String {
+pub fn default_catalog_name(location: &str) -> String {
     let repository = location.split(':').next().unwrap_or(location);
     repository
         .rsplit('/')

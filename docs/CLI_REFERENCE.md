@@ -728,6 +728,58 @@ ctst pull ghcr.io/org/app:v1 --require-provenance
 
 ---
 
+## ctst download
+
+Download every resource a deployment needs, so it can later run with `--offline` on this host or on an air-gapped / on-prem host.
+
+### Synopsis
+
+```
+ctst download [FILE] [OPTIONS]
+```
+
+### Arguments and Options
+
+| Flag | Description |
+|---|---|
+| `[FILE]` | Composition whose images are prefetched (default `containust.ctst`; skipped when the default file does not exist) |
+| `--image <IMAGE>` | Extra registry image to pull, like `ctst pull` (repeatable) |
+| `--all-presets` | Download every curated `preset://` image for this architecture, cataloged as `<name>-<version>` |
+| `--vm <auto\|always\|never>` | Prefetch the pinned QEMU kernel + initramfs. `auto` (default) downloads only when the native Linux backend is unavailable |
+| `--dry-run` | List what would be downloaded without touching the network |
+
+Inherits all [global options](#global-options). `--offline` is rejected: this command exists to use the network.
+
+### Description
+
+Run `ctst download` once while connected. It:
+
+1. Verifies the pinned Alpine netboot kernel and initramfs into `~/.containust/cache/vm/` (no VM is booted).
+2. Imports every component image of the composition, exactly like `ctst build` (pinned `oci://`/`https://` digests, `preset://` archives).
+3. Imports the curated presets (`--all-presets`) and registry images (`--image`).
+4. Reports whether the composition is **offline ready**, meaning `ctst --offline run` will not need the network. Compositions that declare `oci://` or `https://` images are not; switch them to the printed `image://name@sha256:…` references.
+
+Every download is verified by SHA-256 and cached content is reused, so re-running is cheap and idempotent.
+
+### Moving to an on-prem host
+
+Copy the project's `.containust/images/` and, for macOS/Windows hosts, `~/.containust/cache/vm/` to the target machine, then run with `ctst --offline` (or `CONTAINUST_OFFLINE=1`).
+
+### Examples
+
+```bash
+# Prefetch everything containust.ctst needs
+ctst download
+
+# Also pull registry images and every preset, and the VM assets for a Mac
+ctst download app.ctst --image nginx:alpine --image postgres:16 --all-presets --vm always
+
+# Preview without downloading
+ctst download --dry-run
+```
+
+---
+
 ## ctst images
 
 Manage the local image catalog.

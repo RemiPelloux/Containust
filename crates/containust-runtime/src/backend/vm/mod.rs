@@ -27,6 +27,43 @@ mod qemu;
 mod response;
 mod rpc;
 
+/// File name of the pinned kernel inside the VM cache directory.
+const KERNEL_FILE: &str = "vmlinuz";
+/// File name of the pinned upstream initramfs inside the VM cache directory.
+const BASE_INITRAMFS_FILE: &str = "initramfs-base.img";
+
+/// Returns the global VM asset cache directory (`~/.containust/cache/vm`).
+#[must_use]
+pub fn vm_cache_dir() -> PathBuf {
+    containust_common::constants::global_cache_dir().join("vm")
+}
+
+/// Downloads and verifies the pinned kernel and base initramfs for the
+/// host architecture into [`vm_cache_dir`] without booting QEMU.
+///
+/// Already-cached files that match their pinned digests are reused, so
+/// this is idempotent and safe to run before going air-gapped.
+///
+/// # Errors
+///
+/// Returns an error if the architecture is unsupported, the cache
+/// directory cannot be created, or a download or digest check fails.
+pub fn prefetch_boot_assets() -> Result<PathBuf> {
+    let vm_dir = vm_cache_dir();
+    std::fs::create_dir_all(&vm_dir).map_err(|e| ContainustError::Io {
+        path: vm_dir.clone(),
+        source: e,
+    })?;
+    let entry = assets::asset_for_arch(assets::host_arch())?;
+    assets::ensure_cached(
+        entry,
+        &vm_dir.join(KERNEL_FILE),
+        &vm_dir.join(BASE_INITRAMFS_FILE),
+        assets::AssetCachePolicy { offline: false },
+    )?;
+    Ok(vm_dir)
+}
+
 /// Backend that runs containers inside a lightweight Linux VM via QEMU.
 ///
 /// QEMU is tracked in `~/.containust/cache/vm/qemu.pid.json` so CLI
@@ -58,7 +95,7 @@ impl VMBackend {
     /// Creates a VM backend with storage paths and offline network policy.
     #[must_use]
     pub fn with_options(data_dir: PathBuf, state_file: PathBuf, offline: bool) -> Self {
-        let vm_dir = containust_common::constants::global_cache_dir().join("vm");
+        let vm_dir = vm_cache_dir();
         let project_id = project_identifier(&data_dir);
         Self {
             vm_dir,
@@ -93,9 +130,9 @@ impl VMBackend {
             source: e,
         })?;
 
-        let kernel_path = self.vm_dir.join("vmlinuz");
+        let kernel_path = self.vm_dir.join(KERNEL_FILE);
         let custom_initramfs_path = self.vm_dir.join("initramfs-containust.img");
-        let base_initramfs_path = self.vm_dir.join("initramfs-base.img");
+        let base_initramfs_path = self.vm_dir.join(BASE_INITRAMFS_FILE);
         let entry = assets::asset_for_arch(assets::host_arch())?;
         assets::ensure_cached(
             entry,

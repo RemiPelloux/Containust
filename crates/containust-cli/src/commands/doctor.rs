@@ -144,7 +144,7 @@ fn report_cache(info: &PlatformInfo) -> u32 {
             "cache.vm_kernel",
             Status::Warn,
             "absent",
-            "Run `ctst vm start` once online to populate ~/.containust/cache/vm/",
+            "Run `ctst download` once online to populate ~/.containust/cache/vm/",
         );
     }
     failed
