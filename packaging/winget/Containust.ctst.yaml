@@ -1,7 +1,7 @@
 # winget singleton manifest template for the ctst CLI (P10.16).
 # Refresh PackageVersion / InstallerUrl / InstallerSha256 per release.
 PackageIdentifier: Containust.ctst
-PackageVersion: 1.3.1
+PackageVersion: 1.4.0
 PackageLocale: en-US
 Publisher: Containust
 PackageName: ctst
@@ -11,8 +11,8 @@ PackageUrl: https://github.com/RemiPelloux/Containust
 Installers:
   - Architecture: x64
     InstallerType: zip
-    InstallerUrl: https://github.com/RemiPelloux/Containust/releases/download/v1.3.1/ctst-x86_64-pc-windows-msvc.zip
-    InstallerSha256: 13834213afcf632785eb886fb46af30ebc589ae1833c15e3ed3a9a767a1c6bbe
+    InstallerUrl: https://github.com/RemiPelloux/Containust/releases/download/v1.4.0/ctst-x86_64-pc-windows-msvc.zip
+    InstallerSha256: 03bdbec6a0a4c878ea73f327f83415433d6c359b21eae96efef5a3f0801b8964
     NestedInstallerType: portable
     NestedInstallerFiles:
       - RelativeFilePath: ctst.exe

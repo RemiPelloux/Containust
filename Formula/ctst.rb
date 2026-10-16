@@ -12,28 +12,28 @@
 class Ctst < Formula
   desc "Containust - lightweight, daemonless container runtime"
   homepage "https://github.com/RemiPelloux/Containust"
-  version "1.3.1"
+  version "1.4.0"
   license :cannot_represent # Containust Commercial License — see LICENSE
 
   on_macos do
     on_arm do
       url "https://github.com/RemiPelloux/Containust/releases/download/v#{version}/ctst-aarch64-apple-darwin.tar.gz"
-      sha256 "03d023df0ac2046609f06074f462276083b89b8e4bf9f25264d840209031b30d"
+      sha256 "cfda5a6abfb9d57d7ac1580feeb3cb9f47783dde8bddf2f14f6b796c4ecdd106"
     end
     on_intel do
       url "https://github.com/RemiPelloux/Containust/releases/download/v#{version}/ctst-x86_64-apple-darwin.tar.gz"
-      sha256 "d7359390769271687251fd05eb5c52b975a4276e2cf60fa2f58eab77c1ff483b"
+      sha256 "edc8e4954377a13d55f55e5892d5231c9b8635b0acd4a27eb31a525743d15813"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/RemiPelloux/Containust/releases/download/v#{version}/ctst-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "7c3266aa54efcd0d3d140e5485f39ed3943dd63826c96f066b441d925f49c80f"
+      sha256 "a8b40524e60da6023c2a6e935b0704b302afb3762c94b69441ea8b675af4ba86"
     end
     on_intel do
       url "https://github.com/RemiPelloux/Containust/releases/download/v#{version}/ctst-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "8e4dd155d8da22914b78026163a0b9dd45f3e00f689ac30213cf419b26dd3622"
+      sha256 "037e044af4bd882dd82037d74762e91b67f9289e060c350980d8f4cb3eade0e9"
     end
   end
 
