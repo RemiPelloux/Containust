@@ -107,9 +107,8 @@ Layer blobs are stored under `.containust/layers/<sha256>/` (project-local) and 
 | Code | Meaning |
 |---|---|
 | `0` | Build succeeded |
-| `1` | Build failed (parse error, missing image, hash mismatch) |
-| `2` | Invalid arguments |
-| `4` | Source file or image not found |
+| `1` | Build failed (missing image, hash mismatch) |
+| `2` | Invalid arguments or composition (parse error, dependency cycle) |
 
 ### Examples
 
@@ -147,7 +146,7 @@ ctst plan [OPTIONS] [FILE]
 | Argument / Flag | Description | Default |
 |---|---|---|
 | `FILE` | Path to the `.ctst` composition file | `containust.ctst` |
-| `--json` | Print the plan as JSON (`{"changes":[{"name","action","reason","strategy","note",...}]}`) | `false` |
+| `--json` | Print the plan as JSON (`{"changes":[{"name","action","reason","strategy","note",...}],"warnings":[...]}`) | `false` |
 | `--detailed-exitcode` | Exit `2` when the plan has changes, `0` when the stack is in sync | `false` |
 
 Inherits all [global options](#global-options).
@@ -176,6 +175,14 @@ been run gets no state directory.
 | `>` | `start` | Same spec, container stopped or failed |
 | `=` | `keep` | Same spec and running — untouched |
 | `-` | `remove` | Container no longer declared (applied only by `ctst run --prune`), or a `<name>~next` left over from an interrupted start-first update (always removed by the next `ctst run`) |
+
+`warning:` lines flag problems that will not stop the apply but will likely
+break the stack — today, a `CONNECT` whose two components are not on the same
+shared network (the target name would not resolve). They are also printed by
+`ctst run` and included in `--json` as `"warnings"`.
+
+`IMPORT` / `FROM` templates are resolved before planning, so the details shown
+for a component are its merged (inherited) values.
 
 A `replace` of a component with `update = "start-first"` is tagged
 `[start-first]` (JSON: `"strategy": "start-first"`). When start-first cannot
@@ -207,9 +214,8 @@ Plan for production.ctst
 | Code | Meaning |
 |---|---|
 | `0` | Plan computed (with `--detailed-exitcode`: no changes) |
-| `1` | Failed to compute plan (parse error, corrupt state) |
-| `2` | With `--detailed-exitcode`: changes pending. Otherwise invalid arguments |
-| `4` | Composition file not found |
+| `1` | Failed to compute plan (missing file, unresolved IMPORT/FROM, corrupt state) |
+| `2` | With `--detailed-exitcode`: changes pending. Otherwise invalid arguments or an invalid composition (parse error, cycle) |
 
 ### Examples
 
@@ -276,6 +282,12 @@ Inherits all [global options](#global-options).
 The ledger is updated after every successful component, so a failure part-way
 through leaves an accurate record and the next `ctst run` resumes from there.
 
+Only one `ctst run` applies a project at a time (`.containust/state/apply.lock`);
+a second one exits immediately with *another `ctst run` is applying this
+project*. A run interrupted during a start-first update is settled by the next
+run: a `<name>~next` that never received traffic is removed, one that already
+serves the ports finishes taking over.
+
 ### Description
 
 On a fresh project, `ctst run` performs a full deployment:
@@ -283,7 +295,7 @@ On a fresh project, `ctst run` performs a full deployment:
 1. **Parse and resolve** the `.ctst` file (equivalent to `ctst build` if images are not yet built).
 2. **Compute the dependency graph** from `CONNECT` directives using petgraph.
 3. **Topological sort** to determine startup order. Components with no dependencies start in parallel.
-4. **Create containers** — set up namespaces (PID, mount, network, IPC, UTS), cgroups v2 resource limits, and OverlayFS mounts.
+4. **Create containers** — materialize the rootfs from the image store, then set up namespaces (user, PID, mount, network, IPC, UTS) and cgroups v2 resource limits.
 5. **Start processes** in the correct order, injecting connection environment variables from `CONNECT` wiring.
 6. **Update the state file** with container metadata, including restart policy, healthcheck spec, and published ports.
 
@@ -297,7 +309,7 @@ Because enforcement is reconciliation-driven (daemonless), probes and restarts h
 
 ### Startup Behavior
 
-Containers are started in topological order derived from `CONNECT` directives. Independent components (no inbound or outbound connections) start in parallel. A component only starts after all of its dependencies report a healthy state.
+Containers are created and started one at a time in topological order derived from `CONNECT` directives (upstreams first). `ctst run` does not wait for an upstream's healthcheck before starting its dependents — only a `start-first` replacement waits for its own healthcheck. Make services retry their upstream connections on startup.
 
 ### Detached Mode
 
@@ -310,16 +322,26 @@ Without `--detach`, `ctst run` remains in the foreground, streaming logs to stdo
 ```
 $ ctst run -d production.ctst
 
-Containust Deploy — production.ctst
-════════════════════════════════════
+  Containust v1.5.0
 
-  ✓ db           started  pid=48201  port=5432  mem_limit=512MB
-  ✓ cache        started  pid=48215  port=6379  mem_limit=128MB
-  ✓ api          started  pid=48230  port=8080  mem_limit=256MB
+  Creating container 'db'...
+  Starting container 'db'...
+  Creating container 'api'...
+  Starting container 'api'...
 
-All 3 containers running (detached).
-State saved to .containust/state/state.json
+  Applied 2 to create, 0 to replace, 0 to start, 0 unchanged, 0 to remove in 0.4s:
+
+    ● db [3f1c…]
+    ● api [9a07…] -> http://localhost:8080
+
+  Access at: http://localhost:8080
+
+  Project state: /srv/app/.containust
+
+  Running detached. Use ctst stop to stop all containers.
 ```
+
+Progress and results go to stderr; stdout stays empty.
 
 ### Exit Codes
 
@@ -327,9 +349,7 @@ State saved to .containust/state/state.json
 |---|---|
 | `0` | All containers started successfully |
 | `1` | One or more containers failed to start |
-| `2` | Invalid arguments |
-| `3` | Permission denied (insufficient privileges for namespace/cgroup operations) |
-| `4` | Composition file or image not found |
+| `2` | Invalid arguments or composition (parse error, dependency cycle) |
 
 ### Examples
 
@@ -423,7 +443,6 @@ When launched with `--tui`, an interactive terminal dashboard (powered by ratatu
 |---|---|
 | `0` | Listing succeeded |
 | `1` | Failed to read state file or query metrics |
-| `4` | State file not found |
 
 ### Examples
 
@@ -486,7 +505,6 @@ If the command is an interactive shell (e.g., `/bin/sh`, `/bin/bash`), `ctst exe
 |---|---|
 | `0` | Command succeeded |
 | `1` | General error (container not running, namespace join failed) |
-| `4` | Container not found |
 | `126` | Command found but cannot be executed (permission denied inside container) |
 | `127` | Command not found inside the container |
 
@@ -556,7 +574,6 @@ $ ctst logs api
 |---|---|
 | `0` | Logs retrieved successfully |
 | `1` | Failed to read logs |
-| `4` | Container not found |
 
 ### Examples
 
@@ -619,8 +636,6 @@ After the process exits, `ctst stop` updates the runtime lifecycle state:
 |---|---|
 | `0` | All specified containers stopped successfully |
 | `1` | One or more containers failed to stop |
-| `3` | Permission denied |
-| `4` | Container not found |
 
 ### Examples
 
@@ -842,7 +857,6 @@ Images and their layers are stored under `.containust/images/` (project-local). 
 |---|---|
 | `0` | Operation succeeded |
 | `1` | Operation failed (I/O error, image in use) |
-| `4` | Image ID not found |
 
 ### Examples
 
@@ -949,12 +963,9 @@ Summary of all exit codes used across `ctst` commands.
 | Code | Meaning | Commands |
 |---|---|---|
 | `0` | Success | All |
-| `1` | General error | All |
-| `2` | Usage / argument error | All |
-| `3` | Permission denied (namespace/cgroup creation) | `run`, `exec`, `stop`, `rm` |
-| `4` | Resource not found (file, image, container) | All |
-| `126` | Command cannot execute (permission denied inside container) | `exec` |
-| `127` | Command not found inside container | `exec` |
+| `1` | Any runtime error — missing file/image/container, permission denied, failed start, timeouts. The `error[CODE]` prefix on stderr identifies the class ([ERRORS.md](ERRORS.md)) | All |
+| `2` | Usage / argument error, or an invalid composition (parse error, dependency cycle). `ctst plan --detailed-exitcode` also exits `2` when changes are pending | All |
+| *n* | `ctst exec` exits with the command's own code (`126` cannot execute, `127` not found) | `exec` |
 
 ---
 
@@ -1191,6 +1202,7 @@ COMPONENT api {
     env = {
         DATABASE_URL = "postgres://db:5432/app"
     }
+    network = "app"
 }
 
 COMPONENT db {
@@ -1200,6 +1212,7 @@ COMPONENT db {
         POSTGRES_PASSWORD = "${secret.DB_PASSWORD}"
     }
     restart = "always"
+    network = "app"
 }
 
 // Dependencies (converted from depends_on).

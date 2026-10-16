@@ -45,6 +45,7 @@ COMPONENT api {
     }
     command  = ["./server", "--bind", "0.0.0.0:8080"]
     readonly = true
+    network = "app"
 }
 
 // Inherit defaults from the imported template, override specifics.
@@ -52,6 +53,7 @@ COMPONENT db FROM pg {
     port   = 5432
     volume = "/data/pg:/var/lib/postgresql/data"
     env    = { POSTGRES_PASSWORD = "${secret.db_pass}" }
+    network = "app"
 }
 
 // Declare the dependency: api depends on db.
@@ -131,6 +133,7 @@ Curly braces `{ }` delimit component bodies and map values.
 
 ```ctst
 COMPONENT app {
+    image = "file:///opt/images/app"
     env = {
         KEY = "value"
     }
@@ -214,6 +217,9 @@ interval = "30s"
 timeout  = "2m"
 ```
 
+A plain integer is read as seconds. Durations are capped at `24h`; larger
+values are rejected.
+
 ---
 
 ## 5. Reserved Keywords
@@ -239,28 +245,27 @@ The following identifiers are reserved and must not be used as component names o
 
 ## 6. IMPORT Statement
 
-Imports bring component templates and definitions from external `.ctst` files into the current file's scope.
+Imports bring the components of another `.ctst` file into scope as
+**templates** for `FROM`. Imported components are not deployed themselves.
 
 ### Syntax
 
 ```
-IMPORT "<path_or_url>" [AS <alias>]
+IMPORT "<path>" [AS <alias>]
 ```
 
 ### Rules
 
-1. Local paths are resolved relative to the directory of the importing file.
-2. Remote URLs must use `https://`. Plain `http://` is rejected.
-3. The `AS` keyword creates a local alias for the imported file's exports.
-4. When `--offline` is set, all remote imports are forbidden and produce a compile error.
-5. Imports are resolved and validated before component evaluation begins.
-6. Circular imports are detected and rejected.
-
-### Resolution Order
-
-1. Check the path relative to the current file's directory.
-2. Check the path relative to the project root (directory containing the entry `.ctst` file).
-3. For `https://` URLs, fetch and cache locally. Cached copies are preferred when available.
+1. Paths are resolved relative to the directory of the importing file
+   (absolute paths are used as-is). Imported files may import others.
+2. Without `AS`, each imported component is a template under its own name.
+3. With `AS lib`, each component is available as `lib.<component>`; when the
+   file declares exactly one component it is also available as `lib`.
+4. Two unaliased imports that define the same component name are rejected —
+   use `AS` to disambiguate.
+5. Circular imports, and nesting deeper than 16 files, are rejected.
+6. Remote imports (`https://…`) are **not supported yet** and fail closed
+   with an error, online or offline. Download the file and import it by path.
 
 ### Examples
 
@@ -284,10 +289,13 @@ COMPONENT primary FROM dbs.postgres {
 }
 ```
 
-**Remote import:**
+**Remote import (not supported yet):**
+
+Remote URLs are rejected. Vendor the file into the project and import it by
+path instead:
 
 ```ctst
-IMPORT "https://registry.example.com/templates/nginx.ctst" AS web
+IMPORT "vendor/nginx.ctst" AS web
 
 COMPONENT frontend FROM web.nginx {
     port = 80
@@ -324,9 +332,9 @@ COMPONENT <name> [FROM <template>] {
 | `command` | list of strings | — | Entrypoint command and arguments |
 | `entrypoint` | list of strings | — | Override the image's default entrypoint |
 | `readonly` | boolean | `true` | Read-only root filesystem |
-| `workdir` | string | — | Working directory inside the container |
-| `user` | string | — | User and group to run as (e.g., `"1000:1000"`) |
-| `hostname` | string | component name | Container hostname |
+| `workdir` | string | — | *Reserved, not supported yet:* parsed, but `ctst plan`/`run` reject it |
+| `user` | string | — | *Reserved, not supported yet:* parsed, but `ctst plan`/`run` reject it |
+| `hostname` | string | — | *Reserved, not supported yet:* parsed, but `ctst plan`/`run` reject it |
 | `restart` | string | `"never"` | Restart policy: `"never"`, `"on-failure"`, `"always"` |
 | `network` | string | `"none"` | Network mode: `"none"` (private namespace), `"host"`, `"bridge"`, or a custom shared name. Identity `ports` without `network` use the host network |
 | `healthcheck` | map | — | Health monitoring configuration (see §11) |
@@ -372,9 +380,6 @@ COMPONENT api {
     command    = ["./server", "--workers", "4"]
     entrypoint = ["/bin/sh", "-c"]
     readonly   = false
-    workdir    = "/app"
-    user       = "1000:1000"
-    hostname   = "api-primary"
     restart    = "on-failure"
     network    = "backend"
     healthcheck = {
@@ -403,11 +408,13 @@ COMPONENT <name> FROM <template_name> {
 
 ### Rules
 
-1. The template referenced by `FROM` must be defined in the same file or brought into scope via `IMPORT`.
+1. The template referenced by `FROM` must be a component of the same file or a
+   template brought into scope via `IMPORT` (local components win on a name clash).
 2. All properties from the parent are inherited. The child's properties override matching parent properties.
 3. `env` maps are **merged**: the child's keys override matching parent keys; parent keys not present in the child are preserved.
-4. If the template declares `required_params`, the child must provide values for all of them.
+4. List properties (`ports`, `volumes`, `command`) are replaced, not appended, when the child sets them.
 5. Templates can inherit from other templates (chaining), but circular inheritance is rejected.
+6. A local component used as a template is still deployed; use an imported file for templates that should not run.
 
 ### Examples
 
@@ -474,11 +481,13 @@ When `CONNECT api -> db` is declared, the following variables are injected into 
 
 | Variable | Value | Example |
 |---|---|---|
-| `DB_HOST` | Hostname or IP of `db` | `172.17.0.2` |
-| `DB_PORT` | First exposed port of `db` | `5432` |
-| `DB_CONNECTION_STRING` | Protocol-aware connection string | `postgres://172.17.0.2:5432` |
+| `DB_HOST` | The target's component name (resolves inside a shared network) | `db` |
+| `DB_PORT` | The target's `port`, else its first `ports` entry | `5432` |
+| `DB_CONNECTION_STRING` | Protocol-aware connection string (only when a port is known) | `postgres://db:5432` |
 
-The variable prefix is the target component name, uppercased. Hyphens and dots are replaced with underscores.
+The variable prefix is the target component name, uppercased. Hyphens and dots are replaced with underscores (`my-db` → `MY_DB_HOST`).
+The name resolves only when both components are on the same shared network
+(see §14); `ctst plan` warns otherwise.
 
 ### Connection String Protocols
 
@@ -513,11 +522,13 @@ This injects `DB_HOST`, `DB_PORT`, `DB_CONNECTION_STRING`, `CACHE_HOST`, `CACHE_
 COMPONENT app {
     image = "file:///opt/images/app"
     port  = 3000
+    network = "app"
 }
 
 COMPONENT db {
     image = "file:///opt/images/postgres"
     port  = 5432
+    network = "app"
 }
 
 CONNECT app -> db
@@ -534,17 +545,20 @@ COMPONENT api {
         DATABASE_URL = "postgres://${db.host}:${db.port}/myapp"
         CACHE_URL    = "redis://${cache.host}:${cache.port}/0"
     }
+    network = "app"
 }
 
 COMPONENT db {
     image  = "file:///opt/images/postgres"
     port   = 5432
     volume = "/data/pg:/var/lib/postgresql/data"
+    network = "app"
 }
 
 COMPONENT cache {
     image = "tar:///opt/images/redis.tar"
     port  = 6379
+    network = "app"
 }
 
 CONNECT api -> db
@@ -770,6 +784,21 @@ next `ctst run`.
   component.
 - Components with exclusive state (a database writing to a volume) should
   keep `recreate`: both copies would mount the volume during the overlap.
+- **A start-first component cannot be part of a `CONNECT` yet.** Its private
+  namespace is not reachable by name from other components (and it cannot
+  resolve theirs), so start-first suits edge services reached through their
+  published ports. Shared-network support is planned for Sprint 14.
+
+### Safety behaviour
+
+- Each probe is killed after the healthcheck `timeout` (minimum 1s), and the
+  whole gate gives up after `start_period + (retries + 1) × (interval + timeout)`.
+- Only one `ctst run` can apply a project at a time; a second one fails
+  immediately instead of interleaving with the first.
+- If `ctst run` is interrupted, the next run settles the leftover
+  `<name>~next`: before the switch it is removed (the original never stopped
+  serving); after the switch it is kept and finishes taking over.
+- If moving the ports fails, they are given back to the old container.
 
 ### Example
 
@@ -800,65 +829,65 @@ $ ctst plan
 
 ## 14. NETWORK Configuration
 
-Controls network isolation for a component.
+Controls which network namespace a component runs in.
 
 ### Syntax
 
 ```ctst
-network = "bridge" | "host" | "none" | "<custom_name>"
+network = "none" | "host" | "bridge" | "<custom_name>"
 ```
 
 ### Modes
 
 | Mode | Description |
 |---|---|
-| `"bridge"` | Default. The component gets its own network namespace with a virtual bridge. Components on the same bridge can communicate by hostname. |
-| `"host"` | The component shares the host's network namespace. No isolation. Use only when performance requires it. |
-| `"none"` | No network access. The container is fully isolated from all networks. |
-| `"<custom_name>"` | A named virtual network. Components assigned to the same custom network can communicate. Components on different custom networks are isolated. |
+| `"none"` | **Default.** A private network namespace with only loopback. Published ports (`ports` + `EXPOSE`) are relayed into it by a userspace forwarder on the host's `127.0.0.1`. Other components cannot reach it. |
+| `"host"` | Shares the host's network namespace — no isolation. Identity `ports` without an explicit `network` use this mode for backward compatibility. |
+| `"bridge"`, `"<custom_name>"` | A **shared project network**: every component with the same name joins one network namespace. Peers reach each other by component name (written to each container's `/etc/hosts` as `127.0.0.1`). |
 
-### Communication Rules
+### Communication rules
 
-- Components on the same `bridge` or custom network resolve each other by component name as hostname.
-- `CONNECT` auto-wiring works across any network mode, but the target must be reachable from the source.
-- `"none"` prevents all network communication, including between connected components.
+- Only components on the **same shared network** can reach each other. Put
+  every component in a `CONNECT` pair on one named network.
+- `CONNECT` always injects `<TARGET>_HOST` / `<TARGET>_PORT`, but the name
+  resolves only inside a shared network. `ctst plan` and `ctst run` print a
+  warning for any `CONNECT` whose two sides are not on the same shared network.
+- Because a shared network is one namespace, two members cannot listen on the
+  same port.
+- Published ports always bind the host's loopback (`127.0.0.1`), not every
+  interface.
 
 ### Examples
 
-**Default bridge (implicit):**
+**Two services that talk to each other:**
 
 ```ctst
 COMPONENT api {
-    image = "file:///opt/images/api"
-    port  = 8080
-    // network = "bridge" is the default
-}
-```
-
-**Custom network for isolation:**
-
-```ctst
-COMPONENT frontend {
-    image   = "file:///opt/images/web"
-    port    = 80
-    network = "public"
-}
-
-COMPONENT backend {
     image   = "file:///opt/images/api"
     port    = 8080
-    network = "internal"
+    network = "app"
 }
 
 COMPONENT db {
     image   = "file:///opt/images/postgres"
     port    = 5432
-    network = "internal"
+    network = "app"
 }
 
-// backend and db can communicate (same network).
-// frontend cannot reach db directly.
-CONNECT backend -> db
+CONNECT api -> db     // api reaches db at db:5432
+EXPOSE 8080           // host 127.0.0.1:8080 -> api:8080
+```
+
+**A component that should be reachable only through its published port:**
+
+```ctst
+COMPONENT web {
+    image = "file:///opt/images/web"
+    ports = [8080]
+    // network = "none" is the default
+}
+
+EXPOSE 80:8080
 ```
 
 ---
@@ -1182,6 +1211,7 @@ COMPONENT api {
         timeout  = "3s"
         retries  = 5
     }
+    network = "app"
 }
 
 COMPONENT db FROM pg {
@@ -1193,6 +1223,7 @@ COMPONENT db FROM pg {
         POSTGRES_USER     = "app_user"
         POSTGRES_PASSWORD = "${secret.db_password}"
     }
+    network = "app"
 }
 
 COMPONENT cache {
@@ -1201,6 +1232,7 @@ COMPONENT cache {
     memory   = "128MiB"
     readonly = true
     command  = ["redis-server", "--maxmemory", "100mb"]
+    network = "app"
 }
 
 CONNECT api -> db
@@ -1244,6 +1276,7 @@ COMPONENT gateway FROM service_base {
         JWT_SECRET = "${secret.jwt_key}"
         UPSTREAM   = "http://${user_svc.host}:${user_svc.port}"
     }
+    network = "app"
 }
 
 COMPONENT user_svc FROM service_base {
@@ -1252,6 +1285,7 @@ COMPONENT user_svc FROM service_base {
     env   = {
         DATABASE_URL = "postgres://${user_db.host}:${user_db.port}/users"
     }
+    network = "app"
 }
 
 COMPONENT order_svc FROM service_base {
@@ -1261,6 +1295,7 @@ COMPONENT order_svc FROM service_base {
         DATABASE_URL = "postgres://${order_db.host}:${order_db.port}/orders"
         CACHE_URL    = "redis://${cache.host}:${cache.port}/1"
     }
+    network = "app"
 }
 
 COMPONENT user_db FROM pg {
@@ -1268,6 +1303,7 @@ COMPONENT user_db FROM pg {
     memory = "512MiB"
     volume = "/data/user-db:/var/lib/postgresql/data"
     env    = { POSTGRES_PASSWORD = "${secret.user_db_pass}" }
+    network = "app"
 }
 
 COMPONENT order_db FROM pg {
@@ -1275,11 +1311,13 @@ COMPONENT order_db FROM pg {
     memory = "512MiB"
     volume = "/data/order-db:/var/lib/postgresql/data"
     env    = { POSTGRES_PASSWORD = "${secret.order_db_pass}" }
+    network = "app"
 }
 
 COMPONENT cache FROM redis_tmpl {
     port   = 6379
     memory = "256MiB"
+    network = "app"
 }
 
 CONNECT gateway   -> user_svc
@@ -1308,7 +1346,7 @@ COMPONENT app {
         DATABASE_URL = "postgres://${db.host}:${db.port}/secure_app"
     }
     command = ["./server"]
-    network = "isolated"
+    network = "app"
 }
 
 COMPONENT db {
@@ -1319,7 +1357,7 @@ COMPONENT db {
     env     = {
         POSTGRES_PASSWORD = "${secret.db_pass}"
     }
-    network = "isolated"
+    network = "app"
 }
 
 CONNECT app -> db
@@ -1390,6 +1428,7 @@ COMPONENT api {
         DATABASE_URL = "postgres://${db.host}:${db.port}/app"
     }
     restart = "on-failure"
+    network = "app"
 }
 
 COMPONENT db {
@@ -1399,6 +1438,7 @@ COMPONENT db {
     env    = {
         POSTGRES_PASSWORD = "${secret.db_password}"
     }
+    network = "app"
 }
 
 CONNECT api -> db

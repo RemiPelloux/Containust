@@ -27,6 +27,7 @@ COMPONENT api {
         retries      = 5
         start_period = "15s"
     }
+    network = "app"
 }
 
 COMPONENT db FROM pg {
@@ -37,11 +38,13 @@ COMPONENT db FROM pg {
         POSTGRES_USER     = "myapp_user"
         POSTGRES_PASSWORD = "${secret.db_password}"
     }
+    network = "app"
 }
 
 COMPONENT cache FROM redis_tmpl {
     memory  = "256MiB"
     command = ["redis-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
+    network = "app"
 }
 
 COMPONENT worker {
@@ -56,6 +59,7 @@ COMPONENT worker {
     command  = ["./worker", "--concurrency", "4"]
     readonly = true
     restart  = "on-failure"
+    network = "app"
 }
 
 CONNECT api    -> db

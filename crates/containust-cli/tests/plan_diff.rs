@@ -72,3 +72,25 @@ fn plan_detailed_exitcode_signals_pending_changes() {
         "stdout: {stdout}"
     );
 }
+
+#[test]
+fn detailed_exitcode_never_reports_an_error_as_drift() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("broken.ctst");
+    // A dependency cycle is classified as an invalid composition (exit 2
+    // without the flag), which must not read as "changes pending".
+    std::fs::write(
+        &file,
+        "COMPONENT a {\n image = \"file:///a\"\n}\nCOMPONENT b {\n image = \"file:///b\"\n}\n\
+         CONNECT a -> b\nCONNECT b -> a\n",
+    )
+    .expect("write");
+
+    let output = ctst()
+        .arg("plan")
+        .arg("--detailed-exitcode")
+        .arg(&file)
+        .output()
+        .expect("run ctst");
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+}

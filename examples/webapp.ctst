@@ -13,6 +13,7 @@ COMPONENT database {
         timeout = "5s"
         retries = 3
     }
+    network = "app"
 }
 
 COMPONENT api {
@@ -24,6 +25,7 @@ COMPONENT api {
         NODE_ENV = "production"
     }
     command = ["node", "server.js"]
+    network = "app"
 }
 
 COMPONENT frontend {
@@ -32,6 +34,7 @@ COMPONENT frontend {
     memory = "128MiB"
     command = ["nginx", "-g", "daemon off;"]
     readonly = true
+    network = "app"
 }
 
 CONNECT api -> database

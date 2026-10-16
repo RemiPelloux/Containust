@@ -256,7 +256,9 @@ impl Engine {
                 note: spec.strategy_note.clone(),
             })
             .collect();
-        Ok(crate::plan::compute(&inputs, live, &ledger))
+        let mut plan = crate::plan::compute(&inputs, live, &ledger);
+        plan.warnings = connect_warnings(desired);
+        Ok(plan)
     }
 
     /// Settles staged `<name>~next` containers left by an interrupted
@@ -900,6 +902,43 @@ fn load_desired(
     Ok(desired)
 }
 
+/// Warns about `CONNECT`s whose target cannot be reached by name: peers
+/// resolve each other only inside one shared network (`bridge` or a
+/// custom name), where `/etc/hosts` maps every member to loopback.
+fn connect_warnings(desired: &[DesiredSpec]) -> Vec<String> {
+    let network_of: HashMap<&str, &str> = desired
+        .iter()
+        .map(|spec| (spec.component.name.as_str(), spec.config.network.as_str()))
+        .collect();
+    let mut warnings = Vec::new();
+    for spec in desired {
+        let from_net = spec.config.network.as_str();
+        for upstream in &spec.upstreams {
+            let to_net = network_of
+                .get(upstream.as_str())
+                .copied()
+                .unwrap_or_default();
+            let shared = crate::network::NetworkMode::parse(Some(from_net))
+                .shared_name()
+                .is_some();
+            if shared && from_net == to_net {
+                continue;
+            }
+            let why = if from_net == to_net {
+                format!("neither is on a shared network ('{from_net}')")
+            } else {
+                format!("they are on different networks ('{from_net}' vs '{to_net}')")
+            };
+            warnings.push(format!(
+                "'{}' CONNECTs to '{upstream}' but {why}, so '{upstream}' will not \
+                 resolve; set the same `network = \"<name>\"` on both",
+                spec.component.name
+            ));
+        }
+    }
+    warnings
+}
+
 /// Rejects two components publishing the same host port: the second
 /// publish would fail at start, after the first one was already deployed.
 fn ensure_unique_host_ports(desired: &[DesiredSpec]) -> Result<()> {
@@ -1201,6 +1240,10 @@ fn published_port_mappings(
             host: expose.host_port,
             container: expose.container_port,
         };
+        // `ports = [8080]` plus `EXPOSE 8080` publishes the same mapping twice.
+        if mappings.contains(&mapping) {
+            continue;
+        }
         if !host_ports.insert(mapping.host) {
             return Err(ContainustError::Config {
                 message: format!(
@@ -1955,6 +1998,69 @@ CONNECT api -> db
             .plan(&file)
             .expect_err("duplicate");
         assert!(error.to_string().contains("host port 8080"), "{error}");
+    }
+
+    #[test]
+    fn connect_across_networks_is_flagged() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("stack.ctst");
+        let backend = Arc::new(MemBackend::default());
+        let engine = mem_engine(&backend, dir.path().join("data"));
+        std::fs::write(&file, STACK).expect("write");
+        let warnings = engine.plan(&file).expect("plan").warnings;
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("'api' CONNECTs to 'db'"));
+
+        let shared = STACK
+            .replace(
+                "    port = 5432\n",
+                "    port = 5432\n    network = \"app\"\n",
+            )
+            .replace(
+                "    port = 8080\n",
+                "    port = 8080\n    network = \"app\"\n",
+            );
+        std::fs::write(&file, shared).expect("write");
+        assert_eq!(
+            engine.plan(&file).expect("plan").warnings,
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn repeating_a_port_in_expose_is_not_a_conflict() {
+        use containust_common::types::PortMapping;
+
+        let component = containust_compose::parser::ast::ComponentDecl {
+            name: "web".into(),
+            ports: vec![8080],
+            ..Default::default()
+        };
+        let expose = |host, container| containust_compose::parser::ast::ExposeDecl {
+            host_port: host,
+            container_port: container,
+        };
+        let same = published_port_mappings(&component, &[expose(8080, 8080)]).expect("ok");
+        assert_eq!(same, vec![PortMapping::identity(8080)]);
+        let remap = published_port_mappings(&component, &[expose(80, 8080)]).expect("ok");
+        assert_eq!(
+            remap,
+            vec![PortMapping {
+                host: 80,
+                container: 8080
+            }]
+        );
+        let clash = published_port_mappings(
+            &containust_compose::parser::ast::ComponentDecl {
+                ports: vec![8080, 9090],
+                ..component
+            },
+            &[expose(8080, 9090)],
+        );
+        assert!(
+            clash.is_err(),
+            "host 8080 cannot map to two container ports"
+        );
     }
 
     #[test]

@@ -122,6 +122,7 @@ COMPONENT api {
         timeout  = "3s"
         retries  = 5
     }
+    network = "app"
 }
 
 COMPONENT db {
@@ -132,6 +133,7 @@ COMPONENT db {
         POSTGRES_DB       = "app"
         POSTGRES_PASSWORD = "${secret.db_password}"
     }
+    network = "app"
 }
 
 COMPONENT cache {
@@ -139,6 +141,7 @@ COMPONENT cache {
     port    = 6379
     memory  = "128MiB"
     command = ["redis-server", "--maxmemory", "100mb"]
+    network = "app"
 }
 
 CONNECT api -> db

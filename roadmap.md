@@ -356,6 +356,18 @@ kept the listening socket bound.
 - Bump GitHub Actions off the deprecated Node 20 runtime
   (`actions/checkout`, `download-artifact`, `upload-artifact`).
 
+## Sprint 14 candidates (`1.6.0`)
+
+From the 1.4 review — limits that are documented today:
+
+- [ ] Start-first in shared networks (so `CONNECT`ed services can roll):
+  per-container netns with routed peers, or `SO_REUSEPORT`-aware handoff.
+- [ ] Start-first on the VM backend (P13.6).
+- [ ] Port forwarder as a dedicated helper process (exec instead of fork), so
+  multithreaded SDK hosts are safe and liveness can use pidfds.
+- [ ] Remote `IMPORT` with pinned digests and offline caching.
+- [ ] `workdir` / `user` / `hostname` at runtime.
+
 ## Later feature backlog
 
 These are intentionally after Sprint 11:

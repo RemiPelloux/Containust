@@ -276,14 +276,16 @@ ctst --offline run stack.ctst --detach</code></pre>
     env     = { POSTGRES_PASSWORD = "secret" }
     volumes = ["/data/pg:/var/lib/postgresql/data"]
     restart = "always"
+    network = "app"
 }
 
 COMPONENT api {
     image   = "file:///opt/images/api"
     port    = 8080
-    ports   = ["8080"]
+    ports   = [8080]
     memory  = "256MiB"
     restart = "on-failure"
+    network = "app"     // peers resolve by name only on a shared network
 }
 
 CONNECT api -> db

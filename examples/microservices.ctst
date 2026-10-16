@@ -1,7 +1,7 @@
 // Microservices architecture — 5 services with complex dependency graph.
 // Services: gateway, auth, user, order, notification.
 // Demonstrates template inheritance, multiple CONNECT chains,
-// parallel dependencies, and network isolation.
+// parallel dependencies, and one shared network (peers resolve by name).
 // Run with: ctst run examples/microservices.ctst
 
 IMPORT "templates/postgres.ctst" AS pg
@@ -32,7 +32,7 @@ COMPONENT gateway FROM svc_base {
     port    = 443
     memory  = "256MiB"
     restart = "always"
-    network = "public"
+    network = "internal"
     env     = {
         JWT_SECRET  = "${secret.jwt_key}"
         AUTH_URL    = "http://${auth.host}:${auth.port}"
@@ -48,6 +48,7 @@ COMPONENT auth FROM svc_base {
         JWT_SECRET    = "${secret.jwt_key}"
         SESSION_STORE = "redis://${session_cache.host}:${session_cache.port}/0"
     }
+    network = "internal"
 }
 
 COMPONENT user FROM svc_base {
@@ -56,6 +57,7 @@ COMPONENT user FROM svc_base {
     env   = {
         DATABASE_URL = "postgres://${user_db.host}:${user_db.port}/users"
     }
+    network = "internal"
 }
 
 COMPONENT order FROM svc_base {
@@ -67,6 +69,7 @@ COMPONENT order FROM svc_base {
         CACHE_URL     = "redis://${session_cache.host}:${session_cache.port}/1"
         NOTIFY_URL    = "http://${notification.host}:${notification.port}"
     }
+    network = "internal"
 }
 
 COMPONENT notification FROM svc_base {
@@ -76,6 +79,7 @@ COMPONENT notification FROM svc_base {
         SMTP_HOST    = "${env.SMTP_HOST}"
         SMTP_API_KEY = "${secret.smtp_key}"
     }
+    network = "internal"
 }
 
 // Data stores — each service owns its database.
@@ -83,16 +87,19 @@ COMPONENT user_db FROM pg {
     memory = "512MiB"
     volume = "/data/user-db:/var/lib/postgresql/data"
     env    = { POSTGRES_PASSWORD = "${secret.user_db_pass}" }
+    network = "internal"
 }
 
 COMPONENT order_db FROM pg {
     memory = "512MiB"
     volume = "/data/order-db:/var/lib/postgresql/data"
     env    = { POSTGRES_PASSWORD = "${secret.order_db_pass}" }
+    network = "internal"
 }
 
 COMPONENT session_cache FROM redis_tmpl {
     memory = "256MiB"
+    network = "internal"
 }
 
 // Dependency graph:

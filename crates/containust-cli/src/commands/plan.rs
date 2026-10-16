@@ -40,10 +40,26 @@ const RESET: &str = "\x1b[0m";
 /// inspection fails.
 pub fn execute(args: PlanArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
     let path = std::path::Path::new(&args.file);
-    let composition =
-        containust_compose::template::load_file(path).map_err(|e| anyhow::anyhow!("{e}"))?;
-    let engine = options.engine_for_project(path);
-    let plan = engine.plan(path).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let loaded = containust_compose::template::load_file(path)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+        .and_then(|composition| {
+            let plan = options
+                .engine_for_project(path)
+                .plan(path)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok((composition, plan))
+        });
+    let (composition, plan) = match loaded {
+        Ok(loaded) => loaded,
+        // Exit 2 means "changes pending" here; any failure must not look like drift.
+        Err(error) if args.detailed_exitcode => {
+            let class = containust_common::codes::classify_message(&format!("{error:#}"));
+            eprintln!("error[{}]: {error}", class.code);
+            eprintln!("hint: {}", class.remediation);
+            std::process::exit(1);
+        }
+        Err(error) => return Err(error),
+    };
 
     if args.json {
         println!("{}", serde_json::to_string_pretty(&plan)?);
@@ -111,6 +127,10 @@ fn print_plan(
         if matches!(change.action, PlanAction::Create | PlanAction::Replace) {
             print_component_details(composition, &change.name);
         }
+    }
+
+    for warning in &plan.warnings {
+        println!("  {YELLOW}warning:{RESET} {warning}");
     }
 
     if !composition.connections.is_empty() {
