@@ -84,7 +84,7 @@ const FAILING_PROBE: &str = r#"["/bin/busybox", "false"]"#;
 fn fetch() -> Result<String, String> {
     let mut stream =
         TcpStream::connect(("127.0.0.1", HOST_PORT)).map_err(|e| format!("connect: {e}"))?;
-    let timeout = Some(Duration::from_secs(5));
+    let timeout = Some(Duration::from_secs(3));
     stream
         .set_read_timeout(timeout)
         .map_err(|e| e.to_string())?;
@@ -102,17 +102,41 @@ fn fetch() -> Result<String, String> {
         .ok_or_else(|| format!("bad response: {response:?}"))
 }
 
-fn wait_for_body(expected: &str) {
-    let deadline = Instant::now() + Duration::from_secs(20);
-    loop {
-        match fetch() {
-            Ok(body) if body == expected => return,
-            other if Instant::now() > deadline => {
-                panic!("never served {expected:?}; last: {other:?}")
-            }
-            _ => std::thread::sleep(Duration::from_millis(100)),
-        }
-    }
+/// Host-side evidence for a failed request: sockets, processes, the
+/// forwarder target links, container logs, and a request made from inside
+/// the container's network namespace.
+fn diagnose(workspace: &Path) -> String {
+    let sh = |script: &str| {
+        Command::new("sh")
+            .arg("-c")
+            .arg(script)
+            .current_dir(workspace)
+            .output()
+            .map_or_else(
+                |e| format!("$ {script}\n<{e}>\n"),
+                |o| {
+                    format!(
+                        "$ {script}\n{}{}",
+                        String::from_utf8_lossy(&o.stdout),
+                        String::from_utf8_lossy(&o.stderr)
+                    )
+                },
+            )
+    };
+    [
+        "ss -ltnp",
+        "ps -eo pid,ppid,stat,cmd | grep -E 'ctst|busybox|zero_down' | grep -v grep",
+        "ls -la .containust/ports && readlink -f .containust/ports/*",
+        "cat .containust/state/state.json",
+        "tail -n 20 .containust/logs/*.log",
+        "for l in .containust/ports/*; do nsenter --net=\"$l\" ss -ltn; \
+         nsenter --net=\"$l\" ip -brief addr; \
+         timeout 5 nsenter --net=\"$l\" busybox wget -q -O- http://127.0.0.1:8080/index.html; done",
+    ]
+    .iter()
+    .map(|script| sh(script))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 struct Project {
@@ -129,12 +153,26 @@ impl Project {
         let project = Self { workspace, file };
         project.write("v1", HTTP_PROBE);
         let _ = run_checked(project.ctst().arg("run").arg("--detach").arg(&project.file));
-        wait_for_body("v1");
+        project.wait_for_body("v1");
         project
     }
 
     fn ctst(&self) -> Command {
         ctst(self.workspace.path())
+    }
+
+    fn wait_for_body(&self, expected: &str) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            match fetch() {
+                Ok(body) if body == expected => return,
+                other if Instant::now() > deadline => panic!(
+                    "never served {expected:?}; last: {other:?}\n{}",
+                    diagnose(self.workspace.path())
+                ),
+                _ => std::thread::sleep(Duration::from_millis(100)),
+            }
+        }
     }
 
     fn write(&self, version: &str, probe: &str) {
@@ -178,7 +216,7 @@ fn start_first_update_drops_no_requests() {
     let update = run_checked(project.ctst().arg("run").arg("--detach").arg(&project.file));
     let stderr = String::from_utf8_lossy(&update.stderr);
     assert!(stderr.contains("start-first"), "stderr: {stderr}");
-    wait_for_body("v2");
+    project.wait_for_body("v2");
     std::thread::sleep(Duration::from_millis(500));
     stop.store(true, Ordering::Release);
     let results = client.join().expect("client thread");
