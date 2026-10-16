@@ -193,7 +193,7 @@ See [docs/SDK_GUIDE.md](docs/SDK_GUIDE.md).
 ## ⚡ Quick start
 
 ```bash
-VERSION=1.3.1
+VERSION=1.4.0
 TARGET=x86_64-unknown-linux-gnu   # or aarch64-unknown-linux-gnu, *-apple-darwin, x86_64-pc-windows-msvc
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz"
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz.sha256"
@@ -208,8 +208,8 @@ tar xzf "ctst-${TARGET}.tar.gz" && sudo install -m 755 ctst /usr/local/bin/ctst
 
 | Channel | Command |
 | --- | --- |
-| Debian / Ubuntu | `sudo dpkg -i ctst_1.3.1_amd64.deb` |
-| Fedora / RHEL | `sudo rpm -i ctst-1.3.1-1.amd64.rpm` |
+| Debian / Ubuntu | `sudo dpkg -i ctst_1.4.0_amd64.deb` |
+| Fedora / RHEL | `sudo rpm -i ctst-1.4.0-1.amd64.rpm` |
 | Homebrew | `brew install --formula ./Formula/ctst.rb` |
 | winget | manifest in [`packaging/winget/`](packaging/winget/) |
 | Source | `cargo install --path crates/containust-cli` |

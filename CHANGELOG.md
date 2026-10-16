@@ -10,6 +10,8 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-10-16
+
 ### Added
 
 - **Zero-downtime updates.** `update = "start-first"` makes `ctst run` start

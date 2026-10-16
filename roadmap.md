@@ -4,15 +4,16 @@ This roadmap converts the current audit into an implementation sequence. It is i
 
 ## Current baseline
 
-Containust is at GA **`1.3.1`** (Sprint 12 complete: declarative plan/apply + performance pass; `1.3.1` adds `ctst download` and fixes the packaging bump). Sprint 11 (`1.2.0`) shipped: user/PID namespace spawn, remappable ports, named networks, DNS foundations, packaging automation, and opt-in OCI provenance. License is the proprietary [Containust Commercial License](LICENSE) (source-available; see [COMMERCIAL.md](COMMERCIAL.md)) — **`v1.2.0` is the first commercial-licensed tag**.
+Containust is at GA **`1.4.0`** (Sprint 13 complete: zero-downtime `start-first` updates; Sprint 12 delivered declarative plan/apply). Sprint 11 (`1.2.0`) shipped: user/PID namespace spawn, remappable ports, named networks, DNS foundations, packaging automation, and opt-in OCI provenance. License is the proprietary [Containust Commercial License](LICENSE) (source-available; see [COMMERCIAL.md](COMMERCIAL.md)) — **`v1.2.0` is the first commercial-licensed tag**.
 
 - CI green on Linux, macOS, Windows, QEMU smoke, privileged Linux (including `spawn_user_pid` + offline gate under default-on userns), format/clippy/deny/coverage.
-- Release `v1.3.1` publishes tarballs/zips for five targets, `.deb`/`.rpm`, aggregated `SHA256SUMS`, and cosign keyless signature; packaging-bump refreshes Homebrew/winget.
+- Release `v1.4.0` publishes tarballs/zips for five targets, `.deb`/`.rpm`, aggregated `SHA256SUMS`, and cosign keyless signature; packaging-bump refreshes Homebrew/winget.
 - Images: `file://`, `tar://`, `preset://alpine|busybox`, `oci://` / `ctst pull` (Hub + GHCR, auth, digest-pin, `--offline` fail-closed, optional `--require-provenance`), catalog as `image://…@sha256:`.
 - Runtime: user + PID namespaces default-on on Linux; `EXPOSE host:container` remap (userspace forwarder / VM `hostfwd`); named networks + `/etc/hosts` peers; restart/healthcheck; state schema **4**.
 - Docs: product landing + HTML docs site under [`site/`](site/); operator guide [`docs/HowToUse.md`](docs/HowToUse.md).
 - Plan/apply: `ctst plan` diffs (`+ ~ > = -`, `--json`, `--detailed-exitcode`), idempotent `ctst run` with dependency-ordered replacement and `--prune` (`1.3.0`).
-- Deferred (Sprint 13+): zero-downtime rolling updates, volume drivers, remote orchestration, Apple notarization / Authenticode.
+- Updates: `update = "start-first"` replaces components with no dropped requests (`1.4.0`, Linux).
+- Deferred (Sprint 14+): start-first on the VM backend, volume drivers, remote orchestration, Apple notarization / Authenticode.
 
 ## Release train
 
@@ -338,8 +339,15 @@ every replace has a gap of stop time + start time + boot time.
 - [x] **P13.8 Docs.** CTST_LANG, CLI_REFERENCE, HowToUse, site, SUPPORT_POLICY
   (remove blue/green from the deferred list), CHANGELOG.
 
-**Exit gate:** P13.7 green on privileged Linux CI and QEMU smoke; `recreate`
-behavior unchanged (existing apply tests untouched); tag `v1.4.0`.
+**Exit gate: passed for Linux.** P13.7 (`zero_downtime`) and the
+`forwarder_netns` fixture are green on privileged Linux CI; `recreate`
+behavior is unchanged (existing apply tests untouched). P13.6 (VM backend)
+moves to Sprint 14. Tag `v1.4.0`.
+
+Found and fixed on the way: the forwarder never propagated half-closes
+(clients reading to EOF hung, since `1.2.0`), forked forwarders held the
+caller's stdio open (`$(ctst run -d …)` hung), and per-connection helpers
+kept the listening socket bound.
 
 ### Also in Sprint 13 if capacity allows
 
@@ -358,7 +366,7 @@ These are intentionally after Sprint 11:
 - [x] Identity port mappings + `EXPOSE` (`1.1.0`).
 - [x] Declarative update/diff/apply semantics for `ctst plan` and `ctst run` (`1.3.0`).
 - [x] Dependency-aware replacement of running components (`1.3.0`).
-- [ ] Zero-downtime (start-before-stop) rolling updates — planned for Sprint 13 (`1.4.0`).
+- [x] Zero-downtime (start-before-stop) rolling updates (`1.4.0`, Linux; VM backend in Sprint 14).
 - [ ] Volume drivers, snapshots, backup/restore, and encrypted local storage.
 - [ ] SDK async lifecycle API, typed events, backend injection.
 - [ ] Remote execution or orchestration only after local security and lifecycle semantics are stable.

@@ -1,7 +1,7 @@
 # ctst — Containust CLI Reference
 
 **Binary**: `ctst`
-**Version**: 1.3.1
+**Version**: 1.4.0
 **Platform**: Linux (native), macOS (VM backend), Windows (VM backend)
 
 ```
@@ -31,7 +31,7 @@ cargo install --path crates/containust-cli
 
 ```bash
 ctst --version
-# ctst 1.3.1
+# ctst 1.4.0
 ```
 
 ---
