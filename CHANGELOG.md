@@ -30,6 +30,10 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ### Fixed
 
+- Port forwarders (remapped / private-network publishes, since `1.2.0`) now
+  forward half-closes: a response ended by the server closing the
+  connection (HTTP/1.0, close-delimited protocols) no longer hangs the
+  client until it gives up.
 - Port forwarders: per-connection helpers no longer keep the listening
   socket open, so a stopped forwarder frees its host port immediately, and
   finished helpers are reaped instead of lingering as zombies.

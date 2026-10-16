@@ -11,7 +11,7 @@
 #![cfg(target_os = "linux")]
 
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::os::fd::{AsFd, AsRawFd};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -223,6 +223,7 @@ fn relay_one(client: TcpStream, netns: &Path, container_port: u16) -> std::io::R
                 break;
             }
         }
+        let _ = upstream_write.shutdown(Shutdown::Write);
     });
     let mut buf = [0_u8; 8192];
     while let Ok(n) = upstream_read.read(&mut buf) {
@@ -233,6 +234,9 @@ fn relay_one(client: TcpStream, netns: &Path, container_port: u16) -> std::io::R
             break;
         }
     }
+    // Propagate the server's close: clients reading until EOF (HTTP/1.0,
+    // close-delimited protocols) would otherwise wait on us forever.
+    let _ = client_write.shutdown(Shutdown::Write);
     let _ = to_up.join();
     Ok(())
 }

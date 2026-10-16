@@ -201,6 +201,10 @@ jobs:
         run: |
           sudo -E env "PATH=$PATH" \
             cargo test -p containust-runtime --locked --test spawn_user_pid -- --ignored --test-threads=1
+      - name: Port forwarder netns fixture (root)
+        run: |
+          sudo -E env "PATH=$PATH" \
+            cargo test -p containust-runtime --locked --test forwarder_netns -- --ignored --test-threads=1
       - name: Privileged offline gate (root)
         run: |
           sudo -E env "PATH=$PATH" \
