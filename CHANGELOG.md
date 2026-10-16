@@ -33,6 +33,9 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 - Port forwarders: per-connection helpers no longer keep the listening
   socket open, so a stopped forwarder frees its host port immediately, and
   finished helpers are reaped instead of lingering as zombies.
+- `ctst run -d` with published ports no longer hangs callers that capture
+  its output (`$(ctst run -d …)`, CI scripts): forwarders now detach from
+  the invoking process's stdio and session.
 - Removing a container now unmounts and deletes its persisted network
   namespace (`.containust/networks/<id>/ns`).
 - Docs: `network` defaults to `"none"` (private namespace), not `"bridge"`.

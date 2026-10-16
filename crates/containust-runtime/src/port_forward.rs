@@ -150,6 +150,7 @@ fn start_one(target: &Path, mapping: PortMapping) -> Result<u32> {
     match fork_result {
         ForkResult::Parent { child } => Ok(u32::try_from(child.as_raw()).unwrap_or(u32::MAX)),
         ForkResult::Child => {
+            detach_from_caller();
             // Reap per-connection children automatically.
             // SAFETY: setting a disposition to SIG_IGN installs no handler.
             let _ = unsafe {
@@ -161,6 +162,23 @@ fn start_one(target: &Path, mapping: PortMapping) -> Result<u32> {
             forwarder_loop(&listener, &target, mapping);
             // SAFETY: forwarder never returns to parent.
             unsafe { libc::_exit(0) };
+        }
+    }
+}
+
+/// Makes the forwarder independent of the `ctst` invocation that forked it:
+/// a new session (no SIGHUP when the terminal closes) and stdio on
+/// `/dev/null`, so callers capturing `ctst run -d` output see EOF.
+fn detach_from_caller() {
+    let _ = nix::unistd::setsid();
+    if let Ok(null) = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/null")
+    {
+        for fd in 0..=2 {
+            // SAFETY: dup2 onto the standard descriptors of this child only.
+            let _ = unsafe { libc::dup2(null.as_raw_fd(), fd) };
         }
     }
 }
