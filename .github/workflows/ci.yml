@@ -181,6 +181,7 @@ jobs:
   privileged-linux:
     name: Privileged Linux
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [test]
     steps:
       - uses: actions/checkout@v4
@@ -200,10 +201,18 @@ jobs:
         run: |
           sudo -E env "PATH=$PATH" \
             cargo test -p containust-runtime --locked --test spawn_user_pid -- --ignored --test-threads=1
+      - name: Port forwarder netns fixture (root)
+        run: |
+          sudo -E env "PATH=$PATH" \
+            cargo test -p containust-runtime --locked --test forwarder_netns -- --ignored --test-threads=1
       - name: Privileged offline gate (root)
         run: |
           sudo -E env "PATH=$PATH" \
             cargo test -p containust-cli --locked --test sprint3_gate -- --ignored --test-threads=1
+      - name: Zero-downtime update gate (root)
+        run: |
+          sudo -E env "PATH=$PATH" \
+            cargo test -p containust-cli --locked --test zero_downtime -- --ignored --test-threads=1
 
   # QEMU smoke on macOS (HVF). Downloads pinned Alpine assets on first run.
   qemu-smoke-macos:

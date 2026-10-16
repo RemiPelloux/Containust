@@ -4,7 +4,7 @@ Day-to-day operator guide. Prefer the [HTML docs site](../site/docs/) for
 browsing; this file is the markdown source. Long references live in the
 [docs map](README.md).
 
-**Version:** 1.3.1
+**Version:** 1.4.0
 
 ---
 
@@ -13,7 +13,7 @@ browsing; this file is the markdown source. Long references live in the
 Prefer a verified release binary ([PACKAGING.md](PACKAGING.md)):
 
 ```bash
-VERSION=1.3.1
+VERSION=1.4.0
 TARGET=x86_64-unknown-linux-gnu   # or aarch64-unknown-linux-gnu, *-apple-darwin, …
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz"
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz.sha256"
@@ -27,8 +27,8 @@ Other options:
 
 | Channel | Command / location |
 | --- | --- |
-| Debian / Ubuntu | `sudo dpkg -i ctst_1.3.1_amd64.deb` |
-| Fedora / RHEL | `sudo rpm -i ctst-1.3.1-1.amd64.rpm` |
+| Debian / Ubuntu | `sudo dpkg -i ctst_1.4.0_amd64.deb` |
+| Fedora / RHEL | `sudo rpm -i ctst-1.4.0-1.amd64.rpm` |
 | Homebrew | `brew tap RemiPelloux/containust && brew install ctst` (or in-tree formula) |
 | From source | `cargo install --path crates/containust-cli` |
 
@@ -92,6 +92,7 @@ ctst rm app
 | See what would change | `ctst plan stack.ctst` |
 | Start or update the stack (safe to re-run) | `ctst run stack.ctst --detach` |
 | Remove undeclared containers | `ctst run -d --prune stack.ctst` |
+| Update with no downtime | `update = "start-first"` + healthcheck, then `ctst run -d` |
 | CI drift check | `ctst plan --detailed-exitcode stack.ctst` |
 | Import / resolve images | `ctst build stack.ctst` |
 | Dry-run import | `ctst build stack.ctst --dry-run` |
@@ -220,6 +221,39 @@ COMPONENT api {
 ```
 
 See `examples/healthcheck_example.ctst` for a full sample.
+
+### Zero-downtime updates
+
+By default a changed component is stopped and then recreated. With
+`update = "start-first"`, `ctst run` starts the new container first, waits for
+its healthcheck, switches the published port over, and only then stops the old
+one, so clients see no failed requests:
+
+```text
+COMPONENT api {
+    image      = "image://library/myapi@sha256:…"
+    network    = "none"          # publish through the forwarder
+    ports      = [8080]
+    update     = "start-first"   # needs a healthcheck
+    stop_grace = "5s"            # drain time before the old one stops
+    healthcheck = {
+        command  = ["wget", "-qO-", "http://127.0.0.1:8080/health"]
+        interval = "2s"
+        retries  = 5
+    }
+}
+EXPOSE 80:8080
+```
+
+```bash
+ctst plan        # ~ replace  api (spec changed) [start-first]
+ctst run -d      # stages api~next, waits healthy, switches, drains, retires
+```
+
+If the new version never becomes healthy, it is discarded and the old one
+keeps serving. Start-first needs `network = "none"` (or an `EXPOSE` remap);
+on the host network or a shared network `ctst plan` prints a note and the
+component is recreated instead. Keep `recreate` for databases with volumes.
 
 ---
 

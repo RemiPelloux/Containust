@@ -1,6 +1,6 @@
 # Support Policy
 
-Binding since `1.0.0`. Updated for Sprint 12 (`1.3.0`).
+Binding since `1.0.0`. Updated for Sprint 13 (`1.4.0`).
 
 ## Supported platforms
 
@@ -59,7 +59,7 @@ delegated user namespaces are recommended.
 
 - Apple notarization / Windows Authenticode (cosign keyless signs `SHA256SUMS`; see `PACKAGING.md`)
 - Full DNS / multi-network mesh (named shared-netns + `/etc/hosts` foundations ship in Sprint 11)
-- Zero-downtime (blue/green) rolling updates — `1.3.0` replaces one component at a time with a brief per-component gap
+- Start-first updates on the macOS/Windows VM backend (falls back to `recreate`; Linux supports them since `1.4.0`)
 - Volume drivers, snapshots, encrypted local storage
 - Remote execution / orchestration
 
@@ -69,4 +69,4 @@ Shipped since GA (removed from this list): OCI registry pulls with auth
 winget template + cosign-signed checksums (`1.1.0`), Linux user+PID namespace
 default-on spawn, `EXPOSE` remapping, named networks (`1.2.0` track),
 declarative `ctst plan` diffs + idempotent `ctst run` apply with
-dependency-ordered replacement and `--prune` (`1.3.0`).
+dependency-ordered replacement and `--prune` (`1.3.0`), zero-downtime `update = "start-first"` replacement on Linux (`1.4.0`).

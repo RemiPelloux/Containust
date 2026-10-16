@@ -1,7 +1,7 @@
 # Containust — Sprint Tracker
 
 > **Goal**: Ship Containust as a production-ready container runtime, lighter and more reliable than Docker.
-> **Version**: `1.3.1` (Sprint 12 complete; Sprint 13 planned)
+> **Version**: `1.4.0` (Sprint 13 complete)
 > **License**: Containust Commercial License (source-available; see `COMMERCIAL.md`)
 > **Standards**: 90%+ test coverage for library crates, zero clippy warnings, `cargo deny` green, no banned patterns.
 
@@ -21,15 +21,13 @@
   performance pass; animated README.
 - **Patch `1.3.1`** — `ctst download` offline/on-prem prefetch, packaging-bump
   CRLF fix, doctor/download docs.
+- **Sprint 13 (`1.4.0`)** — zero-downtime `update = "start-first"` (staged
+  `~next`, health gate, atomic forwarder retarget, drain, rename); privileged
+  `zero_downtime` gate; forwarder half-close / stdio / listener fixes.
 
-## Next: Sprint 13 (`1.4.0`), zero-downtime updates
+## Next (Sprint 14+)
 
-Plan in [`roadmap.md`](roadmap.md#sprint-13-zero-downtime-updates-140) (P13.1–P13.8):
-`update = "start-first"` deploys the new container, gates on its healthcheck,
-swaps the port forwarder target, drains and retires the old one.
-
-## Later
-
+- Start-first on the macOS/Windows VM backend (P13.6, agent-side retarget).
 - Parallel layer downloads for `ctst pull`.
 - Volume drivers, snapshots, encrypted storage.
 - Remote execution / orchestration.

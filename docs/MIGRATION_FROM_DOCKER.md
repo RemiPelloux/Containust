@@ -43,6 +43,7 @@ Use this table as a quick-reference when converting each line of your `docker-co
 | `networks: [backend]` | `network = "backend"` | Single network assignment per component |
 | `restart: unless-stopped` | `restart = "always"` | Policies: `"never"`, `"on-failure"`, `"always"` |
 | `healthcheck: { test: ... }` | `healthcheck = { command = [...] }` | Same fields: `interval`, `timeout`, `retries`, `start_period` |
+| `deploy.update_config.order: start-first` | `update = "start-first"` | Zero-downtime replace on `ctst run`; requires a `healthcheck` and `network = "none"` (or an `EXPOSE` remap) |
 | `command: ["./run"]` | `command = ["./run"]` | Identical list syntax |
 | `entrypoint: ["/bin/sh"]` | `entrypoint = ["/bin/sh"]` | Identical list syntax |
 | `working_dir: /app` | `workdir = "/app"` | Shortened key name |

@@ -65,6 +65,10 @@ pub struct ComponentDecl {
     pub network: Option<String>,
     /// Healthcheck configuration.
     pub healthcheck: Option<HealthcheckDecl>,
+    /// Update strategy (`recreate` or `start-first`).
+    pub update: Option<String>,
+    /// Drain time between moving traffic and stopping the old container.
+    pub stop_grace: Option<String>,
 }
 
 /// Healthcheck configuration inside a component.

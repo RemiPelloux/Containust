@@ -328,8 +328,10 @@ COMPONENT <name> [FROM <template>] {
 | `user` | string | — | User and group to run as (e.g., `"1000:1000"`) |
 | `hostname` | string | component name | Container hostname |
 | `restart` | string | `"never"` | Restart policy: `"never"`, `"on-failure"`, `"always"` |
-| `network` | string | `"bridge"` | Network mode: `"bridge"`, `"host"`, `"none"`, or custom name |
+| `network` | string | `"none"` | Network mode: `"none"` (private namespace), `"host"`, `"bridge"`, or a custom shared name. Identity `ports` without `network` use the host network |
 | `healthcheck` | map | — | Health monitoring configuration (see §11) |
+| `update` | string | `"recreate"` | How `ctst run` replaces a changed component: `"recreate"` or `"start-first"` (see §13) |
+| `stop_grace` | duration | `"2s"` | `start-first` only: drain time between moving traffic and stopping the old container |
 
 ### Rules
 
@@ -722,7 +724,81 @@ COMPONENT worker {
 
 ---
 
-## 13. NETWORK Configuration
+## 13. UPDATE Strategy
+
+Controls how `ctst run` replaces a running component whose spec changed.
+
+### Syntax
+
+```ctst
+update     = "recreate" | "start-first"
+stop_grace = "5s"
+```
+
+### Strategies
+
+| Strategy | Behavior |
+|---|---|
+| `"recreate"` | Stop and remove the old container, then create the new one. Brief downtime. This is the default. |
+| `"start-first"` | Start the new container next to the old one, wait until its healthcheck passes, move the published ports to it, wait `stop_grace`, then stop the old container. No dropped connections. |
+
+### How start-first works
+
+1. The new container starts as `<name>~next` with its ports not yet published.
+2. Its healthcheck runs until it passes. Failures during `start_period` do not
+   count; after that, `retries` consecutive failures fail the update.
+3. The port forwarder is switched to the new container in one atomic step.
+   New connections reach the new container; open ones finish on the old one.
+4. After `stop_grace`, the old container is stopped and removed, and
+   `<name>~next` takes over the name.
+
+If the new container never becomes healthy, it is removed, **the old
+container keeps serving**, and `ctst run` exits with the probe output. If a
+previous update was interrupted, the leftover `<name>~next` is removed on the
+next `ctst run`.
+
+### Requirements and fallbacks
+
+- `start-first` **requires a `healthcheck`**; without one the file is rejected.
+- Ports must be published through the forwarder: use `network = "none"` (or
+  any `EXPOSE host:container` remap). Two copies cannot bind the same port on
+  the host network or inside one shared network, so those components fall
+  back to `recreate` and `ctst plan` prints a note saying why.
+- The macOS/Windows VM backend does not support handoff yet and falls back to
+  `recreate` with a note.
+- Changing only `update` or `stop_grace` does not replace a running
+  component.
+- Components with exclusive state (a database writing to a volume) should
+  keep `recreate`: both copies would mount the volume during the overlap.
+
+### Example
+
+```ctst
+COMPONENT api {
+    image      = "image://myorg/api@sha256:…"
+    network    = "none"
+    ports      = [8080]
+    update     = "start-first"
+    stop_grace = "5s"
+    healthcheck = {
+        command      = ["wget", "-qO-", "http://127.0.0.1:8080/health"]
+        interval     = "2s"
+        retries      = 5
+        start_period = "10s"
+    }
+}
+
+EXPOSE 80:8080
+```
+
+```text
+$ ctst plan
+  ~ replace  api (spec changed) [start-first]
+```
+
+---
+
+## 14. NETWORK Configuration
 
 Controls network isolation for a component.
 
@@ -787,7 +863,7 @@ CONNECT backend -> db
 
 ---
 
-## 14. SECRET Injection
+## 15. SECRET Injection
 
 Secrets are sensitive values (passwords, tokens, API keys) that must never be hardcoded in `.ctst` files or stored in the state file.
 
@@ -853,7 +929,7 @@ COMPONENT payment {
 
 ---
 
-## 15. Variable Interpolation
+## 16. Variable Interpolation
 
 Variable interpolation allows dynamic values in string properties using `${}` syntax.
 
@@ -870,7 +946,7 @@ ${<namespace>.<property>}
 | Component | `${component_name.host}` | Access a sibling component's runtime properties |
 | Component | `${component_name.port}` | First exposed port of the component |
 | Component | `${component_name.connection_string}` | Auto-generated connection string |
-| Secret | `${secret.name}` | Resolve a secret value (see §14) |
+| Secret | `${secret.name}` | Resolve a secret value (see §15) |
 | Host env | `${env.NAME}` | Read an environment variable from the host |
 
 ### Component Properties
@@ -919,7 +995,7 @@ env = {
 
 ---
 
-## 16. Image Source Protocols
+## 17. Image Source Protocols
 
 Containust supports three protocols for image sources. All protocols validate content integrity with SHA-256 checksums.
 
@@ -977,7 +1053,7 @@ COMPONENT proxy {
 
 ---
 
-## 17. Static Analysis
+## 18. Static Analysis
 
 The parser performs comprehensive validation before any container is created. All errors are reported with file location and actionable messages.
 
@@ -1017,7 +1093,7 @@ warning[W0001]: unused import
 
 ---
 
-## 18. Distroless Build Analysis
+## 19. Distroless Build Analysis
 
 Containust can automatically produce minimal container images by analyzing which files a binary actually needs at runtime.
 
@@ -1044,7 +1120,7 @@ Distroless analysis runs automatically during `ctst build` for components whose 
 
 ---
 
-## 19. Complete Examples
+## 20. Complete Examples
 
 ### Example 1: Hello World
 
@@ -1253,7 +1329,7 @@ EXPOSE 8080
 
 ---
 
-## 20. Docker Compose Comparison
+## 21. Docker Compose Comparison
 
 A quick reference for developers migrating from Docker Compose to `.ctst`.
 

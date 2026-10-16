@@ -68,6 +68,7 @@ impl LinuxNativeBackend {
             port_mappings: config.port_mappings.clone(),
             network: config.network.clone(),
             forwarder_pids: Vec::new(),
+            publish_deferred: config.defer_publish,
             restart: config.restart,
             healthcheck: config.healthcheck.clone(),
             health: config
@@ -228,6 +229,8 @@ impl ContainerBackend for LinuxNativeBackend {
                 });
             }
             cleanup_container_files(&self.data_dir, &state.containers[index])?;
+            #[cfg(target_os = "linux")]
+            release_proc_netns(&self.data_dir, id.as_str());
             cleanup_cgroup(&self.project_id, id)?;
             let _ = state.containers.remove(index);
             Ok(())
@@ -280,6 +283,73 @@ impl ContainerBackend for LinuxNativeBackend {
     fn is_available(&self) -> bool {
         cfg!(target_os = "linux")
     }
+
+    fn supports_handoff(&self) -> bool {
+        cfg!(target_os = "linux")
+    }
+
+    #[cfg(target_os = "linux")]
+    fn handoff(&self, from: &ContainerId, to: &ContainerId) -> Result<()> {
+        self.state_store.update(|state| {
+            let from_idx = entry_index(state, from)?;
+            let to_idx = entry_index(state, to)?;
+            let old_pids = std::mem::take(&mut state.containers[from_idx].forwarder_pids);
+            let same_ports =
+                state.containers[from_idx].port_mappings == state.containers[to_idx].port_mappings;
+            let entry = &mut state.containers[to_idx];
+            let pid = running_pid(entry).ok_or_else(|| ContainustError::Config {
+                message: format!("container {to} must be running to receive traffic"),
+            })?;
+            let mode = crate::network::NetworkMode::parse(Some(entry.network.as_str()));
+            entry.publish_deferred = false;
+            if entry.port_mappings.is_empty() || mode.is_host() {
+                crate::port_forward::stop_forwarders_and_wait(&old_pids);
+                return Ok(());
+            }
+            let netns = entry_netns(&self.data_dir, entry, &mode, pid)?;
+            let mappings = entry.port_mappings.clone();
+            entry.forwarder_pids = if same_ports
+                && crate::port_forward::forwarders_alive(&old_pids)
+                && crate::port_forward::targets_exist(&self.data_dir, &mappings)
+            {
+                crate::port_forward::retarget(&self.data_dir, &netns, &mappings)?;
+                old_pids
+            } else {
+                tracing::warn!(id = %to, "cannot retarget forwarders; restarting them (brief gap)");
+                crate::port_forward::stop_forwarders_and_wait(&old_pids);
+                crate::port_forward::start_forwarders(&self.data_dir, &netns, &mappings)?
+            };
+            Ok(())
+        })
+    }
+
+    fn rename(&self, id: &ContainerId, name: &str) -> Result<()> {
+        self.state_store.update(|state| {
+            if state
+                .containers
+                .iter()
+                .any(|entry| entry.name == name && entry.id != *id)
+            {
+                return Err(ContainustError::Config {
+                    message: format!("container name already exists: {name}"),
+                });
+            }
+            let index = entry_index(state, id)?;
+            state.containers[index].name = name.to_string();
+            Ok(())
+        })
+    }
+}
+
+fn entry_index(state: &crate::state::StateFile, id: &ContainerId) -> Result<usize> {
+    state
+        .containers
+        .iter()
+        .position(|entry| entry.id == *id)
+        .ok_or_else(|| ContainustError::NotFound {
+            kind: "container",
+            id: id.to_string(),
+        })
 }
 
 fn cleanup_container_files(data_dir: &Path, entry: &crate::state::StateEntry) -> Result<()> {
@@ -741,19 +811,41 @@ fn start_entry_forwarders(
     entry: &crate::state::StateEntry,
     pid: u32,
 ) -> Result<Vec<u32>> {
-    if entry.port_mappings.is_empty() {
+    // A staged start-first replacement receives its ports on handoff.
+    if entry.port_mappings.is_empty() || entry.publish_deferred {
         return Ok(Vec::new());
     }
     let mode = crate::network::NetworkMode::parse(Some(entry.network.as_str()));
     if mode.is_host() {
         return Ok(Vec::new());
     }
-    let netns = if let Some(name) = mode.shared_name() {
-        crate::network::ensure_shared_netns(data_dir, name)?
-    } else {
-        persist_proc_netns(data_dir, entry.id.as_str(), pid)?
-    };
-    crate::port_forward::start_forwarders(&netns, &entry.port_mappings)
+    let netns = entry_netns(data_dir, entry, &mode, pid)?;
+    crate::port_forward::start_forwarders(data_dir, &netns, &entry.port_mappings)
+}
+
+/// Network namespace file that forwarders for `entry` relay into.
+#[cfg(target_os = "linux")]
+fn entry_netns(
+    data_dir: &Path,
+    entry: &crate::state::StateEntry,
+    mode: &crate::network::NetworkMode,
+    pid: u32,
+) -> Result<PathBuf> {
+    mode.shared_name().map_or_else(
+        || persist_proc_netns(data_dir, entry.id.as_str(), pid),
+        |name| crate::network::ensure_shared_netns(data_dir, name),
+    )
+}
+
+/// Unmounts and deletes a container's persisted private netns (best-effort).
+#[cfg(target_os = "linux")]
+fn release_proc_netns(data_dir: &Path, container_id: &str) {
+    let dir = data_dir.join("networks").join(container_id);
+    let path = dir.join("ns");
+    if path.exists() {
+        let _ = nix::mount::umount2(&path, nix::mount::MntFlags::MNT_DETACH);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -951,6 +1043,7 @@ mod tests {
             port_mappings: Vec::new(),
             network: "bridge".into(),
             forwarder_pids: Vec::new(),
+            publish_deferred: false,
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             health: None,
@@ -1254,6 +1347,7 @@ mod tests {
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
+            defer_publish: false,
         };
 
         let id = backend.create(&config).expect("create");
@@ -1304,6 +1398,7 @@ mod tests {
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
+            defer_publish: false,
         };
 
         let first_id = first.create(&config).expect("first create");

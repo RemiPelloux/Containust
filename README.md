@@ -193,7 +193,7 @@ See [docs/SDK_GUIDE.md](docs/SDK_GUIDE.md).
 ## ⚡ Quick start
 
 ```bash
-VERSION=1.3.1
+VERSION=1.4.0
 TARGET=x86_64-unknown-linux-gnu   # or aarch64-unknown-linux-gnu, *-apple-darwin, x86_64-pc-windows-msvc
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz"
 curl -LO "https://github.com/RemiPelloux/Containust/releases/download/v${VERSION}/ctst-${TARGET}.tar.gz.sha256"
@@ -208,8 +208,8 @@ tar xzf "ctst-${TARGET}.tar.gz" && sudo install -m 755 ctst /usr/local/bin/ctst
 
 | Channel | Command |
 | --- | --- |
-| Debian / Ubuntu | `sudo dpkg -i ctst_1.3.1_amd64.deb` |
-| Fedora / RHEL | `sudo rpm -i ctst-1.3.1-1.amd64.rpm` |
+| Debian / Ubuntu | `sudo dpkg -i ctst_1.4.0_amd64.deb` |
+| Fedora / RHEL | `sudo rpm -i ctst-1.4.0-1.amd64.rpm` |
 | Homebrew | `brew install --formula ./Formula/ctst.rb` |
 | winget | manifest in [`packaging/winget/`](packaging/winget/) |
 | Source | `cargo install --path crates/containust-cli` |
@@ -272,6 +272,25 @@ Plan for stack.ctst
 
 The ledger is written after each component. If an apply fails part-way, the
 next run resumes from where it stopped.
+
+New in **1.4.0**: zero-downtime updates. Give a component
+`update = "start-first"` and a healthcheck, and `~ replace` stops being a
+stop-then-start:
+
+```text
+  ~ replace  api (spec changed) [start-first]
+
+  Creating container 'api~next'...          new version starts beside the old one
+  Waiting for the new 'api' to become healthy...
+  Traffic moved to the new 'api'; draining the old one for 5s...
+                                             old one stops, api~next becomes api
+```
+
+The published port never closes: the forwarder switches its target in one
+atomic step, so new connections reach the new container while open ones
+finish on the old one. If the new version never becomes healthy it is
+thrown away and the old one keeps serving. Details in
+[CTST_LANG.md §13](docs/CTST_LANG.md#13-update-strategy).
 
 ## ⌁ How it works
 

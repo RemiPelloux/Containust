@@ -60,6 +60,9 @@ pub struct ContainerConfig {
     pub healthcheck: Option<containust_common::types::HealthcheckSpec>,
     /// Namespace isolation policy applied at spawn.
     pub namespaces: containust_core::namespace::NamespaceConfig,
+    /// Start without publishing ports; they are moved over later by
+    /// [`ContainerBackend::handoff`] (start-first replacement).
+    pub defer_publish: bool,
 }
 
 /// Information about a tracked container.
@@ -171,6 +174,40 @@ pub trait ContainerBackend: Send + Sync {
 
     /// Returns whether this backend is operational on the current platform.
     fn is_available(&self) -> bool;
+
+    /// Whether [`Self::handoff`] and [`Self::rename`] are implemented, which
+    /// start-first updates require.
+    fn supports_handoff(&self) -> bool {
+        false
+    }
+
+    /// Moves published ports from `from` to the running container `to`
+    /// without unbinding them: new connections reach `to`, connections
+    /// already relayed finish on `from`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when either container is missing, `to` is not
+    /// running, or the backend does not support handoff.
+    fn handoff(&self, from: &ContainerId, to: &ContainerId) -> Result<()> {
+        let _ = (from, to);
+        Err(containust_common::error::ContainustError::Config {
+            message: "this backend does not support start-first updates".into(),
+        })
+    }
+
+    /// Renames a tracked container.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the container is missing, the name is taken,
+    /// or the backend does not support renaming.
+    fn rename(&self, id: &ContainerId, name: &str) -> Result<()> {
+        let _ = (id, name);
+        Err(containust_common::error::ContainustError::Config {
+            message: "this backend does not support renaming containers".into(),
+        })
+    }
 }
 
 /// Auto-detect and create the appropriate backend for the current platform.
@@ -286,6 +323,7 @@ mod tests {
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
+            defer_publish: false,
         };
         assert_eq!(cfg.name, "test");
         assert!(cfg.readonly_rootfs);
@@ -309,6 +347,7 @@ mod tests {
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
+            defer_publish: false,
         };
         assert_eq!(cfg.name, "minimal");
         assert_eq!(cfg.image, "");
@@ -335,6 +374,7 @@ mod tests {
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
+            defer_publish: false,
         };
         let cloned = cfg.clone();
         assert_eq!(cfg.name, cloned.name);
