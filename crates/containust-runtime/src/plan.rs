@@ -12,7 +12,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use containust_common::error::{ContainustError, Result};
-use containust_common::types::ContainerId;
+use containust_common::types::{ContainerId, UpdateStrategy};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -20,6 +20,22 @@ use crate::backend::{ContainerConfig, ContainerInfo};
 
 /// File name of the applied-spec ledger, stored next to `state.json`.
 pub const LEDGER_FILE_NAME: &str = "applied.json";
+
+/// Suffix of the staged container a start-first update creates next to
+/// the one it replaces (`api` → `api~next`).
+pub const STAGED_SUFFIX: &str = "~next";
+
+/// Name of the staged replacement for `name` during a start-first update.
+#[must_use]
+pub fn staged_name(name: &str) -> String {
+    format!("{name}{STAGED_SUFFIX}")
+}
+
+/// The declared component a leftover staged container belongs to.
+#[must_use]
+pub fn staged_owner(name: &str) -> Option<&str> {
+    name.strip_suffix(STAGED_SUFFIX)
+}
 
 /// What `ctst run` will do to one component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -86,6 +102,12 @@ pub struct PlannedChange {
     /// Desired spec fingerprint (`None` for removals).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fingerprint: Option<String>,
+    /// How a `replace` is carried out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strategy: Option<UpdateStrategy>,
+    /// Why the declared strategy is not used (e.g. start-first fallback).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Ordered plan: declared components in dependency order, then removals.
@@ -131,6 +153,10 @@ pub struct DesiredComponent<'a> {
     pub fingerprint: String,
     /// Components this one `CONNECT`s to (upstreams).
     pub upstreams: Vec<&'a str>,
+    /// Effective update strategy for a replace.
+    pub strategy: UpdateStrategy,
+    /// Why the declared strategy fell back, if it did.
+    pub note: Option<String>,
 }
 
 /// Computes a stable fingerprint of everything that shapes a container.
@@ -183,15 +209,23 @@ pub fn compute(
         let (action, reason) = existing.map_or((PlanAction::Create, None), |info| {
             action_for_existing(component, info, ledger, &replaced)
         });
-        if action == PlanAction::Replace {
-            let _ = replaced.insert(component.name);
-        }
+        let (strategy, note) = match action {
+            PlanAction::Replace => {
+                let _ = replaced.insert(component.name);
+                replace_strategy(component, existing)
+            }
+            // Warn up front that the declared strategy will not apply.
+            PlanAction::Create => (None, component.note.clone()),
+            _ => (None, None),
+        };
         changes.push(PlannedChange {
             name: component.name.to_string(),
             action,
             reason,
             container_id: existing.map(|info| info.id.clone()),
             fingerprint: Some(component.fingerprint.clone()),
+            strategy,
+            note,
         });
     }
 
@@ -201,15 +235,37 @@ pub fn compute(
         .filter(|info| !declared.contains(info.name.as_str()))
         .collect();
     orphans.sort_by(|a, b| a.name.cmp(&b.name));
-    changes.extend(orphans.into_iter().map(|info| PlannedChange {
-        name: info.name.clone(),
-        action: PlanAction::Remove,
-        reason: Some("no longer declared".into()),
-        container_id: Some(info.id.clone()),
-        fingerprint: None,
+    changes.extend(orphans.into_iter().map(|info| {
+        let leftover = staged_owner(&info.name).is_some_and(|owner| declared.contains(owner));
+        PlannedChange {
+            name: info.name.clone(),
+            action: PlanAction::Remove,
+            reason: Some(if leftover {
+                "left over from an interrupted start-first update".into()
+            } else {
+                "no longer declared".into()
+            }),
+            container_id: Some(info.id.clone()),
+            fingerprint: None,
+            strategy: None,
+            note: None,
+        }
     }));
 
     DeployPlan { changes }
+}
+
+/// Strategy for replacing `component`; a stopped container serves no
+/// traffic, so it is simply recreated.
+fn replace_strategy(
+    component: &DesiredComponent<'_>,
+    existing: Option<&ContainerInfo>,
+) -> (Option<UpdateStrategy>, Option<String>) {
+    let running = existing.is_some_and(|info| info.state == "running");
+    if component.strategy == UpdateStrategy::StartFirst && !running {
+        return (Some(UpdateStrategy::Recreate), None);
+    }
+    (Some(component.strategy), component.note.clone())
 }
 
 /// Chooses the action for a component that already has a container.
@@ -330,6 +386,8 @@ mod tests {
             name,
             fingerprint: fp.into(),
             upstreams,
+            strategy: UpdateStrategy::Recreate,
+            note: None,
         }
     }
 
@@ -446,6 +504,53 @@ mod tests {
     }
 
     #[test]
+    fn start_first_applies_only_to_running_replacements() {
+        let mut api = desired("api", "new", vec![]);
+        api.strategy = UpdateStrategy::StartFirst;
+        let mut worker = desired("worker", "new", vec![]);
+        worker.strategy = UpdateStrategy::StartFirst;
+        let plan = compute(
+            &[api, worker],
+            &[info("api", "running"), info("worker", "stopped")],
+            &ledger(&[("api", "old"), ("worker", "old")]),
+        );
+        assert_eq!(plan.changes[0].strategy, Some(UpdateStrategy::StartFirst));
+        assert_eq!(plan.changes[1].strategy, Some(UpdateStrategy::Recreate));
+        let json = serde_json::to_value(&plan).expect("json");
+        assert_eq!(json["changes"][0]["strategy"], "start-first");
+    }
+
+    #[test]
+    fn fallback_note_is_carried_into_the_plan() {
+        let mut api = desired("api", "new", vec![]);
+        api.note = Some("host network".into());
+        let plan = compute(
+            &[api],
+            &[info("api", "running")],
+            &ledger(&[("api", "old")]),
+        );
+        assert_eq!(plan.changes[0].note.as_deref(), Some("host network"));
+    }
+
+    #[test]
+    fn leftover_staged_container_is_labelled() {
+        let plan = compute(
+            &[desired("api", "a", vec![])],
+            &[info("api", "running"), info("api~next", "running")],
+            &ledger(&[("api", "a")]),
+        );
+        assert_eq!(plan.changes[1].name, "api~next");
+        assert_eq!(plan.changes[1].action, PlanAction::Remove);
+        assert!(
+            plan.changes[1]
+                .reason
+                .as_deref()
+                .is_some_and(|r| r.contains("interrupted start-first"))
+        );
+        assert_eq!(staged_owner(&staged_name("api")), Some("api"));
+    }
+
+    #[test]
     fn ledger_roundtrips_and_missing_is_empty() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = Ledger::path_for(&dir.path().join("state").join("state.json"));
@@ -473,6 +578,7 @@ mod tests {
             restart: containust_common::types::RestartPolicy::Never,
             healthcheck: None,
             namespaces: containust_core::namespace::NamespaceConfig::default(),
+            defer_publish: false,
         };
         let mut changed = base.clone();
         changed.memory_bytes = Some(1);

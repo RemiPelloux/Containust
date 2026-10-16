@@ -54,6 +54,7 @@ fn sample_entry(name: &str) -> StateEntry {
         port_mappings: Vec::new(),
         network: "bridge".into(),
         forwarder_pids: Vec::new(),
+        publish_deferred: false,
         restart: containust_common::types::RestartPolicy::default(),
         healthcheck: None,
         health: None,

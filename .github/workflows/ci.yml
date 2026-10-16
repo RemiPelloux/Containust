@@ -204,6 +204,10 @@ jobs:
         run: |
           sudo -E env "PATH=$PATH" \
             cargo test -p containust-cli --locked --test sprint3_gate -- --ignored --test-threads=1
+      - name: Zero-downtime update gate (root)
+        run: |
+          sudo -E env "PATH=$PATH" \
+            cargo test -p containust-cli --locked --test zero_downtime -- --ignored --test-threads=1
 
   # QEMU smoke on macOS (HVF). Downloads pinned Alpine assets on first run.
   qemu-smoke-macos:

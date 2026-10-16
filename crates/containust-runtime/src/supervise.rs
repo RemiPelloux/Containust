@@ -142,6 +142,64 @@ fn run_probe(backend: &dyn ContainerBackend, id: &ContainerId, spec: &Healthchec
     }
 }
 
+/// Blocks until a freshly started container passes its health probe.
+///
+/// Gates start-first updates. During `start_period` the probe runs at least
+/// once a second and failures do not count; afterwards it runs every
+/// `interval`, and `retries` consecutive failures fail the gate. The
+/// container exiting fails it immediately.
+///
+/// # Errors
+///
+/// Returns a description of the last probe failure when the container never
+/// becomes healthy.
+pub fn wait_healthy(
+    backend: &dyn ContainerBackend,
+    id: &ContainerId,
+    spec: &HealthcheckSpec,
+) -> std::result::Result<(), String> {
+    let started = std::time::Instant::now();
+    let start_period = std::time::Duration::from_secs(spec.start_period_secs);
+    let interval = std::time::Duration::from_secs(spec.interval_secs)
+        .max(std::time::Duration::from_millis(100));
+    let retries = spec.retries.max(1);
+    let mut failures = 0;
+    loop {
+        if !is_running(backend, id) {
+            return Err("container exited before it became healthy".into());
+        }
+        let last = match backend.exec(id, &spec.command) {
+            Ok(output) if output.exit_code == 0 => return Ok(()),
+            Ok(output) => format!(
+                "probe exited with {}: {}",
+                output.exit_code,
+                output.stderr.trim()
+            ),
+            Err(error) => error.to_string(),
+        };
+        let pause = if started.elapsed() < start_period {
+            interval.min(std::time::Duration::from_secs(1))
+        } else {
+            failures += 1;
+            if failures >= retries {
+                return Err(format!(
+                    "{failures} consecutive probe failures; last: {last}"
+                ));
+            }
+            interval
+        };
+        std::thread::sleep(pause);
+    }
+}
+
+fn is_running(backend: &dyn ContainerBackend, id: &ContainerId) -> bool {
+    backend.list().is_ok_and(|containers| {
+        containers
+            .iter()
+            .any(|info| info.id == *id && info.state == ContainerState::Running.to_string())
+    })
+}
+
 /// Persists a probe result; returns whether the container crossed the
 /// failure threshold on this probe.
 fn record_probe_result(
@@ -279,6 +337,7 @@ mod tests {
             port_mappings: Vec::new(),
             network: "bridge".into(),
             forwarder_pids: Vec::new(),
+            publish_deferred: false,
             restart,
             healthcheck,
             health: None,

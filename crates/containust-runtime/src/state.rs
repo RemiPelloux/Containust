@@ -61,6 +61,10 @@ pub struct StateEntry {
     /// PIDs of userspace port-forwarder helpers.
     #[serde(default)]
     pub forwarder_pids: Vec<u32>,
+    /// Ports are not published yet: the container is the staged
+    /// replacement in a start-first update and receives them on handoff.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub publish_deferred: bool,
     /// Restart policy applied when the process exits.
     #[serde(default)]
     pub restart: containust_common::types::RestartPolicy,
@@ -436,6 +440,7 @@ mod tests {
             port_mappings: Vec::new(),
             network: "bridge".into(),
             forwarder_pids: Vec::new(),
+            publish_deferred: false,
             restart: containust_common::types::RestartPolicy::default(),
             healthcheck: None,
             health: None,
@@ -491,6 +496,7 @@ mod tests {
                 port_mappings: Vec::new(),
                 network: "bridge".into(),
                 forwarder_pids: Vec::new(),
+                publish_deferred: false,
                 restart: containust_common::types::RestartPolicy::default(),
                 healthcheck: None,
                 health: None,

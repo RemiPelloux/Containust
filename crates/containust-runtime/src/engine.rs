@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use containust_common::codes;
 use containust_common::error::{ContainustError, Result};
-use containust_common::types::ContainerId;
+use containust_common::types::{ContainerId, UpdateStrategy};
 
 use crate::backend::{
     self, ContainerBackend, ContainerConfig, ContainerInfo, ReconciliationReport,
@@ -17,6 +17,10 @@ use crate::exec::ExecOutput;
 use crate::plan::{
     AppliedComponent, DeployPlan, DesiredComponent, Ledger, PlanAction, PlannedChange,
 };
+
+/// Drain time between moving traffic and stopping the old container in a
+/// start-first update, unless the component sets `stop_grace`.
+pub const DEFAULT_STOP_GRACE: Duration = Duration::from_secs(2);
 
 /// Options for [`Engine::apply`].
 #[derive(Debug, Clone, Copy, Default)]
@@ -180,7 +184,7 @@ impl Engine {
     ///
     /// Returns an error if the composition is invalid or state cannot be read.
     pub fn plan(&self, ctst_path: &Path) -> Result<DeployPlan> {
-        let desired = load_desired(ctst_path, self.offline)?;
+        let desired = load_desired(ctst_path, self.offline, self.backend.supports_handoff())?;
         // Keep planning read-only: a native project without a state directory
         // has no containers, and listing would create the lock file.
         let has_local_state = self.state_file.parent().is_some_and(Path::exists)
@@ -211,7 +215,8 @@ impl Engine {
         }
         tracing::info!(project_dir = %project_dir.display(), "project directory");
 
-        let desired = load_desired(ctst_path, self.offline)?;
+        let desired = load_desired(ctst_path, self.offline, self.backend.supports_handoff())?;
+        self.discard_interrupted_updates(&desired)?;
         let live = self.backend.list()?;
         let plan = self.plan_for(&desired, &live)?;
         let ledger_path = Ledger::path_for(&self.state_file);
@@ -246,9 +251,29 @@ impl Engine {
                 name: &spec.component.name,
                 fingerprint: spec.fingerprint.clone(),
                 upstreams: spec.upstreams.iter().map(String::as_str).collect(),
+                strategy: spec.strategy,
+                note: spec.strategy_note.clone(),
             })
             .collect();
         Ok(crate::plan::compute(&inputs, live, &ledger))
+    }
+
+    /// Removes staged `<name>~next` containers left behind when a previous
+    /// start-first update was interrupted; their component still has its
+    /// original container.
+    fn discard_interrupted_updates(&self, desired: &[DesiredSpec]) -> Result<()> {
+        for info in self.backend.list()? {
+            let leftover = crate::plan::staged_owner(&info.name)
+                .is_some_and(|owner| desired.iter().any(|spec| spec.component.name == owner));
+            if leftover {
+                eprintln!(
+                    "  Removing '{}' left over from an interrupted update...",
+                    info.name
+                );
+                self.retire(&info.id, info.state == "running")?;
+            }
+        }
+        Ok(())
     }
 
     /// Stops (when running) and removes an existing container.
@@ -266,17 +291,35 @@ impl Engine {
 
     /// Creates and starts one planned component.
     fn deploy_component(&self, spec: &DesiredSpec) -> Result<DeployedComponent> {
+        self.deploy_config(spec, spec.config.clone())
+    }
+
+    /// Creates and starts a container for `spec` from `config`, which may
+    /// differ in name and publishing (start-first staging).
+    fn deploy_config(
+        &self,
+        spec: &DesiredSpec,
+        mut config: ContainerConfig,
+    ) -> Result<DeployedComponent> {
         let comp = &spec.component;
-        let mut config = spec.config.clone();
         config.image = resolve_deploy_image(self.data_dir(), self.offline, comp)?;
 
-        eprintln!("  Creating container '{}'...", comp.name);
+        eprintln!("  Creating container '{}'...", config.name);
         let id = self.backend.create(&config)?;
-        tracing::info!(id = %id, name = %comp.name, "container created");
+        tracing::info!(id = %id, name = %config.name, "container created");
 
-        eprintln!("  Starting container '{}'...", comp.name);
-        let pid = self.backend.start(&id)?;
-        tracing::info!(id = %id, pid, name = %comp.name, "container started");
+        eprintln!("  Starting container '{}'...", config.name);
+        let pid = match self.backend.start(&id) {
+            Ok(pid) => pid,
+            Err(error) => {
+                // A staged replacement must not linger next to the original.
+                if config.defer_publish {
+                    let _ = self.backend.remove(&id);
+                }
+                return Err(error);
+            }
+        };
+        tracing::info!(id = %id, pid, name = %config.name, "container started");
 
         Ok(DeployedComponent {
             id,
@@ -570,6 +613,11 @@ impl ApplyRun<'_> {
         let Some(spec) = self.desired.get(change.name.as_str()).copied() else {
             return Ok(());
         };
+        if let (Some(UpdateStrategy::StartFirst), Some(old)) =
+            (change.strategy, change.container_id.as_ref())
+        {
+            return self.start_first_replace(change, spec, old);
+        }
         if let Some(id) = &change.container_id {
             eprintln!(
                 "  Replacing container '{}' ({})...",
@@ -589,6 +637,64 @@ impl ApplyRun<'_> {
         );
         self.ledger.save(&self.ledger_path)?;
         self.deployed.push(component);
+        Ok(())
+    }
+
+    /// Replaces a running component without dropping its published ports:
+    /// stage the new container, gate on its healthcheck, hand the ports
+    /// over, drain, retire the old one, and take over its name.
+    fn start_first_replace(
+        &mut self,
+        change: &PlannedChange,
+        spec: &DesiredSpec,
+        old: &ContainerId,
+    ) -> Result<()> {
+        let backend = &self.engine.backend;
+        eprintln!(
+            "  Replacing container '{}' start-first ({})...",
+            change.name,
+            change.reason.as_deref().unwrap_or("spec changed")
+        );
+        let mut config = spec.config.clone();
+        config.name = crate::plan::staged_name(&change.name);
+        config.defer_publish = true;
+        let staged = self.engine.deploy_config(spec, config)?;
+        let gate = spec.config.healthcheck.as_ref().map_or(Ok(()), |health| {
+            eprintln!(
+                "  Waiting for the new '{}' to become healthy...",
+                change.name
+            );
+            crate::supervise::wait_healthy(backend.as_ref(), &staged.id, health)
+        });
+        let handed_off = gate
+            .map_err(|message| ContainustError::Config {
+                message: format!(
+                    "new '{}' never became healthy; the old container keeps serving: {message}",
+                    change.name
+                ),
+            })
+            .and_then(|()| backend.handoff(old, &staged.id));
+        if let Err(error) = handed_off {
+            let _ = self.engine.retire(&staged.id, true);
+            return Err(error);
+        }
+        eprintln!(
+            "  Traffic moved to the new '{}'; draining the old one for {}s...",
+            change.name,
+            spec.stop_grace.as_secs_f32()
+        );
+        std::thread::sleep(spec.stop_grace);
+        self.engine.retire(old, true)?;
+        backend.rename(&staged.id, &change.name)?;
+        let _ = self.ledger.components.insert(
+            change.name.clone(),
+            AppliedComponent {
+                fingerprint: spec.fingerprint.clone(),
+                container_id: staged.id.clone(),
+            },
+        );
+        self.ledger.save(&self.ledger_path)?;
+        self.deployed.push(staged);
         Ok(())
     }
 }
@@ -625,21 +731,24 @@ struct DesiredSpec {
     config: ContainerConfig,
     fingerprint: String,
     upstreams: Vec<String>,
+    /// Effective update strategy (after fallbacks).
+    strategy: UpdateStrategy,
+    /// Why a declared `start-first` fell back to `recreate`.
+    strategy_note: Option<String>,
+    /// Drain time before the old container is stopped (start-first).
+    stop_grace: Duration,
 }
 
 /// Parses and validates a composition into desired specs in deploy order.
 ///
 /// Every component is validated up front so an invalid file fails before
 /// any container is touched.
-fn load_desired(ctst_path: &Path, offline: bool) -> Result<Vec<DesiredSpec>> {
-    let content = std::fs::read_to_string(ctst_path).map_err(|e| ContainustError::Io {
-        path: ctst_path.to_path_buf(),
-        source: e,
-    })?;
-    let composition = containust_compose::parser::parse_ctst(&content)?;
-    if offline {
-        containust_compose::validate_offline(&composition)?;
-    }
+fn load_desired(
+    ctst_path: &Path,
+    offline: bool,
+    supports_handoff: bool,
+) -> Result<Vec<DesiredSpec>> {
+    let composition = read_composition(ctst_path, offline)?;
     let order = resolve_deploy_order(&composition)?;
     let resolved = containust_compose::resolver::resolve_connections(&composition)?;
     let mut components: HashMap<&str, &containust_compose::parser::ast::ComponentDecl> =
@@ -672,14 +781,113 @@ fn load_desired(ctst_path: &Path, offline: bool) -> Result<Vec<DesiredSpec>> {
             component.image.clone().unwrap_or_default(),
             mappings,
         )?;
+        let update = resolve_update(component, &config, supports_handoff)?;
         desired.push(DesiredSpec {
             fingerprint: crate::plan::fingerprint(&config),
             upstreams: upstreams.remove(name.as_str()).unwrap_or_default(),
             component: component.clone(),
             config,
+            strategy: update.strategy,
+            strategy_note: update.note,
+            stop_grace: update.stop_grace,
         });
     }
     Ok(desired)
+}
+
+/// Reads and parses a composition, enforcing offline policy.
+fn read_composition(
+    ctst_path: &Path,
+    offline: bool,
+) -> Result<containust_compose::parser::ast::CompositionFile> {
+    let content = std::fs::read_to_string(ctst_path).map_err(|e| ContainustError::Io {
+        path: ctst_path.to_path_buf(),
+        source: e,
+    })?;
+    let composition = containust_compose::parser::parse_ctst(&content)?;
+    if offline {
+        containust_compose::validate_offline(&composition)?;
+    }
+    Ok(composition)
+}
+
+/// A component's resolved `update` / `stop_grace` settings.
+struct UpdatePolicy {
+    strategy: UpdateStrategy,
+    note: Option<String>,
+    stop_grace: Duration,
+}
+
+/// Resolves the declared update strategy, falling back to `recreate` (with
+/// the reason) where two copies of the component cannot run side by side.
+///
+/// Neither setting is part of the spec fingerprint: changing only how a
+/// component is updated does not replace it.
+fn resolve_update(
+    comp: &containust_compose::parser::ast::ComponentDecl,
+    config: &ContainerConfig,
+    supports_handoff: bool,
+) -> Result<UpdatePolicy> {
+    let invalid = |message: String| ContainustError::Config {
+        message: format!("component '{}': {message}", comp.name),
+    };
+    let strategy = comp
+        .update
+        .as_deref()
+        .map(UpdateStrategy::parse)
+        .transpose()
+        .map_err(invalid)?
+        .unwrap_or_default();
+    let stop_grace = match comp.stop_grace.as_deref() {
+        Some(text) => parse_duration_secs(text)
+            .map(Duration::from_secs)
+            .ok_or_else(|| {
+                invalid(format!(
+                    "invalid stop_grace '{text}' (expected e.g. \"5s\")"
+                ))
+            })?,
+        None => DEFAULT_STOP_GRACE,
+    };
+    if strategy == UpdateStrategy::StartFirst && config.healthcheck.is_none() {
+        return Err(invalid(
+            "update = \"start-first\" needs a healthcheck to decide when the new \
+             container is ready"
+                .into(),
+        ));
+    }
+    let note = (strategy == UpdateStrategy::StartFirst)
+        .then(|| start_first_blocker(config, supports_handoff))
+        .flatten();
+    Ok(UpdatePolicy {
+        strategy: if note.is_some() {
+            UpdateStrategy::Recreate
+        } else {
+            strategy
+        },
+        note,
+        stop_grace,
+    })
+}
+
+/// Why a start-first update cannot run for this config, if it cannot.
+fn start_first_blocker(config: &ContainerConfig, supports_handoff: bool) -> Option<String> {
+    let network = crate::network::NetworkMode::parse(Some(config.network.as_str()));
+    if !supports_handoff {
+        Some("start-first is not supported by this backend yet; using recreate".into())
+    } else if network.is_host() {
+        Some(
+            "host network: old and new container cannot bind the same port; \
+             set network = \"none\" to publish through the forwarder"
+                .into(),
+        )
+    } else {
+        network.shared_name().map(|name| {
+            format!(
+                "shared network '{name}': old and new container would listen in the \
+                 same network namespace; using recreate"
+            )
+        })
+    }
 }
 
 /// Maps each component to the components it `CONNECT`s to.
@@ -809,6 +1017,7 @@ fn build_deploy_config(
         restart,
         healthcheck,
         namespaces,
+        defer_publish: false,
     })
 }
 
@@ -1136,6 +1345,7 @@ mod tests {
         containers: Mutex<Vec<ContainerInfo>>,
         log: Mutex<Vec<String>>,
         next: std::sync::atomic::AtomicU32,
+        unhealthy: AtomicBool,
     }
 
     impl MemBackend {
@@ -1188,12 +1398,33 @@ mod tests {
             Ok(())
         }
 
-        fn exec(&self, _id: &ContainerId, _cmd: &[String]) -> Result<ExecOutput> {
+        fn exec(&self, id: &ContainerId, _cmd: &[String]) -> Result<ExecOutput> {
+            self.record(format!("probe {id}"));
             Ok(ExecOutput {
                 stdout: String::new(),
-                stderr: String::new(),
-                exit_code: 0,
+                stderr: "connection refused".into(),
+                exit_code: i32::from(self.unhealthy.load(Ordering::Acquire)),
             })
+        }
+
+        fn supports_handoff(&self) -> bool {
+            true
+        }
+
+        fn handoff(&self, from: &ContainerId, to: &ContainerId) -> Result<()> {
+            self.record(format!("handoff {from} -> {to}"));
+            Ok(())
+        }
+
+        fn rename(&self, id: &ContainerId, name: &str) -> Result<()> {
+            self.containers
+                .lock()
+                .expect("containers")
+                .iter_mut()
+                .filter(|info| info.id == *id)
+                .for_each(|info| info.name = name.into());
+            self.record(format!("rename {id} {name}"));
+            Ok(())
         }
 
         fn remove(&self, id: &ContainerId) -> Result<()> {
@@ -1320,6 +1551,198 @@ CONNECT api -> db
         assert_eq!(pruned.removed, vec!["api"]);
         assert_eq!(take_log(&backend), vec!["stop api-1", "remove api-1"]);
         assert_eq!(engine.list().expect("list").len(), 1);
+    }
+
+    const ROLLING: &str = r#"COMPONENT web {
+    image = "file:///web/v1"
+    network = "none"
+    ports = [8080]
+    update = "start-first"
+    stop_grace = "0s"
+    healthcheck = {
+        command = ["true"]
+        interval = "0s"
+        retries = 2
+    }
+}
+"#;
+
+    fn deployed_rolling(backend: &Arc<MemBackend>) -> (tempfile::TempDir, PathBuf, Engine) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("stack.ctst");
+        std::fs::write(&file, ROLLING).expect("write");
+        let engine = mem_engine(backend, dir.path().join("data"));
+        let _ = engine.apply(&file, ApplyOptions::default()).expect("apply");
+        let _ = take_log(backend);
+        std::fs::write(&file, ROLLING.replace("web/v1", "web/v2")).expect("rewrite");
+        (dir, file, engine)
+    }
+
+    #[test]
+    fn start_first_stages_gates_hands_off_then_retires_old() {
+        let backend = Arc::new(MemBackend::default());
+        let (_dir, file, engine) = deployed_rolling(&backend);
+
+        let plan = engine.plan(&file).expect("plan");
+        assert_eq!(plan.changes[0].strategy, Some(UpdateStrategy::StartFirst));
+        let outcome = engine.apply(&file, ApplyOptions::default()).expect("apply");
+
+        assert_eq!(
+            take_log(&backend),
+            vec![
+                "create web~next",
+                "start web~next-1",
+                "probe web~next-1",
+                "handoff web-0 -> web~next-1",
+                "stop web-0",
+                "remove web-0",
+                "rename web~next-1 web",
+            ]
+        );
+        assert_eq!(outcome.deployed[0].name, "web");
+        let names: Vec<_> = engine
+            .list()
+            .expect("list")
+            .into_iter()
+            .map(|info| info.name)
+            .collect();
+        assert_eq!(names, ["web"]);
+        assert!(engine.plan(&file).expect("plan").is_noop());
+    }
+
+    #[test]
+    fn unhealthy_replacement_is_discarded_and_old_keeps_serving() {
+        let backend = Arc::new(MemBackend::default());
+        let (_dir, file, engine) = deployed_rolling(&backend);
+        backend.unhealthy.store(true, Ordering::Release);
+
+        let error = engine
+            .apply(&file, ApplyOptions::default())
+            .expect_err("gate must fail");
+        assert!(
+            error.to_string().contains("never became healthy"),
+            "{error}"
+        );
+
+        let log = take_log(&backend);
+        assert_eq!(log.iter().filter(|e| e.starts_with("probe")).count(), 2);
+        assert!(!log.iter().any(|e| e.starts_with("handoff")));
+        assert_eq!(
+            &log[log.len() - 2..],
+            ["stop web~next-1", "remove web~next-1"]
+        );
+        let live = engine.list().expect("list");
+        assert_eq!(live.len(), 1);
+        assert_eq!(
+            (live[0].name.as_str(), live[0].state.as_str()),
+            ("web", "running")
+        );
+        // The ledger still records v1, so the change is retried next time.
+        assert_eq!(
+            engine.plan(&file).expect("plan").count(PlanAction::Replace),
+            1
+        );
+    }
+
+    #[test]
+    fn leftover_staged_container_is_removed_before_apply() {
+        let backend = Arc::new(MemBackend::default());
+        let (_dir, file, engine) = deployed_rolling(&backend);
+        let stray = ContainerConfig {
+            name: "web~next".into(),
+            image: "file:///web/v0".into(),
+            command: Vec::new(),
+            env: Vec::new(),
+            memory_bytes: None,
+            cpu_shares: None,
+            readonly_rootfs: true,
+            volumes: Vec::new(),
+            port: None,
+            ports: Vec::new(),
+            port_mappings: Vec::new(),
+            network: "none".into(),
+            restart: containust_common::types::RestartPolicy::Never,
+            healthcheck: None,
+            namespaces: containust_core::namespace::NamespaceConfig::default(),
+            defer_publish: true,
+        };
+        let id = backend.create(&stray).expect("stray");
+        let _ = backend.start(&id).expect("start stray");
+        let _ = take_log(&backend);
+
+        let plan = engine.plan(&file).expect("plan");
+        assert!(plan.changes.iter().any(|c| {
+            c.name == "web~next"
+                && c.reason
+                    .as_deref()
+                    .is_some_and(|r| r.contains("interrupted"))
+        }));
+        let _ = engine.apply(&file, ApplyOptions::default()).expect("apply");
+        let log = take_log(&backend);
+        assert_eq!(&log[..2], ["stop web~next-1", "remove web~next-1"]);
+        assert_eq!(engine.list().expect("list").len(), 1);
+    }
+
+    #[test]
+    fn start_first_requires_healthcheck_and_falls_back_on_host_network() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("stack.ctst");
+        let backend = Arc::new(MemBackend::default());
+        let engine = mem_engine(&backend, dir.path().join("data"));
+
+        let no_probe = "COMPONENT web {\n image = \"file:///w\"\n update = \"start-first\"\n}\n";
+        std::fs::write(&file, no_probe).expect("write");
+        let error = engine.plan(&file).expect_err("needs healthcheck");
+        assert!(error.to_string().contains("needs a healthcheck"), "{error}");
+
+        let host = ROLLING.replace("    network = \"none\"\n", "");
+        std::fs::write(&file, &host).expect("write");
+        let _ = engine.apply(&file, ApplyOptions::default()).expect("apply");
+        std::fs::write(&file, host.replace("web/v1", "web/v2")).expect("rewrite");
+        let plan = engine.plan(&file).expect("plan");
+        assert_eq!(plan.changes[0].strategy, Some(UpdateStrategy::Recreate));
+        assert!(
+            plan.changes[0]
+                .note
+                .as_deref()
+                .is_some_and(|n| n.contains("host network"))
+        );
+    }
+
+    #[test]
+    fn changing_only_update_settings_is_not_a_replace() {
+        let backend = Arc::new(MemBackend::default());
+        let (_dir, file, engine) = deployed_rolling(&backend);
+        std::fs::write(
+            &file,
+            ROLLING.replace("stop_grace = \"0s\"", "stop_grace = \"9s\""),
+        )
+        .expect("rewrite");
+        assert!(engine.plan(&file).expect("plan").is_noop());
+    }
+
+    #[test]
+    fn invalid_update_values_are_rejected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("stack.ctst");
+        let backend = Arc::new(MemBackend::default());
+        let engine = mem_engine(&backend, dir.path().join("data"));
+        for (needle, replacement, expected) in [
+            (
+                "update = \"start-first\"",
+                "update = \"blue-green\"",
+                "invalid update strategy",
+            ),
+            (
+                "stop_grace = \"0s\"",
+                "stop_grace = \"soon\"",
+                "invalid stop_grace",
+            ),
+        ] {
+            std::fs::write(&file, ROLLING.replace(needle, replacement)).expect("write");
+            let error = engine.plan(&file).expect_err("invalid");
+            assert!(error.to_string().contains(expected), "{error}");
+        }
     }
 
     #[test]

@@ -168,6 +168,44 @@ impl fmt::Display for RestartPolicy {
     }
 }
 
+/// How `ctst run` replaces a component whose spec changed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UpdateStrategy {
+    /// Stop and remove the old container, then create the new one (default).
+    #[default]
+    Recreate,
+    /// Start the new container, wait until it is healthy, move published
+    /// ports to it, then retire the old one.
+    StartFirst,
+}
+
+impl UpdateStrategy {
+    /// Parses the `.ctst` `update` property value.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when the value is not `recreate` or `start-first`.
+    pub fn parse(value: &str) -> std::result::Result<Self, String> {
+        match value.trim() {
+            "recreate" => Ok(Self::Recreate),
+            "start-first" => Ok(Self::StartFirst),
+            other => Err(format!(
+                "invalid update strategy '{other}' (expected recreate or start-first)"
+            )),
+        }
+    }
+}
+
+impl fmt::Display for UpdateStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Recreate => write!(f, "recreate"),
+            Self::StartFirst => write!(f, "start-first"),
+        }
+    }
+}
+
 /// Health probe configuration attached to a container.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HealthcheckSpec {

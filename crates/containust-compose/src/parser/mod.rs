@@ -188,6 +188,8 @@ fn parse_property(cursor: &mut TokenCursor<'_>, comp: &mut ComponentDecl) -> Res
         "restart" => comp.restart = Some(cursor.expect_string()?),
         "network" => comp.network = Some(cursor.expect_string()?),
         "healthcheck" => comp.healthcheck = Some(parse_healthcheck(cursor)?),
+        "update" => comp.update = Some(cursor.expect_string()?),
+        "stop_grace" => comp.stop_grace = Some(cursor.expect_string()?),
         _ => {
             return Err(parse_err(format!("unknown component property: {key}")));
         }
@@ -414,6 +416,8 @@ COMPONENT db FROM pg {
     hostname = "web-server"
     restart = "always"
     network = "bridge"
+    update = "start-first"
+    stop_grace = "3s"
     healthcheck = {
         command = ["curl", "-f", "http://localhost:8080/health"]
         interval = "30s"
@@ -441,6 +445,8 @@ COMPONENT db FROM pg {
         assert_eq!(c.hostname.as_deref(), Some("web-server"));
         assert_eq!(c.restart.as_deref(), Some("always"));
         assert_eq!(c.network.as_deref(), Some("bridge"));
+        assert_eq!(c.update.as_deref(), Some("start-first"));
+        assert_eq!(c.stop_grace.as_deref(), Some("3s"));
         let hc = c.healthcheck.as_ref().expect("healthcheck should exist");
         assert_eq!(
             hc.command,

@@ -1,6 +1,7 @@
 //! `ctst plan` — Display planned infrastructure changes before applying.
 
 use clap::Args;
+use containust_common::types::UpdateStrategy;
 use containust_runtime::plan::PlanAction;
 
 /// Arguments for the `plan` command.
@@ -95,12 +96,19 @@ fn print_plan(
             .reason
             .as_deref()
             .map_or_else(String::new, |r| format!(" {DIM}({r}){RESET}"));
+        let strategy = match change.strategy {
+            Some(UpdateStrategy::StartFirst) => format!(" {CYAN}[start-first]{RESET}"),
+            _ => String::new(),
+        };
         println!(
-            "  {color}{} {:<8}{RESET} {BOLD}{}{RESET}{reason}",
+            "  {color}{} {:<8}{RESET} {BOLD}{}{RESET}{reason}{strategy}",
             change.action.symbol(),
             change.action.to_string(),
             change.name
         );
+        if let Some(note) = &change.note {
+            println!("    {YELLOW}note:{RESET} {note}");
+        }
         if matches!(change.action, PlanAction::Create | PlanAction::Replace) {
             print_component_details(composition, &change.name);
         }
