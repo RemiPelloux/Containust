@@ -294,8 +294,9 @@ every replace has a gap of stop time + start time + boot time.
 - **Staged deploy.** The new container is created under a temporary name
   (`<name>~next`) with the same spec. When healthy, the target file is
   swapped, the old container is drained (configurable `stop_grace`, default
-  10 s) and retired, and the new one is renamed to `<name>` in state and the
-  ledger in one atomic state write.
+  2 s) and retired, and the new one is renamed to `<name>`; the ledger is
+  written last, so an interrupted update is retried and its `~next` leftover
+  removed on the next run.
 - **Failure is non-destructive.** If the new container does not become
   healthy within `start_period + retries × interval`, it is removed and the
   old container keeps serving; `ctst run` exits non-zero with the probe
@@ -308,31 +309,33 @@ every replace has a gap of stop time + start time + boot time.
 
 ### Wave 1 — Runtime
 
-- [ ] **P13.1 Swappable forwarder target.** Per-port target file +
+- [x] **P13.1 Swappable forwarder target.** Per-port target file +
   per-connection lookup; forwarder survives container replacement; tests for
   swap under load (no refused connections) and stale-target cleanup.
-- [ ] **P13.2 Staged replace in the apply engine.** `start-first` path in
+- [x] **P13.2 Staged replace in the apply engine.** `start-first` path in
   `ApplyRun`: deploy `~next`, health gate, swap, drain, retire, rename;
   crash-safe ordering (ledger + state written so `ctst ps` reconciles a
   half-finished swap).
-- [ ] **P13.3 Health gate.** Reuse `supervise` probes synchronously with a
+- [x] **P13.3 Health gate.** Reuse `supervise` probes synchronously with a
   bounded wait; probe output surfaced in the error.
 
 ### Wave 2 — Language, plan, VM
 
-- [ ] **P13.4 `.ctst` grammar.** `update` and `stop_grace` properties,
+- [x] **P13.4 `.ctst` grammar.** `update` and `stop_grace` properties,
   validation (`start-first` needs `healthcheck`), fingerprint excludes
   `update` so changing strategy alone is not a replace.
-- [ ] **P13.5 Plan output.** Strategy in text and `--json`; fallback warnings.
+- [x] **P13.5 Plan output.** Strategy in text and `--json`; fallback warnings.
 - [ ] **P13.6 VM backend.** Agent-side forwarder swap on macOS/Windows; QEMU
-  smoke covers one start-first replace.
+  smoke covers one start-first replace. *Deferred to Sprint 14:* the VM
+  backend reports no handoff support, so start-first falls back to
+  `recreate` there with a plan note (no silent degradation).
 
 ### Wave 3 — Proof and docs
 
-- [ ] **P13.7 Downtime gate.** Integration test (privileged Linux CI): a
+- [x] **P13.7 Downtime gate.** Integration test (privileged Linux CI): a
   client loops HTTP requests against a published port while `ctst run`
   replaces the component; zero failed requests for `start-first`.
-- [ ] **P13.8 Docs.** CTST_LANG, CLI_REFERENCE, HowToUse, site, SUPPORT_POLICY
+- [x] **P13.8 Docs.** CTST_LANG, CLI_REFERENCE, HowToUse, site, SUPPORT_POLICY
   (remove blue/green from the deferred list), CHANGELOG.
 
 **Exit gate:** P13.7 green on privileged Linux CI and QEMU smoke; `recreate`

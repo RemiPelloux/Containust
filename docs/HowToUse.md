@@ -92,6 +92,7 @@ ctst rm app
 | See what would change | `ctst plan stack.ctst` |
 | Start or update the stack (safe to re-run) | `ctst run stack.ctst --detach` |
 | Remove undeclared containers | `ctst run -d --prune stack.ctst` |
+| Update with no downtime | `update = "start-first"` + healthcheck, then `ctst run -d` |
 | CI drift check | `ctst plan --detailed-exitcode stack.ctst` |
 | Import / resolve images | `ctst build stack.ctst` |
 | Dry-run import | `ctst build stack.ctst --dry-run` |
@@ -220,6 +221,39 @@ COMPONENT api {
 ```
 
 See `examples/healthcheck_example.ctst` for a full sample.
+
+### Zero-downtime updates
+
+By default a changed component is stopped and then recreated. With
+`update = "start-first"`, `ctst run` starts the new container first, waits for
+its healthcheck, switches the published port over, and only then stops the old
+one, so clients see no failed requests:
+
+```text
+COMPONENT api {
+    image      = "image://library/myapi@sha256:…"
+    network    = "none"          # publish through the forwarder
+    ports      = [8080]
+    update     = "start-first"   # needs a healthcheck
+    stop_grace = "5s"            # drain time before the old one stops
+    healthcheck = {
+        command  = ["wget", "-qO-", "http://127.0.0.1:8080/health"]
+        interval = "2s"
+        retries  = 5
+    }
+}
+EXPOSE 80:8080
+```
+
+```bash
+ctst plan        # ~ replace  api (spec changed) [start-first]
+ctst run -d      # stages api~next, waits healthy, switches, drains, retires
+```
+
+If the new version never becomes healthy, it is discarded and the old one
+keeps serving. Start-first needs `network = "none"` (or an `EXPOSE` remap);
+on the host network or a shared network `ctst plan` prints a note and the
+component is recreated instead. Keep `recreate` for databases with volumes.
 
 ---
 

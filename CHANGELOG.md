@@ -10,7 +10,32 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+### Added
+
+- **Zero-downtime updates.** `update = "start-first"` makes `ctst run` start
+  the replacement as `<name>~next`, wait for its healthcheck, switch the
+  published ports to it atomically, drain the old container for `stop_grace`
+  (default `2s`), then remove it and rename the new one. An unhealthy
+  replacement is discarded and the old container keeps serving; leftovers
+  from an interrupted update are removed by the next `ctst run`.
+- `.ctst` properties `update` (`recreate` | `start-first`) and `stop_grace`.
+  `start-first` requires a `healthcheck`. Neither is part of the spec
+  fingerprint, so changing them alone does not replace a container.
+- `ctst plan` tags start-first replacements (`[start-first]`, JSON
+  `"strategy"`) and prints a `note:` when start-first falls back to
+  `recreate` (host network, shared network, VM backend).
+- Runtime/SDK: `ContainerBackend::{supports_handoff, handoff, rename}`,
+  `ContainerConfig::defer_publish`, `supervise::wait_healthy`,
+  `UpdateStrategy` in `containust-common`.
+
 ### Fixed
+
+- Port forwarders: per-connection helpers no longer keep the listening
+  socket open, so a stopped forwarder frees its host port immediately, and
+  finished helpers are reaped instead of lingering as zombies.
+- Removing a container now unmounts and deletes its persisted network
+  namespace (`.containust/networks/<id>/ns`).
+- Docs: `network` defaults to `"none"` (private namespace), not `"bridge"`.
 
 - Release: the packaging-bump job now checks out `main` and passes
   `base: main`, so the Homebrew/winget PR opens from a tag-triggered run

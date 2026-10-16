@@ -147,7 +147,7 @@ ctst plan [OPTIONS] [FILE]
 | Argument / Flag | Description | Default |
 |---|---|---|
 | `FILE` | Path to the `.ctst` composition file | `containust.ctst` |
-| `--json` | Print the plan as JSON (`{"changes":[{"name","action","reason",...}]}`) | `false` |
+| `--json` | Print the plan as JSON (`{"changes":[{"name","action","reason","strategy","note",...}]}`) | `false` |
 | `--detailed-exitcode` | Exit `2` when the plan has changes, `0` when the stack is in sync | `false` |
 
 Inherits all [global options](#global-options).
@@ -175,7 +175,12 @@ been run gets no state directory.
 | `~` | `replace` | Spec changed, no recorded spec, or an upstream (`CONNECT` target) is being replaced |
 | `>` | `start` | Same spec, container stopped or failed |
 | `=` | `keep` | Same spec and running — untouched |
-| `-` | `remove` | Container no longer declared (applied only by `ctst run --prune`) |
+| `-` | `remove` | Container no longer declared (applied only by `ctst run --prune`), or a `<name>~next` left over from an interrupted start-first update (always removed by the next `ctst run`) |
+
+A `replace` of a component with `update = "start-first"` is tagged
+`[start-first]` (JSON: `"strategy": "start-first"`). When start-first cannot
+apply (host network, shared network, or the VM backend), the plan prints a
+`note:` line with the reason and the component is recreated instead.
 
 ```
 $ ctst plan production.ctst
@@ -184,7 +189,7 @@ Plan for production.ctst
   ~ replace  db (spec changed)
       image: tar:///backups/pg16.tar
       port: 5432
-  ~ replace  api (upstream 'db' replaced)
+  ~ replace  api (upstream 'db' replaced) [start-first]
       image: file:///opt/images/myapp
       port: 8080
   = keep     cache
@@ -259,6 +264,12 @@ Inherits all [global options](#global-options).
 - `replace` components are stopped, removed, and re-created **one at a time in
   dependency order** — upstreams first, then their dependents — so a changed
   `db` rolls through `api` without touching unrelated services.
+- `replace` components with `update = "start-first"` (since 1.4.0) are replaced
+  **without downtime**: the new container starts as `<name>~next`, must pass
+  its healthcheck, then receives the published ports in one atomic switch; the
+  old container is drained for `stop_grace` and removed. If the new container
+  never becomes healthy it is discarded, the old one keeps serving, and
+  `ctst run` exits non-zero. See [CTST_LANG.md §13](CTST_LANG.md#13-update-strategy).
 - `create` components are created and started.
 - `remove` (undeclared) containers are only touched with `--prune`.
 

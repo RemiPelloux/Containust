@@ -273,6 +273,25 @@ Plan for stack.ctst
 The ledger is written after each component. If an apply fails part-way, the
 next run resumes from where it stopped.
 
+New in **1.4.0**: zero-downtime updates. Give a component
+`update = "start-first"` and a healthcheck, and `~ replace` stops being a
+stop-then-start:
+
+```text
+  ~ replace  api (spec changed) [start-first]
+
+  Creating container 'api~next'...          new version starts beside the old one
+  Waiting for the new 'api' to become healthy...
+  Traffic moved to the new 'api'; draining the old one for 5s...
+                                             old one stops, api~next becomes api
+```
+
+The published port never closes: the forwarder switches its target in one
+atomic step, so new connections reach the new container while open ones
+finish on the old one. If the new version never becomes healthy it is
+thrown away and the old one keeps serving. Details in
+[CTST_LANG.md §13](docs/CTST_LANG.md#13-update-strategy).
+
 ## ⌁ How it works
 
 <p align="center">

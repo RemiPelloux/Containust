@@ -86,6 +86,13 @@ enum CommandFormat {
 #[derive(Debug, Deserialize)]
 struct Deploy {
     resources: Option<Resources>,
+    update_config: Option<UpdateConfig>,
+}
+
+/// Rolling-update settings (`deploy.update_config`).
+#[derive(Debug, Deserialize)]
+struct UpdateConfig {
+    order: Option<String>,
 }
 
 /// Resource limits/reservations.
@@ -197,6 +204,7 @@ fn write_component(out: &mut String, name: &str, svc: &Service) -> anyhow::Resul
     write_restart(out, svc);
     write_network(out, svc);
     write_healthcheck(out, svc);
+    write_update(out, svc);
 
     out.push_str("}\n");
     Ok(())
@@ -438,6 +446,28 @@ fn write_restart(out: &mut String, svc: &Service) {
 fn write_network(out: &mut String, svc: &Service) {
     if svc.networks.len() == 1 {
         let _ = writeln!(out, "    network = \"{}\"", svc.networks[0]);
+    }
+}
+
+/// Maps `deploy.update_config.order: start-first` to `update`, which in
+/// `.ctst` needs a healthcheck to gate the switch.
+fn write_update(out: &mut String, svc: &Service) {
+    let start_first = svc
+        .deploy
+        .as_ref()
+        .and_then(|deploy| deploy.update_config.as_ref())
+        .and_then(|config| config.order.as_deref())
+        == Some("start-first");
+    if !start_first {
+        return;
+    }
+    if svc.healthcheck.is_some() {
+        out.push_str("    update = \"start-first\"\n");
+    } else {
+        out.push_str(
+            "    // update_config.order: start-first needs a healthcheck in .ctst; \
+             add one and set update = \"start-first\"\n",
+        );
     }
 }
 
@@ -885,6 +915,29 @@ services:
         let result = convert_string(yaml).expect("conversion should succeed");
         assert!(result.contains("memory = \"256MiB\""));
         assert!(result.contains("cpu = \"512\""));
+    }
+
+    #[test]
+    fn test_convert_update_order_start_first() {
+        let with_probe = r#"
+services:
+  app:
+    image: myapp
+    healthcheck:
+      test: ["CMD", "true"]
+    deploy:
+      update_config:
+        order: start-first
+"#;
+        let result = convert_string(with_probe).expect("conversion should succeed");
+        assert!(result.contains("update = \"start-first\""), "{result}");
+
+        let without_probe =
+            with_probe.replace("    healthcheck:\n      test: [\"CMD\", \"true\"]\n", "");
+        let result = convert_string(&without_probe).expect("conversion should succeed");
+        assert!(!result.contains("update = \"start-first\"\n    healthcheck"));
+        assert!(result.contains("// update_config.order: start-first needs a healthcheck"));
+        let _ = containust_compose::parser::parse_ctst(&result).expect("converted file parses");
     }
 
     #[test]

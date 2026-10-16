@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>.ctst language — Containust Docs</title>
-    <meta name="description" content="Containust .ctst composition language: COMPONENT, CONNECT, EXPOSE, healthcheck, restart." />
+    <meta name="description" content="Containust .ctst composition language: COMPONENT, CONNECT, EXPOSE, healthcheck, restart, start-first updates." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -179,6 +179,10 @@ ctst run stack.ctst --detach</code></pre>
                 <td><code>network</code></td>
                 <td><code>"none"</code> (default) · <code>"bridge"</code> · named net</td>
               </tr>
+              <tr>
+                <td><code>update</code> / <code>stop_grace</code></td>
+                <td><code>"recreate"</code> (default) · <code>"start-first"</code> · drain <code>"2s"</code></td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -220,6 +224,34 @@ EXPOSE 80:8080       # host 80 → container 8080</code></pre>
           Policies are enforced when you run <code>ctst ps</code> or <code>ctst run</code>
           — there is no background supervisor daemon.
         </p>
+
+        <h2 id="update">Zero-downtime updates</h2>
+        <p data-searchable="update start-first recreate zero downtime rolling blue green stop_grace">
+          With <code>update = "start-first"</code>, <code>ctst run</code> starts the new
+          container as <code>&lt;name&gt;~next</code>, waits for its healthcheck, switches the
+          published ports to it in one atomic step, drains the old one for
+          <code>stop_grace</code>, then removes it. An unhealthy replacement is discarded and
+          the old container keeps serving.
+        </p>
+        <div class="codeblock">
+          <pre><code>COMPONENT api {
+    image      = "image://library/myapi@sha256:…"
+    network    = "none"          # publish through the forwarder
+    ports      = [8080]
+    update     = "start-first"   # requires a healthcheck
+    stop_grace = "5s"
+    healthcheck = {
+        command  = ["wget", "-qO-", "http://127.0.0.1:8080/health"]
+        interval = "2s"
+    }
+}
+EXPOSE 80:8080</code></pre>
+        </div>
+        <div class="callout">
+          <strong>Falls back to recreate</strong> on the host network, inside a shared
+          network, and on the macOS/Windows VM backend; <code>ctst plan</code> prints a note
+          explaining why.
+        </div>
 
         <h2 id="templates">IMPORT / FROM</h2>
         <p data-searchable="import from template inheritance">
