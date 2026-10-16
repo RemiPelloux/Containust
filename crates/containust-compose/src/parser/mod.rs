@@ -134,7 +134,13 @@ fn parse_component(cursor: &mut TokenCursor<'_>) -> Result<ComponentDecl> {
 
     let from_template = if cursor.peek() == Some(&Token::From) {
         let _ = cursor.advance();
-        Some(cursor.expect_identifier()?)
+        let mut template = cursor.expect_identifier()?;
+        // `FROM alias.template` names a template from an aliased IMPORT.
+        if cursor.peek() == Some(&Token::Dot) {
+            let _ = cursor.advance();
+            template = format!("{template}.{}", cursor.expect_identifier()?);
+        }
+        Some(template)
     } else {
         None
     };

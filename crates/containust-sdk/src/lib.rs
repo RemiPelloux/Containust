@@ -2,7 +2,8 @@
 //!
 //! Public SDK for using Containust as a Rust library.
 //!
-//! Provides three main entry points:
+//! Provides four main entry points:
+//! - [`deploy`]: Plan and apply a `.ctst` composition (what `ctst plan` / `ctst run` do).
 //! - [`ContainerBuilder`](builder::ContainerBuilder): Fluent API for configuring and launching containers.
 //! - [`GraphResolver`](graph_resolver::GraphResolver): Validates and resolves component dependency graphs.
 //! - [`EventListener`](event::EventListener): Subscribes to container lifecycle events for monitoring.
@@ -19,5 +20,6 @@
 //! ```
 
 pub mod builder;
+pub mod deploy;
 pub mod event;
 pub mod graph_resolver;

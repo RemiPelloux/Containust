@@ -795,16 +795,12 @@ fn load_desired(
     Ok(desired)
 }
 
-/// Reads and parses a composition, enforcing offline policy.
+/// Reads a composition (resolving IMPORT / FROM), enforcing offline policy.
 fn read_composition(
     ctst_path: &Path,
     offline: bool,
 ) -> Result<containust_compose::parser::ast::CompositionFile> {
-    let content = std::fs::read_to_string(ctst_path).map_err(|e| ContainustError::Io {
-        path: ctst_path.to_path_buf(),
-        source: e,
-    })?;
-    let composition = containust_compose::parser::parse_ctst(&content)?;
+    let composition = containust_compose::template::load_file(ctst_path)?;
     if offline {
         containust_compose::validate_offline(&composition)?;
     }

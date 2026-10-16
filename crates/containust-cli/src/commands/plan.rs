@@ -40,9 +40,8 @@ const RESET: &str = "\x1b[0m";
 /// inspection fails.
 pub fn execute(args: PlanArgs, options: &super::RuntimeOptions) -> anyhow::Result<()> {
     let path = std::path::Path::new(&args.file);
-    let content = std::fs::read_to_string(path)?;
     let composition =
-        containust_compose::parser::parse_ctst(&content).map_err(|e| anyhow::anyhow!("{e}"))?;
+        containust_compose::template::load_file(path).map_err(|e| anyhow::anyhow!("{e}"))?;
     let engine = options.engine_for_project(path);
     let plan = engine.plan(path).map_err(|e| anyhow::anyhow!("{e}"))?;
 

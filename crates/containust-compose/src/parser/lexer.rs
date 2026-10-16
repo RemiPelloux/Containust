@@ -55,6 +55,8 @@ pub enum Token {
     Comma,
     /// `:` port mapping separator.
     Colon,
+    /// `.` separating an import alias from a template name.
+    Dot,
 }
 
 /// Skippable items: whitespace or line comments.
@@ -150,6 +152,7 @@ fn symbol(input: &str) -> IResult<&str, Token> {
         value(Token::Equals, char('=')),
         value(Token::Comma, char(',')),
         value(Token::Colon, char(':')),
+        value(Token::Dot, char('.')),
     ))
     .parse(input)
 }
