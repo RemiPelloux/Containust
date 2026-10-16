@@ -10,6 +10,70 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+Hardening release from a review of 1.4.0. **Upgrade note:** components that
+use `FROM` templates or are the source of a `CONNECT` get a new spec
+fingerprint (they now receive their inherited properties and a
+`_CONNECTION_STRING`), so the first `ctst run` after upgrading replaces them
+once.
+
+### Fixed
+
+- **`IMPORT` / `FROM` were parsed but never applied**: a component declared
+  `FROM <template>` deployed with an empty image. Templates are now resolved
+  (local imports, `alias.name`, chains, `env` merge); cycles, unknown
+  templates and duplicate names fail with clear errors, and remote imports
+  fail closed instead of being ignored.
+- **Start-first recovery**: an update interrupted after the ports moved is now
+  completed by the next `ctst run` (the serving `~next` is promoted) instead of
+  being undone, which took the service down.
+- **Concurrent applies**: a project-wide `apply.lock` makes a second
+  `ctst run` fail fast instead of deleting the first one's staged container.
+- A failed port handoff gives the ports back to the old container.
+- Port forwarders bind every port before repointing any link, so a taken port
+  no longer redirects another container's traffic; two components publishing
+  the same host port are rejected at plan time.
+- Forwarders keep only stdio + their listener (they inherited the state-lock
+  descriptor and could block every later `ctst` after a crash), reap their
+  connection handlers, cap concurrent relays at 512, and are no longer
+  considered alive as zombies.
+- Health probes honour `timeout` (the probe's process group is killed) in the
+  start-first gate and in `ctst ps` reconciliation; the gate has an overall
+  deadline. Durations are overflow-checked and capped at 24h.
+- Restarting a stopped container with forwarded ports failed: its old netns
+  bind mount was still in place.
+- `ports = [8080]` together with `EXPOSE 8080` was rejected as a duplicate.
+- macOS/Windows: with no VM started, every `ctst ps` / `ctst plan` waited
+  ~6s (≈20s on Windows) while a retrying RPC probed the agent; listing now
+  returns immediately when there is no VM pid record.
+- `ctst plan --detailed-exitcode` exits `1` on any error, so an invalid file
+  can no longer look like drift (`2`).
+- `ctst convert`: `CMD-SHELL` / string healthchecks run through `/bin/sh -c`,
+  `disable` / `NONE` produce no probe, and quotes are escaped.
+- `CONNECT` env prefixes replace `-` / `.` with `_` (`MY_DB_HOST`, not
+  `MY-DB_HOST`); `_PORT` falls back to the first `ports` entry.
+
+### Added
+
+- `<TARGET>_CONNECTION_STRING` for `CONNECT` (scheme from the image:
+  postgres, mysql, redis, mongodb, amqp, else http), as documented.
+- `ctst plan` / `ctst run` warn about a `CONNECT` whose two components are not
+  on the same shared network (the name would not resolve); JSON `"warnings"`.
+- `containust_sdk::deploy`: the plan/apply engine for library users.
+- `ContainerBackend::{exec_timeout, is_staged}`.
+- Tests that plan every `.ctst` example in the README, docs, site and
+  `examples/` with the real CLI.
+
+### Documentation
+
+- Every documented `.ctst` example now parses and plans without warnings
+  (string port lists, `#` comments, cross-network `CONNECT`s were wrong).
+- Network modes, `CONNECT` reachability, `IMPORT`/`FROM` semantics and the
+  start-first limits (no `CONNECT` yet) are described as implemented.
+- Exit codes match the binary (`3`/`4` were never used); `ctst run` output and
+  startup-order descriptions match reality.
+- Threat model rewritten for 1.4 (forwarders, target links, apply lock,
+  recovery) with accepted risks.
+
 ## [1.4.0] — 2026-10-16
 
 ### Added

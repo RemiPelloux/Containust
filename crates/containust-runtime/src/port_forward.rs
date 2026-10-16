@@ -63,22 +63,32 @@ pub fn targets_exist(data_dir: &Path, mappings: &[PortMapping]) -> bool {
 
 /// Starts one forwarder process per port mapping, targeting `netns`.
 ///
+/// Every port is bound before any target link changes, so a port that is
+/// already taken (by another container's forwarder, say) fails the call
+/// without redirecting that port's existing traffic.
+///
 /// # Errors
 ///
-/// Returns an error when a link cannot be written, a listener cannot
-/// bind, or fork fails.
+/// Returns an error when a listener cannot bind, a link cannot be
+/// written, or fork fails.
 pub fn start_forwarders(
     data_dir: &Path,
     netns: &Path,
     mappings: &[PortMapping],
 ) -> Result<Vec<u32>> {
+    let listeners = mappings
+        .iter()
+        .map(|mapping| bind(mapping.host))
+        .collect::<Result<Vec<_>>>()?;
     let mut pids = Vec::with_capacity(mappings.len());
-    for mapping in mappings {
-        point_target(data_dir, mapping.host, netns)?;
-        match start_one(&target_link(data_dir, mapping.host), *mapping) {
+    for (mapping, listener) in mappings.iter().zip(listeners) {
+        let started = point_target(data_dir, mapping.host, netns).and_then(|()| {
+            spawn_forwarder(listener, &target_link(data_dir, mapping.host), *mapping)
+        });
+        match started {
             Ok(pid) => pids.push(pid),
             Err(error) => {
-                stop_forwarders(&pids);
+                stop_forwarders_and_wait(&pids);
                 return Err(error);
             }
         }
@@ -128,41 +138,69 @@ pub fn stop_forwarders_and_wait(pids: &[u32]) {
     }
 }
 
+/// Liveness that is not fooled by zombies: a forwarder that is our own
+/// child (long-lived SDK hosts) is reaped here; anything else is probed.
 fn pid_alive(pid: u32) -> bool {
+    use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+
     let Ok(raw) = i32::try_from(pid) else {
         return false;
     };
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(raw), None).is_ok()
+    let pid = nix::unistd::Pid::from_raw(raw);
+    match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
+        Ok(WaitStatus::StillAlive) => true,
+        Ok(_) => false,
+        Err(_) => nix::sys::signal::kill(pid, None).is_ok(),
+    }
 }
 
-fn start_one(target: &Path, mapping: PortMapping) -> Result<u32> {
-    let listener =
-        TcpListener::bind(("127.0.0.1", mapping.host)).map_err(|source| ContainustError::Io {
-            path: PathBuf::from(format!("127.0.0.1:{}", mapping.host)),
-            source,
-        })?;
-    let target = target.to_path_buf();
+fn bind(host_port: u16) -> Result<TcpListener> {
+    TcpListener::bind(("127.0.0.1", host_port)).map_err(|source| ContainustError::Io {
+        path: PathBuf::from(format!("127.0.0.1:{host_port}")),
+        source,
+    })
+}
 
-    // SAFETY: forwarder is a dedicated single-threaded child.
+fn spawn_forwarder(listener: TcpListener, target: &Path, mapping: PortMapping) -> Result<u32> {
+    let target = target.to_path_buf();
+    // SAFETY: the child only uses fork-safe primitives before it settles
+    // into its own single-threaded accept loop.
     let fork_result = unsafe { fork() }.map_err(|e| ContainustError::Config {
         message: format!("fork port-forwarder failed: {e}"),
     })?;
     match fork_result {
         ForkResult::Parent { child } => Ok(u32::try_from(child.as_raw()).unwrap_or(u32::MAX)),
         ForkResult::Child => {
+            let listener = keep_only_listener(listener);
             detach_from_caller();
-            // Reap per-connection children automatically.
-            // SAFETY: setting a disposition to SIG_IGN installs no handler.
-            let _ = unsafe {
-                nix::sys::signal::signal(
-                    nix::sys::signal::Signal::SIGCHLD,
-                    nix::sys::signal::SigHandler::SigIgn,
-                )
-            };
             forwarder_loop(&listener, &target, mapping);
             // SAFETY: forwarder never returns to parent.
             unsafe { libc::_exit(0) };
         }
+    }
+}
+
+/// Moves the listener to fd 3 and closes every other inherited descriptor
+/// (state lock, log files, sockets of the `ctst` that forked us), so a
+/// long-lived forwarder never pins resources of its parent.
+fn keep_only_listener(listener: TcpListener) -> TcpListener {
+    use std::os::fd::{FromRawFd, IntoRawFd};
+
+    const LISTENER_FD: i32 = 3;
+    let raw = listener.into_raw_fd();
+    // SAFETY: plain descriptor shuffling in this single-threaded child.
+    unsafe {
+        if raw != LISTENER_FD {
+            let _ = libc::dup2(raw, LISTENER_FD);
+            let _ = libc::close(raw);
+        }
+        let first = (LISTENER_FD + 1).unsigned_abs();
+        if libc::syscall(libc::SYS_close_range, first, u32::MAX, 0_u32) != 0 {
+            for fd in LISTENER_FD + 1..4096 {
+                let _ = libc::close(fd);
+            }
+        }
+        TcpListener::from_raw_fd(LISTENER_FD)
     }
 }
 
@@ -171,37 +209,67 @@ fn start_one(target: &Path, mapping: PortMapping) -> Result<u32> {
 /// `/dev/null`, so callers capturing `ctst run -d` output see EOF.
 fn detach_from_caller() {
     let _ = nix::unistd::setsid();
-    if let Ok(null) = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/null")
-    {
-        for fd in 0..=2 {
-            // SAFETY: dup2 onto the standard descriptors of this child only.
-            let _ = unsafe { libc::dup2(null.as_raw_fd(), fd) };
+    // SAFETY: open/dup2/close on this single-threaded child's descriptors.
+    unsafe {
+        let null = libc::open(c"/dev/null".as_ptr(), libc::O_RDWR);
+        if null >= 0 {
+            for fd in 0..=2 {
+                if fd != null {
+                    let _ = libc::dup2(null, fd);
+                }
+            }
+            if null > 2 {
+                let _ = libc::close(null);
+            }
         }
     }
 }
 
+/// Most connections one forwarder relays at once; further clients wait in
+/// the listen backlog until a slot frees up.
+const MAX_CONNECTIONS: usize = 512;
+
 fn forwarder_loop(listener: &TcpListener, target: &Path, mapping: PortMapping) {
+    let mut active = 0_usize;
     for incoming in listener.incoming() {
         let Ok(client) = incoming else {
             continue;
         };
+        active = active.saturating_sub(reap_children(false));
+        while active >= MAX_CONNECTIONS {
+            active = active.saturating_sub(reap_children(true).max(1));
+        }
         // SAFETY: per-connection child; setns requires single-threaded.
         match unsafe { fork() } {
             Ok(ForkResult::Child) => {
-                // Release the inherited listener so stopping the forwarder
-                // frees the host port even while connections are open.
+                // Release the listener so stopping the forwarder frees the
+                // host port even while connections are open.
                 // SAFETY: the child never touches the listener again.
                 let _ = unsafe { libc::close(listener.as_raw_fd()) };
                 let _ = relay_one(client, target, mapping.container);
                 // SAFETY: connection handler exit.
                 unsafe { libc::_exit(0) };
             }
-            Ok(ForkResult::Parent { .. }) | Err(_) => {}
+            Ok(ForkResult::Parent { .. }) => active += 1,
+            Err(_) => {}
         }
     }
+}
+
+/// Reaps finished connection handlers; with `block`, waits for at least one.
+fn reap_children(block: bool) -> usize {
+    use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+
+    let mut reaped = 0;
+    let mut flags = (!block).then_some(WaitPidFlag::WNOHANG);
+    while let Ok(status) = waitpid(None, flags) {
+        if status == WaitStatus::StillAlive {
+            break;
+        }
+        reaped += 1;
+        flags = Some(WaitPidFlag::WNOHANG);
+    }
+    reaped
 }
 
 fn relay_one(client: TcpStream, netns: &Path, container_port: u16) -> std::io::Result<()> {

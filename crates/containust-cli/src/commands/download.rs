@@ -128,11 +128,9 @@ fn load_composition(
     if !path.exists() && file == DEFAULT_FILE {
         return Ok(None);
     }
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| anyhow::anyhow!("cannot read composition {file}: {e}"))?;
-    containust_compose::parser::parse_ctst(&content)
+    containust_compose::template::load_file(path)
         .map(Some)
-        .map_err(|e| anyhow::anyhow!("{e}"))
+        .map_err(|e| anyhow::anyhow!("cannot read composition {file}: {e}"))
 }
 
 /// VM assets are only needed where the native Linux backend is missing,

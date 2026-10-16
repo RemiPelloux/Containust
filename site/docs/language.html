@@ -190,9 +190,15 @@ ctst run stack.ctst --detach</code></pre>
         <h2 id="connect">CONNECT</h2>
         <p data-searchable="connect dependency host port connection string">
           <code>CONNECT api -&gt; db</code> means <code>api</code> depends on <code>db</code>.
-          Containust starts <code>db</code> first and injects <code>DB_HOST</code>,
-          <code>DB_PORT</code>, and <code>DB_CONNECTION_STRING</code> into <code>api</code>.
+          Containust starts <code>db</code> first and injects <code>DB_HOST=db</code>,
+          <code>DB_PORT</code>, and <code>DB_CONNECTION_STRING</code> (e.g.
+          <code>postgres://db:5432</code>) into <code>api</code>.
         </p>
+        <div class="callout">
+          <strong>Put both on one network.</strong> Components reach each other by name only
+          inside a shared network: give them the same <code>network = "app"</code>.
+          <code>ctst plan</code> warns about any <code>CONNECT</code> that cannot resolve.
+        </div>
 
         <h2 id="expose">EXPOSE</h2>
         <div class="codeblock">
@@ -236,9 +242,9 @@ EXPOSE 80:8080       # host 80 → container 8080</code></pre>
         <div class="codeblock">
           <pre><code>COMPONENT api {
     image      = "image://library/myapi@sha256:…"
-    network    = "none"          # publish through the forwarder
+    network    = "none"          // publish through the forwarder
     ports      = [8080]
-    update     = "start-first"   # requires a healthcheck
+    update     = "start-first"   // requires a healthcheck
     stop_grace = "5s"
     healthcheck = {
         command  = ["wget", "-qO-", "http://127.0.0.1:8080/health"]
@@ -255,8 +261,11 @@ EXPOSE 80:8080</code></pre>
 
         <h2 id="templates">IMPORT / FROM</h2>
         <p data-searchable="import from template inheritance">
-          Reuse blocks with <code>IMPORT "path.ctst" AS alias</code> and
-          <code>COMPONENT name FROM alias { … }</code> to override fields.
+          <code>IMPORT "templates/pg.ctst" AS pg</code> brings that file's components in as
+          templates (they are not deployed). <code>COMPONENT db FROM pg { … }</code>, or
+          <code>FROM pg.postgres</code> for a multi-component file, inherits every property and
+          overrides the ones you set; <code>env</code> maps are merged. Chains work, cycles are
+          rejected, and remote (<code>https://</code>) imports are not supported yet.
         </p>
 
         <h2 id="comments">Comments</h2>

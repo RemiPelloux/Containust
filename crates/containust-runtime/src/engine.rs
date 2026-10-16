@@ -216,7 +216,8 @@ impl Engine {
         tracing::info!(project_dir = %project_dir.display(), "project directory");
 
         let desired = load_desired(ctst_path, self.offline, self.backend.supports_handoff())?;
-        self.discard_interrupted_updates(&desired)?;
+        let _apply_lock = ApplyLock::acquire(&self.state_file)?;
+        self.recover_interrupted_updates(&desired)?;
         let live = self.backend.list()?;
         let plan = self.plan_for(&desired, &live)?;
         let ledger_path = Ledger::path_for(&self.state_file);
@@ -255,25 +256,68 @@ impl Engine {
                 note: spec.strategy_note.clone(),
             })
             .collect();
-        Ok(crate::plan::compute(&inputs, live, &ledger))
+        let mut plan = crate::plan::compute(&inputs, live, &ledger);
+        plan.warnings = connect_warnings(desired);
+        Ok(plan)
     }
 
-    /// Removes staged `<name>~next` containers left behind when a previous
-    /// start-first update was interrupted; their component still has its
-    /// original container.
-    fn discard_interrupted_updates(&self, desired: &[DesiredSpec]) -> Result<()> {
-        for info in self.backend.list()? {
-            let leftover = crate::plan::staged_owner(&info.name)
-                .is_some_and(|owner| desired.iter().any(|spec| spec.component.name == owner));
-            if leftover {
+    /// Settles staged `<name>~next` containers left by an interrupted
+    /// start-first update. One that never received the ports is removed
+    /// (the original still serves); one that already serves them is
+    /// promoted: the original is retired and the staged one takes its name.
+    fn recover_interrupted_updates(&self, desired: &[DesiredSpec]) -> Result<()> {
+        let live = self.backend.list()?;
+        let ledger_path = Ledger::path_for(&self.state_file);
+        let mut ledger = Ledger::load(&ledger_path)?;
+        let before = ledger.clone();
+        for info in &live {
+            let Some(owner) = crate::plan::staged_owner(&info.name)
+                .filter(|owner| desired.iter().any(|spec| spec.component.name == *owner))
+            else {
+                continue;
+            };
+            let recorded = ledger.components.remove(&info.name);
+            if self.backend.is_staged(&info.id)? {
                 eprintln!(
                     "  Removing '{}' left over from an interrupted update...",
                     info.name
                 );
                 self.retire(&info.id, info.state == "running")?;
+            } else {
+                let original = live.iter().find(|other| other.name == owner);
+                let applied = self.promote_staged(info, original, recorded)?;
+                let _ = ledger.components.insert(owner.to_string(), applied);
             }
         }
+        if ledger != before {
+            ledger.save(&ledger_path)?;
+        }
         Ok(())
+    }
+
+    /// Completes an update whose staged container already serves traffic.
+    fn promote_staged(
+        &self,
+        staged: &ContainerInfo,
+        original: Option<&ContainerInfo>,
+        recorded: Option<AppliedComponent>,
+    ) -> Result<AppliedComponent> {
+        let owner = crate::plan::staged_owner(&staged.name).unwrap_or(&staged.name);
+        eprintln!("  Completing the interrupted update of '{owner}'...");
+        if let Some(original) = original {
+            self.retire(&original.id, original.state == "running")?;
+        }
+        self.backend.rename(&staged.id, owner)?;
+        // Without a record of what the staged spec was, an empty
+        // fingerprint makes the next plan replace it (from a serving state).
+        let fingerprint = recorded
+            .filter(|applied| applied.container_id == staged.id)
+            .map(|applied| applied.fingerprint)
+            .unwrap_or_default();
+        Ok(AppliedComponent {
+            fingerprint,
+            container_id: staged.id.clone(),
+        })
     }
 
     /// Stops (when running) and removes an existing container.
@@ -541,6 +585,49 @@ impl Engine {
     }
 }
 
+/// Project-wide exclusive lock held for a whole [`Engine::apply`], so two
+/// concurrent `ctst run`s cannot interleave (e.g. one discarding the
+/// other's staged start-first container).
+struct ApplyLock {
+    file: std::fs::File,
+}
+
+impl ApplyLock {
+    fn acquire(state_file: &Path) -> Result<Self> {
+        use fs2::FileExt;
+
+        let path = state_file.with_file_name("apply.lock");
+        let io_err = |source| ContainustError::Io {
+            path: path.clone(),
+            source,
+        };
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent).map_err(io_err)?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)
+            .map_err(io_err)?;
+        file.try_lock_exclusive()
+            .map_err(|_| ContainustError::Config {
+                message: format!(
+                    "another `ctst run` is applying this project (lock: {}); \
+                 wait for it to finish",
+                    path.display()
+                ),
+            })?;
+        Ok(Self { file })
+    }
+}
+
+impl Drop for ApplyLock {
+    fn drop(&mut self) {
+        let _ = fs2::FileExt::unlock(&self.file);
+    }
+}
+
 /// Mutable bookkeeping for one [`Engine::apply`] pass.
 struct ApplyRun<'a> {
     engine: &'a Engine,
@@ -649,35 +736,16 @@ impl ApplyRun<'_> {
         spec: &DesiredSpec,
         old: &ContainerId,
     ) -> Result<()> {
-        let backend = &self.engine.backend;
         eprintln!(
             "  Replacing container '{}' start-first ({})...",
             change.name,
             change.reason.as_deref().unwrap_or("spec changed")
         );
-        let mut config = spec.config.clone();
-        config.name = crate::plan::staged_name(&change.name);
-        config.defer_publish = true;
-        let staged = self.engine.deploy_config(spec, config)?;
-        let gate = spec.config.healthcheck.as_ref().map_or(Ok(()), |health| {
-            eprintln!(
-                "  Waiting for the new '{}' to become healthy...",
-                change.name
-            );
-            crate::supervise::wait_healthy(backend.as_ref(), &staged.id, health)
-        });
-        let handed_off = gate
-            .map_err(|message| ContainustError::Config {
-                message: format!(
-                    "new '{}' never became healthy; the old container keeps serving: {message}",
-                    change.name
-                ),
-            })
-            .and_then(|()| backend.handoff(old, &staged.id));
-        if let Err(error) = handed_off {
-            let _ = self.engine.retire(&staged.id, true);
-            return Err(error);
-        }
+        let staged = self.stage_and_switch(&change.name, spec, old)?;
+        // From here the staged container serves; record it so an
+        // interrupted run is completed (not undone) by the next one.
+        let staged_name = crate::plan::staged_name(&change.name);
+        self.record_applied(&staged_name, &spec.fingerprint, &staged.id)?;
         eprintln!(
             "  Traffic moved to the new '{}'; draining the old one for {}s...",
             change.name,
@@ -685,17 +753,55 @@ impl ApplyRun<'_> {
         );
         std::thread::sleep(spec.stop_grace);
         self.engine.retire(old, true)?;
-        backend.rename(&staged.id, &change.name)?;
-        let _ = self.ledger.components.insert(
-            change.name.clone(),
-            AppliedComponent {
-                fingerprint: spec.fingerprint.clone(),
-                container_id: staged.id.clone(),
-            },
-        );
-        self.ledger.save(&self.ledger_path)?;
+        self.engine.backend.rename(&staged.id, &change.name)?;
+        let _ = self.ledger.components.remove(&staged_name);
+        self.record_applied(&change.name, &spec.fingerprint, &staged.id)?;
         self.deployed.push(staged);
         Ok(())
+    }
+
+    /// Starts `<name>~next` unpublished, waits until it is healthy, and
+    /// moves the ports to it. On failure it is removed and `old` keeps
+    /// (or gets back) the ports.
+    fn stage_and_switch(
+        &self,
+        name: &str,
+        spec: &DesiredSpec,
+        old: &ContainerId,
+    ) -> Result<DeployedComponent> {
+        let backend = &self.engine.backend;
+        let mut config = spec.config.clone();
+        config.name = crate::plan::staged_name(name);
+        config.defer_publish = true;
+        let staged = self.engine.deploy_config(spec, config)?;
+        let gate = spec.config.healthcheck.as_ref().map_or(Ok(()), |health| {
+            eprintln!("  Waiting for the new '{name}' to become healthy...");
+            crate::supervise::wait_healthy(backend.as_ref(), &staged.id, health)
+        });
+        let switched = gate
+            .map_err(|message| ContainustError::Config {
+                message: format!(
+                    "new '{name}' never became healthy; the old container keeps serving: {message}"
+                ),
+            })
+            .and_then(|()| backend.handoff(old, &staged.id));
+        if let Err(error) = switched {
+            let _ = self.engine.retire(&staged.id, true);
+            return Err(error);
+        }
+        Ok(staged)
+    }
+
+    /// Records the applied spec of `name` and persists the ledger.
+    fn record_applied(&mut self, name: &str, fingerprint: &str, id: &ContainerId) -> Result<()> {
+        let _ = self.ledger.components.insert(
+            name.to_string(),
+            AppliedComponent {
+                fingerprint: fingerprint.to_string(),
+                container_id: id.clone(),
+            },
+        );
+        self.ledger.save(&self.ledger_path)
     }
 }
 
@@ -792,19 +898,72 @@ fn load_desired(
             stop_grace: update.stop_grace,
         });
     }
+    ensure_unique_host_ports(&desired)?;
     Ok(desired)
 }
 
-/// Reads and parses a composition, enforcing offline policy.
+/// Warns about `CONNECT`s whose target cannot be reached by name: peers
+/// resolve each other only inside one shared network (`bridge` or a
+/// custom name), where `/etc/hosts` maps every member to loopback.
+fn connect_warnings(desired: &[DesiredSpec]) -> Vec<String> {
+    let network_of: HashMap<&str, &str> = desired
+        .iter()
+        .map(|spec| (spec.component.name.as_str(), spec.config.network.as_str()))
+        .collect();
+    let mut warnings = Vec::new();
+    for spec in desired {
+        let from_net = spec.config.network.as_str();
+        for upstream in &spec.upstreams {
+            let to_net = network_of
+                .get(upstream.as_str())
+                .copied()
+                .unwrap_or_default();
+            let shared = crate::network::NetworkMode::parse(Some(from_net))
+                .shared_name()
+                .is_some();
+            if shared && from_net == to_net {
+                continue;
+            }
+            let why = if from_net == to_net {
+                format!("neither is on a shared network ('{from_net}')")
+            } else {
+                format!("they are on different networks ('{from_net}' vs '{to_net}')")
+            };
+            warnings.push(format!(
+                "'{}' CONNECTs to '{upstream}' but {why}, so '{upstream}' will not \
+                 resolve; set the same `network = \"<name>\"` on both",
+                spec.component.name
+            ));
+        }
+    }
+    warnings
+}
+
+/// Rejects two components publishing the same host port: the second
+/// publish would fail at start, after the first one was already deployed.
+fn ensure_unique_host_ports(desired: &[DesiredSpec]) -> Result<()> {
+    let mut owners: HashMap<u16, &str> = HashMap::new();
+    for spec in desired {
+        for mapping in &spec.config.port_mappings {
+            if let Some(other) = owners.insert(mapping.host, &spec.component.name) {
+                return Err(ContainustError::Config {
+                    message: format!(
+                        "host port {} is published by both '{other}' and '{}'",
+                        mapping.host, spec.component.name
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Reads a composition (resolving IMPORT / FROM), enforcing offline policy.
 fn read_composition(
     ctst_path: &Path,
     offline: bool,
 ) -> Result<containust_compose::parser::ast::CompositionFile> {
-    let content = std::fs::read_to_string(ctst_path).map_err(|e| ContainustError::Io {
-        path: ctst_path.to_path_buf(),
-        source: e,
-    })?;
-    let composition = containust_compose::parser::parse_ctst(&content)?;
+    let composition = containust_compose::template::load_file(ctst_path)?;
     if offline {
         containust_compose::validate_offline(&composition)?;
     }
@@ -843,7 +1002,7 @@ fn resolve_update(
             .map(Duration::from_secs)
             .ok_or_else(|| {
                 invalid(format!(
-                    "invalid stop_grace '{text}' (expected e.g. \"5s\")"
+                    "invalid stop_grace '{text}' (expected e.g. \"5s\"; at most 24h)"
                 ))
             })?,
         None => DEFAULT_STOP_GRACE,
@@ -1081,6 +1240,10 @@ fn published_port_mappings(
             host: expose.host_port,
             container: expose.container_port,
         };
+        // `ports = [8080]` plus `EXPOSE 8080` publishes the same mapping twice.
+        if mappings.contains(&mapping) {
+            continue;
+        }
         if !host_ports.insert(mapping.host) {
             return Err(ContainustError::Config {
                 message: format!(
@@ -1157,12 +1320,16 @@ fn parse_healthcheck_duration(
     parse_duration_secs(text).ok_or_else(|| ContainustError::Config {
         message: format!(
             "component '{component_name}': invalid healthcheck duration '{text}' \
-             (expected e.g. \"30s\", \"1m\", \"1h\")"
+             (expected e.g. \"30s\", \"1m\", \"1h\"; at most 24h)"
         ),
     })
 }
 
-/// Parses `"30s"`, `"5m"`, `"1h"`, or a plain seconds integer.
+/// Longest accepted duration (healthcheck timings, `stop_grace`): one day.
+const MAX_DURATION_SECS: u64 = 24 * 3600;
+
+/// Parses `"30s"`, `"5m"`, `"1h"`, or a plain seconds integer, up to
+/// [`MAX_DURATION_SECS`].
 fn parse_duration_secs(text: &str) -> Option<u64> {
     const UNITS: [(char, u64); 3] = [('h', 3600), ('m', 60), ('s', 1)];
     let text = text.trim();
@@ -1170,7 +1337,12 @@ fn parse_duration_secs(text: &str) -> Option<u64> {
         .iter()
         .find_map(|&(suffix, mult)| text.strip_suffix(suffix).map(|digits| (digits, mult)))
         .unwrap_or((text, 1));
-    digits.trim().parse::<u64>().ok().map(|n| n * multiplier)
+    digits
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(multiplier))
+        .filter(|&secs| secs <= MAX_DURATION_SECS)
 }
 
 fn parse_optional_memory(value: Option<&str>) -> Result<Option<u64>> {
@@ -1346,6 +1518,7 @@ mod tests {
         log: Mutex<Vec<String>>,
         next: std::sync::atomic::AtomicU32,
         unhealthy: AtomicBool,
+        staged: Mutex<std::collections::HashSet<ContainerId>>,
     }
 
     impl MemBackend {
@@ -1382,6 +1555,9 @@ mod tests {
                     image: config.image.clone(),
                     created_at: String::new(),
                 });
+            if config.defer_publish {
+                let _ = self.staged.lock().expect("staged").insert(id.clone());
+            }
             self.record(format!("create {}", config.name));
             Ok(id)
         }
@@ -1412,8 +1588,13 @@ mod tests {
         }
 
         fn handoff(&self, from: &ContainerId, to: &ContainerId) -> Result<()> {
+            let _ = self.staged.lock().expect("staged").remove(to);
             self.record(format!("handoff {from} -> {to}"));
             Ok(())
+        }
+
+        fn is_staged(&self, id: &ContainerId) -> Result<bool> {
+            Ok(self.staged.lock().expect("staged").contains(id))
         }
 
         fn rename(&self, id: &ContainerId, name: &str) -> Result<()> {
@@ -1742,6 +1923,172 @@ CONNECT api -> db
             std::fs::write(&file, ROLLING.replace(needle, replacement)).expect("write");
             let error = engine.plan(&file).expect_err("invalid");
             assert!(error.to_string().contains(expected), "{error}");
+        }
+    }
+
+    #[test]
+    fn interrupted_update_after_handoff_is_completed_not_undone() {
+        let backend = Arc::new(MemBackend::default());
+        let (dir, file, engine) = deployed_rolling(&backend);
+        let fingerprint = engine.plan(&file).expect("plan").changes[0]
+            .fingerprint
+            .clone()
+            .expect("fingerprint");
+        // Simulate a run killed while draining: web~next already serves.
+        let staged = backend
+            .create(&ContainerConfig {
+                name: "web~next".into(),
+                defer_publish: true,
+                ..rolling_config()
+            })
+            .expect("stage");
+        let _ = backend.start(&staged).expect("start");
+        backend
+            .handoff(&ContainerId::new("web-0"), &staged)
+            .expect("handoff");
+        let ledger_path = Ledger::path_for(&dir.path().join("data/state/state.json"));
+        let mut ledger = Ledger::load(&ledger_path).expect("ledger");
+        let _ = ledger.components.insert(
+            "web~next".into(),
+            AppliedComponent {
+                fingerprint,
+                container_id: staged.clone(),
+            },
+        );
+        ledger.save(&ledger_path).expect("save");
+        let _ = take_log(&backend);
+
+        let outcome = engine.apply(&file, ApplyOptions::default()).expect("apply");
+
+        assert_eq!(
+            take_log(&backend),
+            ["stop web-0", "remove web-0", "rename web~next-1 web"]
+        );
+        assert_eq!(outcome.deployed[0].id, staged);
+        assert!(engine.plan(&file).expect("plan").is_noop());
+    }
+
+    #[test]
+    fn concurrent_apply_is_refused() {
+        let backend = Arc::new(MemBackend::default());
+        let (dir, file, engine) = deployed_rolling(&backend);
+        let held = ApplyLock::acquire(&dir.path().join("data/state/state.json")).expect("lock");
+        let error = engine
+            .apply(&file, ApplyOptions::default())
+            .expect_err("locked");
+        assert!(error.to_string().contains("another `ctst run`"), "{error}");
+        drop(held);
+        let _ = engine
+            .apply(&file, ApplyOptions::default())
+            .expect("apply after unlock");
+    }
+
+    #[test]
+    fn duplicate_host_ports_across_components_are_rejected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("stack.ctst");
+        std::fs::write(
+            &file,
+            "COMPONENT a {\n image = \"file:///a\"\n ports = [8080]\n}\n\
+             COMPONENT b {\n image = \"file:///b\"\n ports = [8080]\n}\n",
+        )
+        .expect("write");
+        let backend = Arc::new(MemBackend::default());
+        let error = mem_engine(&backend, dir.path().join("data"))
+            .plan(&file)
+            .expect_err("duplicate");
+        assert!(error.to_string().contains("host port 8080"), "{error}");
+    }
+
+    #[test]
+    fn connect_across_networks_is_flagged() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("stack.ctst");
+        let backend = Arc::new(MemBackend::default());
+        let engine = mem_engine(&backend, dir.path().join("data"));
+        std::fs::write(&file, STACK).expect("write");
+        let warnings = engine.plan(&file).expect("plan").warnings;
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("'api' CONNECTs to 'db'"));
+
+        let shared = STACK
+            .replace(
+                "    port = 5432\n",
+                "    port = 5432\n    network = \"app\"\n",
+            )
+            .replace(
+                "    port = 8080\n",
+                "    port = 8080\n    network = \"app\"\n",
+            );
+        std::fs::write(&file, shared).expect("write");
+        assert_eq!(
+            engine.plan(&file).expect("plan").warnings,
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn repeating_a_port_in_expose_is_not_a_conflict() {
+        use containust_common::types::PortMapping;
+
+        let component = containust_compose::parser::ast::ComponentDecl {
+            name: "web".into(),
+            ports: vec![8080],
+            ..Default::default()
+        };
+        let expose = |host, container| containust_compose::parser::ast::ExposeDecl {
+            host_port: host,
+            container_port: container,
+        };
+        let same = published_port_mappings(&component, &[expose(8080, 8080)]).expect("ok");
+        assert_eq!(same, vec![PortMapping::identity(8080)]);
+        let remap = published_port_mappings(&component, &[expose(80, 8080)]).expect("ok");
+        assert_eq!(
+            remap,
+            vec![PortMapping {
+                host: 80,
+                container: 8080
+            }]
+        );
+        let clash = published_port_mappings(
+            &containust_compose::parser::ast::ComponentDecl {
+                ports: vec![8080, 9090],
+                ..component
+            },
+            &[expose(8080, 9090)],
+        );
+        assert!(
+            clash.is_err(),
+            "host 8080 cannot map to two container ports"
+        );
+    }
+
+    #[test]
+    fn durations_are_bounded() {
+        assert_eq!(parse_duration_secs("24h"), Some(86_400));
+        assert_eq!(parse_duration_secs("25h"), None);
+        assert_eq!(parse_duration_secs("99999999999999999999h"), None);
+        assert_eq!(parse_duration_secs("18446744073709551615h"), None);
+    }
+
+    fn rolling_config() -> ContainerConfig {
+        ContainerConfig {
+            name: String::new(),
+            image: "file:///web/v2".into(),
+            command: Vec::new(),
+            env: Vec::new(),
+            memory_bytes: None,
+            cpu_shares: None,
+            readonly_rootfs: true,
+            volumes: Vec::new(),
+            port: None,
+            ports: Vec::new(),
+            port_mappings: Vec::new(),
+            network: "none".into(),
+            restart: containust_common::types::RestartPolicy::Never,
+            healthcheck: None,
+            namespaces: containust_core::namespace::NamespaceConfig::default(),
+            defer_publish: false,
         }
     }
 

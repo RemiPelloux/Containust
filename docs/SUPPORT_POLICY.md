@@ -60,6 +60,9 @@ delegated user namespaces are recommended.
 - Apple notarization / Windows Authenticode (cosign keyless signs `SHA256SUMS`; see `PACKAGING.md`)
 - Full DNS / multi-network mesh (named shared-netns + `/etc/hosts` foundations ship in Sprint 11)
 - Start-first updates on the macOS/Windows VM backend (falls back to `recreate`; Linux supports them since `1.4.0`)
+- Start-first updates for components on a shared network or in a `CONNECT` (they fall back to `recreate` or cannot resolve peers)
+- Remote (`https://`) `IMPORT` (fails closed; import vendored files by path)
+- `workdir`, `user`, `hostname` component properties (parsed, rejected at plan)
 - Volume drivers, snapshots, encrypted local storage
 - Remote execution / orchestration
 

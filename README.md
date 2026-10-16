@@ -51,8 +51,8 @@ file, under atomic, file-locked writes.
 
 ### Plan before apply
 `ctst plan` diffs your file against what's running: `+` create, `~` replace,
-`>` start, `=` keep, `-` remove. `ctst run` applies the same plan and is safe
-to re-run.
+`>` start, `=` keep, `-` remove. `ctst run` applies the same plan, is safe to
+re-run, and can replace a service with zero dropped requests.
 
 </td>
 <td width="33%" valign="top">
@@ -116,15 +116,16 @@ ctst --offline run -d stack.ctst
 
 <br>
 
-Describe the API, database and cache once. `CONNECT` injects `*_HOST` / `*_PORT`
-env vars so services find each other. On macOS and Windows the same file runs
-in a QEMU micro-VM with port forwarding.
+Describe the API, database and cache once. Components on the same network
+reach each other by name, and `CONNECT` injects `*_HOST` / `*_PORT` env vars.
+On macOS and Windows the same file runs in a QEMU micro-VM with port
+forwarding.
 
 ```text
-COMPONENT db  { image = "image://postgres@sha256:…"  port = 5432 }
-COMPONENT api { image = "file:///work/api/rootfs"     port = 8080  memory = "256MiB" }
-CONNECT api -> db
-EXPOSE 8080
+COMPONENT db  { image = "image://postgres@sha256:…"  port = 5432  network = "app" }
+COMPONENT api { image = "file:///work/api/rootfs"     port = 8080  network = "app"  memory = "256MiB" }
+CONNECT api -> db        // api reaches db at db:5432
+EXPOSE 8080              // http://127.0.0.1:8080 on the host
 ```
 
 Already on Compose? Run `ctst convert docker-compose.yml -o stack.ctst`.
@@ -157,7 +158,19 @@ containers and probes health. A systemd timer gives you continuous supervision
 without a resident daemon.
 
 ```ini
-# /etc/systemd/system/ctst-reconcile.timer → runs `ctst ps` every 30s
+# /etc/systemd/system/ctst-reconcile.service
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/app
+ExecStart=/usr/local/bin/ctst ps
+
+# /etc/systemd/system/ctst-reconcile.timer   (systemctl enable --now ctst-reconcile.timer)
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+
+[Install]
+WantedBy=timers.target
 ```
 
 </details>
@@ -178,12 +191,17 @@ run `ctst run` with no registry account, no network, and no daemon setup.
 <br>
 
 ```rust
-use containust_runtime::engine::{ApplyOptions, Engine};
+use containust_sdk::deploy::{ApplyOptions, Engine, EngineOptions};
 
-let engine = Engine::new();
-let plan = engine.plan("stack.ctst".as_ref())?;
-println!("{}", plan.summary());
-let outcome = engine.apply("stack.ctst".as_ref(), ApplyOptions { prune: true })?;
+let file = std::path::Path::new("stack.ctst");
+let data_dir = containust_common::constants::project_dir(file);
+let engine = Engine::with_options(EngineOptions {
+    state_file: data_dir.join("state").join("state.json"),
+    data_dir,
+    offline: false,
+});
+println!("{}", engine.plan(file)?.summary());
+let outcome = engine.apply(file, ApplyOptions { prune: true })?;
 ```
 
 See [docs/SDK_GUIDE.md](docs/SDK_GUIDE.md).
@@ -289,7 +307,13 @@ stop-then-start:
 The published port never closes: the forwarder switches its target in one
 atomic step, so new connections reach the new container while open ones
 finish on the old one. If the new version never becomes healthy it is
-thrown away and the old one keeps serving. Details in
+thrown away and the old one keeps serving, and a run that gets interrupted
+is finished (or cleanly undone) by the next `ctst run`. A CI gate replaces a
+live HTTP service under load and requires zero failed requests.
+
+Start-first works on Linux for services published through the forwarder
+(`network = "none"` or an `EXPOSE` remap) that are not part of a `CONNECT`;
+everything else falls back to `recreate`, and `ctst plan` says why. Details in
 [CTST_LANG.md §13](docs/CTST_LANG.md#13-update-strategy).
 
 ## ⌁ How it works
@@ -298,9 +322,10 @@ thrown away and the old one keeps serving. Details in
   <img src="docs/assets/readme/architecture.svg" width="100%" alt="Architecture: .ctst file → parse and validate → dependency graph → plan diff → Linux native backend or QEMU micro-VM; all state in .containust/.">
 </p>
 
-1. **Parse & validate.** A `nom` grammar reads `COMPONENT`, `CONNECT`,
-   `EXPOSE`, `IMPORT`/`FROM` templates. Unsupported properties and remote
-   images under `--offline` fail before anything runs.
+1. **Parse & resolve.** A `nom` grammar reads `COMPONENT`, `CONNECT` and
+   `EXPOSE`; `IMPORT`ed files and `FROM` chains are merged into each
+   component. Unsupported properties, unreachable `CONNECT`s and remote
+   images under `--offline` are reported before anything runs.
 2. **Graph.** `petgraph` topologically sorts `CONNECT` edges. Cycles are
    rejected, and upstreams start first.
 3. **Plan.** Desired fingerprints are diffed against live containers and the
@@ -320,6 +345,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md).
 | Background daemon | **none** | `dockerd` (root) | none |
 | Stack definition | `.ctst` (typed, validated) | Compose YAML | Compose / Kube YAML |
 | Diff before apply | **`ctst plan`** | — | — |
+| Zero-downtime replace | **`update = "start-first"`** (health-gated) | swarm services only | — |
 | Enforced offline mode | **`--offline`, fail-closed** | — | — |
 | Image store | content-addressed, per project, portable | global | global |
 | Registry ecosystem | Hub + GHCR pull | full | full |

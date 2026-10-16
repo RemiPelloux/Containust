@@ -15,6 +15,7 @@ COMPONENT api {
     }
     command = ["./api-server", "--bind", "0.0.0.0:8080"]
     readonly = true
+    network = "app"
 }
 
 COMPONENT db FROM pg_template {
@@ -26,6 +27,7 @@ COMPONENT db FROM pg_template {
         POSTGRES_USER = "app_user"
         POSTGRES_PASSWORD = "${secret.db_password}"
     }
+    network = "app"
 }
 
 COMPONENT cache {
@@ -34,6 +36,7 @@ COMPONENT cache {
     memory = "128MiB"
     readonly = true
     command = ["redis-server", "--maxmemory", "100mb"]
+    network = "app"
 }
 
 // Dependency graph: api depends on both db and cache.

@@ -112,6 +112,7 @@ struct ResourceSpec {
 #[derive(Debug, Deserialize)]
 struct Healthcheck {
     test: Option<HealthcheckTest>,
+    disable: Option<bool>,
     interval: Option<String>,
     timeout: Option<String>,
     retries: Option<u32>,
@@ -461,7 +462,12 @@ fn write_update(out: &mut String, svc: &Service) {
     if !start_first {
         return;
     }
-    if svc.healthcheck.is_some() {
+    if svc
+        .healthcheck
+        .as_ref()
+        .and_then(healthcheck_command)
+        .is_some()
+    {
         out.push_str("    update = \"start-first\"\n");
     } else {
         out.push_str(
@@ -471,28 +477,44 @@ fn write_update(out: &mut String, svc: &Service) {
     }
 }
 
+/// The probe argv for a compose healthcheck, or `None` when it is disabled
+/// or inherits the image's (unknown here) `HEALTHCHECK`.
+///
+/// Compose's string form and `CMD-SHELL` run through a shell; `.ctst`
+/// probes are exec'd directly, so they are wrapped in `/bin/sh -c`.
+fn healthcheck_command(hc: &Healthcheck) -> Option<Vec<String>> {
+    if hc.disable == Some(true) {
+        return None;
+    }
+    let shell = |script: &str| vec!["/bin/sh".to_string(), "-c".to_string(), script.to_string()];
+    match hc.test.as_ref()? {
+        HealthcheckTest::String(script) => Some(shell(script)),
+        HealthcheckTest::List(list) => match list.split_first() {
+            Some((kind, rest)) if kind == "CMD-SHELL" => Some(shell(&rest.join(" "))),
+            Some((kind, rest)) if kind == "CMD" && !rest.is_empty() => Some(rest.to_vec()),
+            Some((kind, _)) if kind == "NONE" || kind == "CMD" => None,
+            Some(_) => Some(list.clone()),
+            None => None,
+        },
+    }
+}
+
+/// Quotes `value` as a `.ctst` string literal.
+fn ctst_string(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
 fn write_healthcheck(out: &mut String, svc: &Service) {
     let Some(ref hc) = svc.healthcheck else {
         return;
     };
+    let Some(command) = healthcheck_command(hc) else {
+        return;
+    };
 
     out.push_str("    healthcheck = {\n");
-
-    if let Some(ref test) = hc.test {
-        match test {
-            HealthcheckTest::String(s) => {
-                let _ = writeln!(out, "        command = [\"{s}\"]");
-            }
-            HealthcheckTest::List(list) => {
-                let filtered: Vec<&String> = list
-                    .iter()
-                    .filter(|s| *s != "CMD" && *s != "CMD-SHELL")
-                    .collect();
-                let quoted: Vec<String> = filtered.iter().map(|p| format!("\"{p}\"")).collect();
-                let _ = writeln!(out, "        command = [{}]", quoted.join(", "));
-            }
-        }
-    }
+    let quoted: Vec<String> = command.iter().map(|part| ctst_string(part)).collect();
+    let _ = writeln!(out, "        command = [{}]", quoted.join(", "));
 
     if let Some(ref interval) = hc.interval {
         let _ = writeln!(out, "        interval = \"{}\"", convert_duration(interval));
@@ -893,7 +915,7 @@ services:
 "#;
         let result = convert_string(yaml).expect("conversion should succeed");
         assert!(result.contains("healthcheck = {"));
-        assert!(result.contains("command = [\"curl -f http://localhost/\"]"));
+        assert!(result.contains(r#"command = ["/bin/sh", "-c", "curl -f http://localhost/"]"#));
         assert!(result.contains("interval = \"10s\""));
         assert!(result.contains("timeout = \"5s\""));
         assert!(result.contains("retries = 5"));
@@ -915,6 +937,65 @@ services:
         let result = convert_string(yaml).expect("conversion should succeed");
         assert!(result.contains("memory = \"256MiB\""));
         assert!(result.contains("cpu = \"512\""));
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn test_convert_healthcheck_forms_become_runnable_probes() {
+        let yaml = r#"
+services:
+  shell:
+    image: a
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -H \"X: 1\" http://localhost/ || exit 1"]
+  plain:
+    image: b
+    healthcheck:
+      test: wget -q localhost
+  exec:
+    image: c
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "app"]
+  off:
+    image: d
+    healthcheck:
+      disable: true
+  none:
+    image: e
+    healthcheck:
+      test: ["NONE"]
+"#;
+        let result = convert_string(yaml).expect("conversion should succeed");
+        let file = containust_compose::parser::parse_ctst(&result).expect("parses");
+        let probe = |name: &str| {
+            file.components
+                .iter()
+                .find(|c| c.name == name)
+                .and_then(|c| c.healthcheck.as_ref())
+                .map(|h| h.command.clone())
+        };
+        assert_eq!(
+            probe("shell"),
+            Some(vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                r#"curl -f -H "X: 1" http://localhost/ || exit 1"#.into()
+            ])
+        );
+        assert_eq!(
+            probe("plain"),
+            Some(vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "wget -q localhost".into()
+            ])
+        );
+        assert_eq!(
+            probe("exec"),
+            Some(vec!["pg_isready".into(), "-U".into(), "app".into()])
+        );
+        assert_eq!(probe("off"), None);
+        assert_eq!(probe("none"), None);
     }
 
     #[test]

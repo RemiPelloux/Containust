@@ -18,6 +18,7 @@ pub mod graph;
 pub mod import;
 pub mod parser;
 pub mod resolver;
+pub mod template;
 
 use containust_common::error::{ContainustError, Result};
 

@@ -16,13 +16,14 @@ Use the SDK when you need to embed container lifecycle operations directly in a 
 2. [Quick Start](#quick-start)
 3. [ContainerBuilder](#containerbuilder)
 4. [GraphResolver](#graphresolver)
-5. [EventListener](#eventlistener)
-6. [Domain Types](#domain-types)
-7. [Configuration](#configuration)
-8. [Error Handling](#error-handling)
-9. [Patterns and Best Practices](#patterns-and-best-practices)
-10. [Feature Flags](#feature-flags)
-11. [Full Working Examples](#full-working-examples)
+5. [Deploy: plan and apply](#deploy-plan-and-apply)
+6. [EventListener](#eventlistener)
+7. [Domain Types](#domain-types)
+8. [Configuration](#configuration)
+9. [Error Handling](#error-handling)
+10. [Patterns and Best Practices](#patterns-and-best-practices)
+11. [Feature Flags](#feature-flags)
+12. [Full Working Examples](#full-working-examples)
 
 ---
 
@@ -354,6 +355,56 @@ fn deploy(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 ```
+
+---
+
+## Deploy: plan and apply
+
+`containust_sdk::deploy` exposes the engine behind `ctst plan` and `ctst run`
+(since `1.4.0`). `Engine::plan` is read-only; `Engine::apply` executes the same
+plan and is safe to re-run.
+
+| Item | Purpose |
+|---|---|
+| `Engine::with_options(EngineOptions { data_dir, state_file, offline })` | Engine for one project |
+| `Engine::plan(path) -> DeployPlan` | Diff the file against live containers (no side effects) |
+| `Engine::apply(path, ApplyOptions { prune })` | Create / start / replace / (prune) remove |
+| `PlannedChange { name, action, reason, strategy, note, .. }` | One component's action; `strategy` is set for replaces, `note` explains a `start-first` fallback |
+| `UpdateStrategy::{Recreate, StartFirst}` | How a replace runs (`update` in `.ctst`) |
+
+```rust
+use std::path::Path;
+use containust_sdk::deploy::{ApplyOptions, Engine, EngineOptions, PlanAction, UpdateStrategy};
+
+fn deploy(file: &Path) -> anyhow::Result<()> {
+    let data_dir = containust_common::constants::project_dir(file);
+    let engine = Engine::with_options(EngineOptions {
+        state_file: data_dir.join("state").join("state.json"),
+        data_dir,
+        offline: false,
+    });
+
+    let plan = engine.plan(file)?;
+    for change in &plan.changes {
+        if change.action == PlanAction::Replace
+            && change.strategy == Some(UpdateStrategy::StartFirst)
+        {
+            println!("{} will be replaced with no downtime", change.name);
+        }
+        if let Some(note) = &change.note {
+            println!("{}: {note}", change.name);
+        }
+    }
+    let outcome = engine.apply(file, ApplyOptions { prune: true })?;
+    println!("running: {}, removed: {:?}", outcome.deployed.len(), outcome.removed);
+    Ok(())
+}
+```
+
+`apply` stops at the first failing component and returns its error; components
+applied before it stay applied and recorded, so the next call resumes. A
+`start-first` replacement whose healthcheck never passes returns an error and
+leaves the old container serving.
 
 ---
 

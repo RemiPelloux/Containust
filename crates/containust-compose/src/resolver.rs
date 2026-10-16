@@ -73,15 +73,48 @@ fn inject_connection_env(
     conn: &crate::parser::ast::ConnectionDecl,
     target_comp: &crate::parser::ast::ComponentDecl,
 ) {
-    let target_upper = conn.to.to_uppercase();
-    let port = target_comp.port.map_or_else(String::new, |p| p.to_string());
-
+    let prefix = env_prefix(&conn.to);
+    source.env.push((format!("{prefix}_HOST"), conn.to.clone()));
+    let Some(port) = target_comp
+        .port
+        .or_else(|| target_comp.ports.first().copied())
+    else {
+        return;
+    };
     source
         .env
-        .push((format!("{target_upper}_HOST"), conn.to.clone()));
-    if !port.is_empty() {
-        source.env.push((format!("{target_upper}_PORT"), port));
-    }
+        .push((format!("{prefix}_PORT"), port.to_string()));
+    let scheme = connection_scheme(target_comp.image.as_deref().unwrap_or_default());
+    source.env.push((
+        format!("{prefix}_CONNECTION_STRING"),
+        format!("{scheme}://{}:{port}", conn.to),
+    ));
+}
+
+/// Env var prefix for a component: uppercased, `-` and `.` become `_`.
+fn env_prefix(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '-' | '.' => '_',
+            c => c.to_ascii_uppercase(),
+        })
+        .collect()
+}
+
+/// Connection-string scheme guessed from the target's image reference.
+fn connection_scheme(image: &str) -> &'static str {
+    const SCHEMES: [(&[&str], &str); 5] = [
+        (&["postgres"], "postgres"),
+        (&["mysql", "mariadb"], "mysql"),
+        (&["redis"], "redis"),
+        (&["mongo"], "mongodb"),
+        (&["rabbitmq", "amqp"], "amqp"),
+    ];
+    let image = image.to_ascii_lowercase();
+    SCHEMES
+        .iter()
+        .find(|(needles, _)| needles.iter().any(|needle| image.contains(needle)))
+        .map_or("http", |(_, scheme)| scheme)
 }
 
 #[cfg(test)]
@@ -90,6 +123,48 @@ mod tests {
 
     use super::*;
     use crate::parser::ast::{ComponentDecl, ConnectionDecl};
+
+    #[test]
+    fn connection_strings_and_prefixes_follow_the_spec() {
+        let file = crate::parser::parse_ctst(
+            r#"COMPONENT api {
+    image = "file:///api"
+}
+COMPONENT my-db {
+    image = "image://library/postgres@sha256:abc"
+    port = 5432
+}
+COMPONENT queue {
+    image = "file:///opt/rabbitmq"
+    ports = [5672, 15672]
+}
+COMPONENT web {
+    image = "file:///web"
+    port = 80
+}
+CONNECT api -> my-db
+CONNECT api -> queue
+CONNECT api -> web
+"#,
+        )
+        .expect("parse");
+        let resolved = resolve_connections(&file).expect("resolve");
+        let api = resolved.iter().find(|c| c.name == "api").expect("api");
+        let env = |key: &str| {
+            api.env
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+        };
+        assert_eq!(env("MY_DB_HOST"), Some("my-db"));
+        assert_eq!(
+            env("MY_DB_CONNECTION_STRING"),
+            Some("postgres://my-db:5432")
+        );
+        assert_eq!(env("QUEUE_PORT"), Some("5672"));
+        assert_eq!(env("QUEUE_CONNECTION_STRING"), Some("amqp://queue:5672"));
+        assert_eq!(env("WEB_CONNECTION_STRING"), Some("http://web:80"));
+    }
 
     #[test]
     fn resolve_empty_file() {
@@ -302,7 +377,8 @@ mod tests {
 
         let resolved = resolve_connections(&file).expect("resolve large graph");
         assert_eq!(resolved.len(), component_count);
-        assert_eq!(resolved[1].env.len(), 2);
-        assert_eq!(resolved[component_count - 1].env.len(), 2);
+        // HOST, PORT, CONNECTION_STRING per connection.
+        assert_eq!(resolved[1].env.len(), 3);
+        assert_eq!(resolved[component_count - 1].env.len(), 3);
     }
 }

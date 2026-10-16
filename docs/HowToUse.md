@@ -175,16 +175,16 @@ Identity publish and host:container remapping are both supported:
 COMPONENT web {
     image = "image://library/nginx@sha256:…"
     port  = 8080
-    ports = ["8080"]
-    network = "none"     # private netns (default); use "bridge" / a name to share
+    ports = [8080]
+    network = "none"     // private netns (default); use "bridge" / a name to share
 }
 
 EXPOSE 8080
-EXPOSE 80:8080           # host 80 → container 8080
+EXPOSE 80:8080           // host 80 → container 8080
 ```
 
-- **Linux (identity, no `network`):** host network namespace; bind directly
-  (root or `CAP_NET_BIND_SERVICE` for ports &lt; 1024).
+- **Linux (identity, no `network`):** host network namespace; the app binds
+  directly (root or `CAP_NET_BIND_SERVICE` for ports < 1024).
 - **Linux (remap / named network):** private or shared netns + userspace
   forwarder; peers on the same network resolve via `/etc/hosts` → `127.0.0.1`.
 - **macOS / Windows:** QEMU `hostfwd` (remap supported); adding ports to a live
@@ -196,7 +196,7 @@ EXPOSE 80:8080           # host 80 → container 8080
 COMPONENT worker {
     image   = "preset://alpine"
     command = ["/bin/busybox", "sleep", "3600"]
-    restart = "on-failure"    # never | on-failure | always
+    restart = "on-failure"    // never | on-failure | always
 }
 ```
 
@@ -232,10 +232,10 @@ one, so clients see no failed requests:
 ```text
 COMPONENT api {
     image      = "image://library/myapi@sha256:…"
-    network    = "none"          # publish through the forwarder
+    network    = "none"          // publish through the forwarder
     ports      = [8080]
-    update     = "start-first"   # needs a healthcheck
-    stop_grace = "5s"            # drain time before the old one stops
+    update     = "start-first"   // needs a healthcheck
+    stop_grace = "5s"            // drain time before the old one stops
     healthcheck = {
         command  = ["wget", "-qO-", "http://127.0.0.1:8080/health"]
         interval = "2s"
@@ -266,22 +266,39 @@ COMPONENT db {
     env     = { POSTGRES_PASSWORD = "secret" }
     volumes = ["/data/pg:/var/lib/postgresql/data"]
     restart = "always"
+    network = "app"
 }
 
 COMPONENT api {
     image   = "file:///opt/images/api"
     port    = 8080
-    ports   = ["8080"]
+    ports   = [8080]
     memory  = "256MiB"
     restart = "on-failure"
+    network = "app"
 }
 
 CONNECT api -> db
 EXPOSE 8080
 ```
 
-`CONNECT` injects `DB_HOST`, `DB_PORT`, and related env vars into `api`.
+`CONNECT` injects `DB_HOST=db`, `DB_PORT=5432` into `api`. The name `db`
+resolves only because both components share `network = "app"`: components
+reach each other **only inside one shared network**, and `ctst plan` warns
+about any `CONNECT` whose two sides are not on the same one.
 Volumes use **host:container** bind mounts (no Docker named volumes).
+
+Templates keep larger stacks short. Put shared settings in a file and
+inherit them:
+
+```text
+IMPORT "templates/postgres.ctst" AS pg     // templates only; not deployed
+
+COMPONENT orders_db FROM pg {
+    env     = { POSTGRES_DB = "orders" }   // merged with the template's env
+    network = "app"
+}
+```
 
 ---
 
@@ -312,6 +329,10 @@ ctst vm stop
 | Permission denied on Linux | Run with sufficient privileges for namespaces/cgroups; confirm cgroup v2 |
 | Private registry 401 | Set `CONTAINUST_REGISTRY_*` or refresh `~/.docker/config.json` |
 | Stale `Running` entries | `ctst ps` reconciles dead PIDs; then `ctst rm --force` if needed |
+| `warning: 'api' CONNECTs to 'db' but they are not on the same shared network` | Give both components the same `network = "<name>"` |
+| `another ctst run is applying this project` | Another `ctst run` is still running for this project; wait for it |
+| `new 'api' never became healthy` | The start-first replacement failed its probe and was removed; the old container still serves. The error ends with the last probe output; fix the app or probe and run again |
+| `host port N is published by both 'a' and 'b'` | Two components publish the same host port; change one `EXPOSE` |
 
 Diagnostics:
 

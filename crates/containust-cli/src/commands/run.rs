@@ -90,6 +90,9 @@ fn deploy_and_report(
         .apply(path, ApplyOptions { prune })
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     let deployed = outcome.deployed;
+    for warning in &outcome.plan.warnings {
+        eprintln!("  {YELLOW}warning:{RESET} {warning}");
+    }
 
     eprintln!();
     eprintln!(

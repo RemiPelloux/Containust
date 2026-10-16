@@ -140,7 +140,7 @@ port  = 5432</pre>
         <pre class="sheet" tabindex="0"><code>COMPONENT web {
     image   = "preset://alpine"
     command = ["/bin/busybox", "httpd", "-f", "-p", "8080"]
-    ports   = ["8080"]
+    ports   = [8080]
     restart = "on-failure"
 }
 

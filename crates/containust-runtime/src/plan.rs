@@ -115,6 +115,10 @@ pub struct PlannedChange {
 pub struct DeployPlan {
     /// Planned changes.
     pub changes: Vec<PlannedChange>,
+    /// Problems that will not stop the apply but will likely break the
+    /// stack (e.g. a `CONNECT` across networks).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 impl DeployPlan {
@@ -230,29 +234,40 @@ pub fn compute(
     }
 
     let declared: HashSet<&str> = desired.iter().map(|c| c.name).collect();
+    changes.extend(removals(&declared, live));
+    DeployPlan {
+        changes,
+        ..DeployPlan::default()
+    }
+}
+
+/// `remove` changes for live containers that are no longer declared, in
+/// name order.
+fn removals(declared: &HashSet<&str>, live: &[ContainerInfo]) -> Vec<PlannedChange> {
     let mut orphans: Vec<&ContainerInfo> = live
         .iter()
         .filter(|info| !declared.contains(info.name.as_str()))
         .collect();
     orphans.sort_by(|a, b| a.name.cmp(&b.name));
-    changes.extend(orphans.into_iter().map(|info| {
-        let leftover = staged_owner(&info.name).is_some_and(|owner| declared.contains(owner));
-        PlannedChange {
-            name: info.name.clone(),
-            action: PlanAction::Remove,
-            reason: Some(if leftover {
-                "left over from an interrupted start-first update".into()
-            } else {
-                "no longer declared".into()
-            }),
-            container_id: Some(info.id.clone()),
-            fingerprint: None,
-            strategy: None,
-            note: None,
-        }
-    }));
-
-    DeployPlan { changes }
+    orphans
+        .into_iter()
+        .map(|info| {
+            let leftover = staged_owner(&info.name).is_some_and(|owner| declared.contains(owner));
+            PlannedChange {
+                name: info.name.clone(),
+                action: PlanAction::Remove,
+                reason: Some(if leftover {
+                    "left over from an interrupted start-first update".into()
+                } else {
+                    "no longer declared".into()
+                }),
+                container_id: Some(info.id.clone()),
+                fingerprint: None,
+                strategy: None,
+                note: None,
+            }
+        })
+        .collect()
 }
 
 /// Strategy for replacing `component`; a stopped container serves no

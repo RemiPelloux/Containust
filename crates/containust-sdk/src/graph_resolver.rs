@@ -3,7 +3,7 @@
 //! Wraps `containust-compose`'s graph and resolver modules into
 //! a high-level API for SDK consumers.
 
-use containust_common::error::{ContainustError, Result};
+use containust_common::error::Result;
 
 /// High-level resolver for component dependency graphs.
 #[derive(Debug)]
@@ -28,12 +28,7 @@ impl GraphResolver {
     pub fn load_ctst(&mut self, path: &std::path::Path) -> Result<()> {
         tracing::info!(path = %path.display(), "loading .ctst file");
 
-        let content = std::fs::read_to_string(path).map_err(|e| ContainustError::Io {
-            path: path.to_path_buf(),
-            source: e,
-        })?;
-
-        let composition = containust_compose::parser::parse_ctst(&content)?;
+        let composition = containust_compose::template::load_file(path)?;
         containust_compose::parser::validator::validate(&composition)?;
 
         self.graph = containust_compose::graph::DependencyGraph::new();

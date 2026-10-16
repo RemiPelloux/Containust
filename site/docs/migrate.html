@@ -209,20 +209,22 @@ ctst run stack.ctst --detach</code></pre>
         <h3 id="ctst-result">.ctst</h3>
         <div class="codeblock">
           <pre><code>COMPONENT db {
-    image = "image://library/postgres@sha256:…"
-    port  = 5432
-    env   = { POSTGRES_PASSWORD = "secret" }
+    image   = "image://library/postgres@sha256:…"
+    port    = 5432
+    env     = { POSTGRES_PASSWORD = "secret" }
+    network = "app"
 }
 
 COMPONENT api {
-    image = "image://ghcr.io/acme/api@sha256:…"
-    env   = { DATABASE_URL = "postgres://${db.host}:${db.port}/app" }
+    image   = "image://ghcr.io/acme/api@sha256:…"
+    env     = { DATABASE_URL = "postgres://${db.host}:${db.port}/app" }
+    network = "app"
 }
 
 COMPONENT web {
-    image = "image://library/nginx@sha256:…"
-    port  = 80
-    ports = ["8080"]
+    image   = "image://library/nginx@sha256:…"
+    port    = 80
+    network = "app"
 }
 
 CONNECT api -> db

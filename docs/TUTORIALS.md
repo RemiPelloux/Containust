@@ -344,6 +344,7 @@ COMPONENT api {
         retries      = 5
         start_period = "15s"
     }
+    network = "app"
 }
 
 COMPONENT db {
@@ -363,6 +364,7 @@ COMPONENT db {
         timeout  = "2s"
         retries  = 10
     }
+    network = "app"
 }
 
 COMPONENT cache {
@@ -377,6 +379,7 @@ COMPONENT cache {
         timeout  = "2s"
         retries  = 5
     }
+    network = "app"
 }
 
 CONNECT api -> db
@@ -720,6 +723,7 @@ COMPONENT api {
         REDIS_URL    = "redis://${cache.host}:${cache.port}/0"
     }
     command = ["./api-server"]
+    network = "app"
 }
 
 // Inherit everything from the postgres template, override specifics.
@@ -730,11 +734,13 @@ COMPONENT db FROM pg.postgres {
         POSTGRES_DB       = "myapp"
         POSTGRES_PASSWORD = "${secret.db_pass}"
     }
+    network = "app"
 }
 
 // Inherit from the redis template, increase memory.
 COMPONENT cache FROM redis_tmpl.redis {
     memory = "256MiB"
+    network = "app"
 }
 
 CONNECT api -> db
@@ -842,6 +848,7 @@ COMPONENT db {
         timeout  = "2s"
         retries  = 10
     }
+    network = "app"
 }
 
 COMPONENT api {
@@ -852,6 +859,7 @@ COMPONENT api {
         STRIPE_API_KEY = "${secret.api_key}"
     }
     command = ["./api-server"]
+    network = "app"
 }
 
 CONNECT api -> db
@@ -1145,7 +1153,7 @@ COMPONENT app {
         REDIS_URL    = "redis://${cache.host}:${cache.port}/0"
     }
     command = ["./server"]
-    network = "isolated"
+    network = "app"
 }
 
 COMPONENT db {
@@ -1158,7 +1166,7 @@ COMPONENT db {
         POSTGRES_DB       = "secure_app"
         POSTGRES_PASSWORD = "${secret.db_pass}"
     }
-    network = "isolated"
+    network = "app"
 }
 
 COMPONENT cache {
@@ -1167,7 +1175,7 @@ COMPONENT cache {
     memory   = "128MiB"
     readonly = true
     command  = ["redis-server", "--maxmemory", "100mb"]
-    network  = "isolated"
+    network  = "app"
 }
 
 CONNECT app -> db
@@ -1332,12 +1340,14 @@ COMPONENT web {
     image   = "file:///opt/images/nginx"
     port    = 80
     memory  = "128MiB"
+    network = "app"
 }
 
 COMPONENT api {
     image   = "file:///opt/images/myapp-api"
     port    = 8080
     memory  = "256MiB"
+    network = "app"
 }
 
 CONNECT api -> web

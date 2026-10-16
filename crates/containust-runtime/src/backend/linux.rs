@@ -198,19 +198,19 @@ impl ContainerBackend for LinuxNativeBackend {
     }
 
     fn exec(&self, id: &ContainerId, cmd: &[String]) -> Result<ExecOutput> {
-        let state = self.state_store.read()?;
-        let entry = state
-            .containers
-            .iter()
-            .find(|e| e.id == *id)
-            .ok_or_else(|| ContainustError::NotFound {
-                kind: "container",
-                id: id.to_string(),
-            })?;
-        let pid = entry.pid.ok_or_else(|| ContainustError::Config {
-            message: format!("container {id} is not running"),
-        })?;
+        let pid = self.running_pid_of(id)?;
         crate::exec::exec_in_container(id, pid, cmd)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn exec_timeout(
+        &self,
+        id: &ContainerId,
+        cmd: &[String],
+        timeout: std::time::Duration,
+    ) -> Result<ExecOutput> {
+        let pid = self.running_pid_of(id)?;
+        crate::exec::exec_in_container_timeout(id, pid, cmd, Some(timeout))
     }
 
     fn remove(&self, id: &ContainerId) -> Result<()> {
@@ -296,31 +296,24 @@ impl ContainerBackend for LinuxNativeBackend {
             let old_pids = std::mem::take(&mut state.containers[from_idx].forwarder_pids);
             let same_ports =
                 state.containers[from_idx].port_mappings == state.containers[to_idx].port_mappings;
-            let entry = &mut state.containers[to_idx];
-            let pid = running_pid(entry).ok_or_else(|| ContainustError::Config {
-                message: format!("container {to} must be running to receive traffic"),
-            })?;
-            let mode = crate::network::NetworkMode::parse(Some(entry.network.as_str()));
-            entry.publish_deferred = false;
-            if entry.port_mappings.is_empty() || mode.is_host() {
-                crate::port_forward::stop_forwarders_and_wait(&old_pids);
-                return Ok(());
+            let published =
+                self.publish_staged(&mut state.containers[to_idx], same_ports, &old_pids);
+            if let Err(error) = published {
+                // Keep serving from the old container: re-point (or restart)
+                // its forwarders and leave the staged one unpublished.
+                state.containers[to_idx].publish_deferred = true;
+                state.containers[from_idx].forwarder_pids =
+                    self.restore_forwarders(&state.containers[from_idx], &old_pids);
+                return Ok(Err(error));
             }
-            let netns = entry_netns(&self.data_dir, entry, &mode, pid)?;
-            let mappings = entry.port_mappings.clone();
-            entry.forwarder_pids = if same_ports
-                && crate::port_forward::forwarders_alive(&old_pids)
-                && crate::port_forward::targets_exist(&self.data_dir, &mappings)
-            {
-                crate::port_forward::retarget(&self.data_dir, &netns, &mappings)?;
-                old_pids
-            } else {
-                tracing::warn!(id = %to, "cannot retarget forwarders; restarting them (brief gap)");
-                crate::port_forward::stop_forwarders_and_wait(&old_pids);
-                crate::port_forward::start_forwarders(&self.data_dir, &netns, &mappings)?
-            };
-            Ok(())
-        })
+            Ok(Ok(()))
+        })?
+    }
+
+    fn is_staged(&self, id: &ContainerId) -> Result<bool> {
+        let state = self.state_store.read()?;
+        let index = entry_index(&state, id)?;
+        Ok(state.containers[index].publish_deferred)
     }
 
     fn rename(&self, id: &ContainerId, name: &str) -> Result<()> {
@@ -337,6 +330,67 @@ impl ContainerBackend for LinuxNativeBackend {
             let index = entry_index(state, id)?;
             state.containers[index].name = name.to_string();
             Ok(())
+        })
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl LinuxNativeBackend {
+    /// Publishes the staged `entry`'s ports, taking over `old_pids` (the
+    /// previous owner's forwarders) when the port set is unchanged.
+    fn publish_staged(
+        &self,
+        entry: &mut crate::state::StateEntry,
+        same_ports: bool,
+        old_pids: &[u32],
+    ) -> Result<()> {
+        let pid = running_pid(entry).ok_or_else(|| ContainustError::Config {
+            message: format!("container {} must be running to receive traffic", entry.id),
+        })?;
+        let mode = crate::network::NetworkMode::parse(Some(entry.network.as_str()));
+        if entry.port_mappings.is_empty() || mode.is_host() {
+            crate::port_forward::stop_forwarders_and_wait(old_pids);
+            entry.publish_deferred = false;
+            return Ok(());
+        }
+        let netns = entry_netns(&self.data_dir, entry, &mode, pid)?;
+        let mappings = entry.port_mappings.clone();
+        entry.forwarder_pids = if same_ports
+            && crate::port_forward::forwarders_alive(old_pids)
+            && crate::port_forward::targets_exist(&self.data_dir, &mappings)
+        {
+            crate::port_forward::retarget(&self.data_dir, &netns, &mappings)?;
+            old_pids.to_vec()
+        } else {
+            tracing::warn!(id = %entry.id, "cannot retarget forwarders; restarting them (brief gap)");
+            crate::port_forward::stop_forwarders_and_wait(old_pids);
+            crate::port_forward::start_forwarders(&self.data_dir, &netns, &mappings)?
+        };
+        entry.publish_deferred = false;
+        Ok(())
+    }
+
+    /// Best-effort: makes `entry` publish its ports again after a failed
+    /// handoff, returning its forwarder PIDs.
+    fn restore_forwarders(&self, entry: &crate::state::StateEntry, old_pids: &[u32]) -> Vec<u32> {
+        let mode = crate::network::NetworkMode::parse(Some(entry.network.as_str()));
+        let Some(pid) = running_pid(entry).filter(|_| !entry.port_mappings.is_empty()) else {
+            return old_pids.to_vec();
+        };
+        if mode.is_host() {
+            return old_pids.to_vec();
+        }
+        let restored = entry_netns(&self.data_dir, entry, &mode, pid).and_then(|netns| {
+            if crate::port_forward::forwarders_alive(old_pids) {
+                crate::port_forward::retarget(&self.data_dir, &netns, &entry.port_mappings)
+                    .map(|()| old_pids.to_vec())
+            } else {
+                crate::port_forward::start_forwarders(&self.data_dir, &netns, &entry.port_mappings)
+            }
+        });
+        restored.unwrap_or_else(|error| {
+            tracing::error!(id = %entry.id, %error, "could not restore port forwarding");
+            Vec::new()
         })
     }
 }
@@ -447,6 +501,22 @@ const fn process_is_alive(_pid: u32) -> bool {
 }
 
 impl LinuxNativeBackend {
+    /// PID of a tracked container's process, if it has one.
+    fn running_pid_of(&self, id: &ContainerId) -> Result<u32> {
+        let state = self.state_store.read()?;
+        let entry = state
+            .containers
+            .iter()
+            .find(|e| e.id == *id)
+            .ok_or_else(|| ContainustError::NotFound {
+                kind: "container",
+                id: id.to_string(),
+            })?;
+        entry.pid.ok_or_else(|| ContainustError::Config {
+            message: format!("container {id} is not running"),
+        })
+    }
+
     fn prepare_process_config(
         &self,
         state: &mut crate::state::StateFile,
@@ -843,8 +913,18 @@ fn release_proc_netns(data_dir: &Path, container_id: &str) {
     let dir = data_dir.join("networks").join(container_id);
     let path = dir.join("ns");
     if path.exists() {
-        let _ = nix::mount::umount2(&path, nix::mount::MntFlags::MNT_DETACH);
+        unmount_all(&path);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// Removes every bind mount stacked on `path` (one per earlier start).
+#[cfg(target_os = "linux")]
+fn unmount_all(path: &Path) {
+    for _ in 0..64 {
+        if nix::mount::umount2(path, nix::mount::MntFlags::MNT_DETACH).is_err() {
+            break;
+        }
     }
 }
 
@@ -857,6 +937,9 @@ fn persist_proc_netns(data_dir: &Path, container_id: &str, pid: u32) -> Result<P
             source,
         })?;
     }
+    // A restarted container re-persists its new netns: drop the old bind
+    // first (writing to a mounted nsfs file fails, and mounts would stack).
+    unmount_all(&path);
     let _ = std::fs::File::create(&path).map_err(|source| ContainustError::Io {
         path: path.clone(),
         source,

@@ -142,6 +142,22 @@ pub trait ContainerBackend: Send + Sync {
     /// Returns an error if the command fails to execute.
     fn exec(&self, id: &ContainerId, cmd: &[String]) -> Result<ExecOutput>;
 
+    /// Executes a command with a deadline (health probes). Backends without
+    /// timeout support fall back to [`Self::exec`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command fails to execute or times out.
+    fn exec_timeout(
+        &self,
+        id: &ContainerId,
+        cmd: &[String],
+        timeout: std::time::Duration,
+    ) -> Result<ExecOutput> {
+        let _ = timeout;
+        self.exec(id, cmd)
+    }
+
     /// Removes a stopped container from the state.
     ///
     /// # Errors
@@ -194,6 +210,17 @@ pub trait ContainerBackend: Send + Sync {
         Err(containust_common::error::ContainustError::Config {
             message: "this backend does not support start-first updates".into(),
         })
+    }
+
+    /// Whether a container is a staged start-first replacement that has not
+    /// received its ports yet. Backends without handoff never stage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the container is missing.
+    fn is_staged(&self, id: &ContainerId) -> Result<bool> {
+        let _ = id;
+        Ok(true)
     }
 
     /// Renames a tracked container.
