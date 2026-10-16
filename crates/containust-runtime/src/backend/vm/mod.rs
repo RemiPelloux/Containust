@@ -286,6 +286,12 @@ impl ContainerBackend for VMBackend {
     }
 
     fn list(&self) -> Result<Vec<ContainerInfo>> {
+        // No VM was ever started (no pid record): nothing runs, so skip the
+        // agent probe — its retries cost seconds per `ctst ps` / `ctst plan`
+        // (tens of seconds on Windows, where a refused connect retries).
+        if pidfile::read_pid_record(&self.vm_dir).ok().flatten().is_none() {
+            return Ok(Vec::new());
+        }
         if !rpc::is_agent_ready() {
             return Ok(Vec::new());
         }

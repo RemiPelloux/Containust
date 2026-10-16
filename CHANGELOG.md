@@ -42,9 +42,9 @@ once.
 - Restarting a stopped container with forwarded ports failed: its old netns
   bind mount was still in place.
 - `ports = [8080]` together with `EXPOSE 8080` was rejected as a duplicate.
-- macOS/Windows: with no VM running, every `ctst ps` / `ctst plan` waited
-  ~6s (≈20s on Windows) while a retrying RPC probed the agent; readiness is
-  now one ping with a 300ms connect timeout.
+- macOS/Windows: with no VM started, every `ctst ps` / `ctst plan` waited
+  ~6s (≈20s on Windows) while a retrying RPC probed the agent; listing now
+  returns immediately when there is no VM pid record.
 - `ctst plan --detailed-exitcode` exits `1` on any error, so an invalid file
   can no longer look like drift (`2`).
 - `ctst convert`: `CMD-SHELL` / string healthchecks run through `/bin/sh -c`,
