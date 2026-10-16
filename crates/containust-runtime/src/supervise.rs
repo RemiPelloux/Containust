@@ -133,7 +133,7 @@ fn parse_rfc3339(text: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 
 /// Executes one probe; any exec error counts as a failed probe.
 fn run_probe(backend: &dyn ContainerBackend, id: &ContainerId, spec: &HealthcheckSpec) -> bool {
-    match backend.exec(id, &spec.command) {
+    match backend.exec_timeout(id, &spec.command, probe_timeout(spec)) {
         Ok(output) => output.exit_code == 0,
         Err(error) => {
             tracing::warn!(id = %id, %error, "health probe execution failed");
@@ -163,12 +163,16 @@ pub fn wait_healthy(
     let interval = std::time::Duration::from_secs(spec.interval_secs)
         .max(std::time::Duration::from_millis(100));
     let retries = spec.retries.max(1);
+    let deadline = gate_deadline(spec, interval);
     let mut failures = 0;
     loop {
         if !is_running(backend, id) {
             return Err("container exited before it became healthy".into());
         }
-        let last = match backend.exec(id, &spec.command) {
+        if started.elapsed() > deadline {
+            return Err(format!("not healthy within {}s", deadline.as_secs()));
+        }
+        let last = match backend.exec_timeout(id, &spec.command, probe_timeout(spec)) {
             Ok(output) if output.exit_code == 0 => return Ok(()),
             Ok(output) => format!(
                 "probe exited with {}: {}",
@@ -190,6 +194,20 @@ pub fn wait_healthy(
         };
         std::thread::sleep(pause);
     }
+}
+
+/// Per-probe deadline: the declared `timeout`, at least one second.
+fn probe_timeout(spec: &HealthcheckSpec) -> std::time::Duration {
+    std::time::Duration::from_secs(spec.timeout_secs.max(1))
+}
+
+/// Upper bound for the whole gate: the start period plus `retries` probe
+/// rounds (interval + timeout each), with a little slack.
+fn gate_deadline(spec: &HealthcheckSpec, interval: std::time::Duration) -> std::time::Duration {
+    let round = interval + probe_timeout(spec);
+    std::time::Duration::from_secs(spec.start_period_secs)
+        + round.saturating_mul(spec.retries.max(1) + 1)
+        + std::time::Duration::from_secs(5)
 }
 
 fn is_running(backend: &dyn ContainerBackend, id: &ContainerId) -> bool {

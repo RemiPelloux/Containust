@@ -99,6 +99,19 @@ fn forwarder_relays_into_netns_and_retargets_without_unbinding() {
     let pids = port_forward::start_forwarders(&data, &blue.ns, &[mapping]).expect("start");
     wait_for(mapping.host, "blue");
 
+    // The forwarder keeps nothing from this process but stdio + listener.
+    let fds = std::fs::read_dir(format!("/proc/{}/fd", pids[0]))
+        .expect("forwarder fds")
+        .count();
+    assert_eq!(fds, 4, "forwarder must hold only fds 0-3");
+
+    // A second publish of the same port fails before touching the link.
+    let link = port_forward::target_link(&data, mapping.host);
+    let before = std::fs::read_link(&link).expect("link");
+    assert!(port_forward::start_forwarders(&data, &green.ns, &[mapping]).is_err());
+    assert_eq!(std::fs::read_link(&link).expect("link"), before);
+    wait_for(mapping.host, "blue");
+
     port_forward::retarget(&data, &green.ns, &[mapping]).expect("retarget");
     wait_for(mapping.host, "green");
     assert!(port_forward::forwarders_alive(&pids));
