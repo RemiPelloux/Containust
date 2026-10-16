@@ -17,6 +17,10 @@ const VM_BOOT_TIMEOUT_DEFAULT_SECS: u64 = 180;
 const VM_POLL_INTERVAL_MS: u64 = 500;
 const RPC_MAX_RETRIES: u32 = 8;
 const RPC_RETRY_DELAY_MS: u64 = 800;
+/// A readiness probe must answer fast: with no VM running, every `ctst ps`
+/// / `ctst plan` asks once. (Windows retries a refused localhost connect
+/// for ~2s, and the retrying RPC path would take tens of seconds.)
+const PROBE_CONNECT_TIMEOUT_MS: u64 = 300;
 
 fn boot_timeout_secs() -> u64 {
     parse_boot_timeout(
@@ -35,7 +39,11 @@ fn parse_boot_timeout(raw: Option<&str>) -> u64 {
 /// Returns true when the agent answers a versioned `ping` with `pong`.
 #[must_use]
 pub fn is_agent_ready() -> bool {
-    send_rpc("ping", &serde_json::json!({}))
+    let connect_timeout = Duration::from_millis(PROBE_CONNECT_TIMEOUT_MS);
+    encode_request("ping", &serde_json::json!({}))
+        .and_then(|(request_id, payload)| {
+            try_send_rpc(&payload, &request_id, Some(connect_timeout))
+        })
         .is_ok_and(|value| value.get("result").and_then(serde_json::Value::as_str) == Some("pong"))
 }
 
@@ -75,7 +83,7 @@ pub fn send_rpc(method: &str, params: &serde_json::Value) -> Result<serde_json::
         if attempt > 0 {
             std::thread::sleep(Duration::from_millis(RPC_RETRY_DELAY_MS));
         }
-        match try_send_rpc(&payload, &request_id) {
+        match try_send_rpc(&payload, &request_id, None) {
             Ok(val) => return Ok(val),
             Err(e) => {
                 tracing::debug!(attempt, error = %e, "RPC attempt failed, retrying");
@@ -88,12 +96,19 @@ pub fn send_rpc(method: &str, params: &serde_json::Value) -> Result<serde_json::
     }))
 }
 
-fn try_send_rpc(payload: &str, expected_id: &str) -> Result<serde_json::Value> {
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{VM_AGENT_PORT}")).map_err(|e| {
-        ContainustError::Io {
-            path: PathBuf::from("VM agent"),
-            source: e,
-        }
+fn try_send_rpc(
+    payload: &str,
+    expected_id: &str,
+    connect_timeout: Option<Duration>,
+) -> Result<serde_json::Value> {
+    let agent = std::net::SocketAddr::from(([127, 0, 0, 1], VM_AGENT_PORT));
+    let connected = connect_timeout.map_or_else(
+        || TcpStream::connect(agent),
+        |limit| TcpStream::connect_timeout(&agent, limit),
+    );
+    let mut stream = connected.map_err(|e| ContainustError::Io {
+        path: PathBuf::from("VM agent"),
+        source: e,
     })?;
     let timeout = Duration::from_secs(RPC_IO_TIMEOUT_SECS);
     stream
