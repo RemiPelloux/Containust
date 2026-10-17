@@ -10,6 +10,8 @@ Compatibility guarantees for `.ctst`, `state.json`, and the SDK are described in
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-10-17
+
 Hardening release from a review of 1.4.0. **Upgrade note:** components that
 use `FROM` templates or are the source of a `CONNECT` get a new spec
 fingerprint (they now receive their inherited properties and a
