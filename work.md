@@ -1,7 +1,7 @@
 # Containust — Sprint Tracker
 
 > **Goal**: Ship Containust as a production-ready container runtime, lighter and more reliable than Docker.
-> **Version**: `1.4.0` (Sprint 13 complete)
+> **Version**: `1.5.0` (Sprint 13 hardening released)
 > **License**: Containust Commercial License (source-available; see `COMMERCIAL.md`)
 > **Standards**: 90%+ test coverage for library crates, zero clippy warnings, `cargo deny` green, no banned patterns.
 
@@ -24,6 +24,10 @@
 - **Sprint 13 (`1.4.0`)** — zero-downtime `update = "start-first"` (staged
   `~next`, health gate, atomic forwarder retarget, drain, rename); privileged
   `zero_downtime` gate; forwarder half-close / stdio / listener fixes.
+- **`1.5.0`** — hardening from a 1.4 review: crash-safe start-first recovery,
+  `apply.lock`, forwarder isolation/bounds, probe timeouts, IMPORT/FROM
+  resolution, CONNECT reachability warnings and `_CONNECTION_STRING`, SDK
+  `deploy` module, every documented `.ctst` example tested.
 
 ## Next (Sprint 14+)
 
